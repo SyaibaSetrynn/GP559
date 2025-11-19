@@ -2,9 +2,9 @@ import * as T from "https://unpkg.com/three@0.161.0/build/three.module.js";
 import {OrbitControls} from "https://unpkg.com/three@0.161.0/examples/jsm/controls/OrbitControls.js";
 import * as O from "https://unpkg.com/three@0.161.0/examples/jsm/loaders/OBJLoader.js";
 import * as P from "https://unpkg.com/three@0.161.0/examples/jsm/controls/PointerLockControls.js";
-// import { Octree } from './three.js-dev/examples/jsm/math/Octree.js';
-// import { OctreeHelper } from './three.js-dev/examples/jsm/helpers/OctreeHelper.js';
-// import { Capsule } from './three.js-dev/examples/jsm/math/Capsule.js';
+import { Octree } from './three.js-dev/examples/jsm/math/Octree.js';
+import { OctreeHelper } from './three.js-dev/examples/jsm/helpers/OctreeHelper.js';
+import { Capsule } from './three.js-dev/examples/jsm/math/Capsule.js';
 
 /**
  * Some references: https://www.youtube.com/watch?v=oqKzxPMLWxo
@@ -16,25 +16,41 @@ import * as P from "https://unpkg.com/three@0.161.0/examples/jsm/controls/Pointe
  */
 class Player {
     /**
+     * note: 
+     * this.mesh: the group that holds mesh
+     * this.camera: the camera
+     * this.collider: the collider
+     * they are all apart because putting in a group and update that group position doesn't work
+     * this.mesh need to move with the camera, but can only rotate on z axis
      * @param {number} isFirstPerson 0 if is first person player, 1 if npc (the difference is only in PointerLockControls)
      * @param {*} renderer 
      */
-    constructor(isFirstPerson, renderer) {
+    constructor(isFirstPerson, renderer, collisionWorld) {
+
         this.movement = {w: false, a: false, s: false, d: false, space: false, spaceHold: false};
         this.speedY = 0;
         this.mesh = this.createObject();
         this.object = new T.Group();
-        this.object.position.set(0, -PLAYER_HEIGHT, PLAYER_HEIGHT/2);
         this.camera = new T.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        this.camera.add(this.mesh);
+        this.camera.position.set(0, PLAYER_HEIGHT, 0);
+        this.collider = new Capsule(new T.Vector3(0, PLAYER_HEIGHT/2, 0), new T.Vector3(0, PLAYER_HEIGHT - PLAYER_HEIGHT/4, 0), PLAYER_HEIGHT/2);
+        console.log("collider start: " + this.collider.start.x + " " + this.collider.start.y + " " + this.collider.start.z);
+        console.log("radius: " + PLAYER_RADIUS);
+        this.object.add(this.mesh);
         this.object.add(this.camera);
+        this.onGround = false;
+        this.worldCollide = collisionWorld;
+
         this.controls = null;
         if(isFirstPerson == 0)
             this.controls = new P.PointerLockControls(this.camera, renderer.domElement);
+    
+        // might need some other variables for colors and shooting
+
     }
 
     /**
-     * Creates the mesh for the player
+     * Creates the mesh nnd collider bounding box for the player
      * @returns a three js group that contains the mesh
      */
     createObject() {
@@ -42,44 +58,116 @@ class Player {
         const dummyGeo = new T.BoxGeometry(PLAYER_HEIGHT, PLAYER_HEIGHT, PLAYER_HEIGHT);
         const dummyMat = new T.MeshStandardMaterial({color: "rgb(255, 123, 123)"});
         const dummyMesh = new T.Mesh(dummyGeo, dummyMat);
-        characterGrp.position.set(0, -PLAYER_HEIGHT, PLAYER_HEIGHT/2);
-        dummyMesh.position.set(0, PLAYER_HEIGHT/2, 0);
         characterGrp.add(dummyMesh);
+
         return characterGrp;
     }
+
     /**
      * updates position of the player, needs to be called in animate()
      */
     update() {
-            // update player position
-        if(this.movement.w)
-            this.controls.moveForward(PLAYER_SPEED);
-        if(this.movement.a)
-            this.controls.moveRight(-PLAYER_SPEED);
-        if(this.movement.s)
-            this.controls.moveForward(-PLAYER_SPEED);
-        if(this.movement.d)
-            this.controls.moveRight(PLAYER_SPEED);
+        // console.log("update");
+        console.log("collider start: " + this.collider.start.x + " " + this.collider.start.y + " " + this.collider.start.z);
+        // // update player position
+        let moved = false;
 
-        // update jump
-        if(this.movement.spaceHold) {
-            this.speedY -= GRAVITY;
-            this.object.position.y += this.speedY;
-            if(this.object.position.y <= PLAYER_HEIGHT/**player1.charHeight/2*/) {
-                this.object.position.y = PLAYER_HEIGHT;
-                this.movement.spaceHold = false;
-            }
+        if(this.movement.w) {
+            this.controls.moveForward(PLAYER_SPEED);
+            moved = true;
         }
+            
+        if(this.movement.a){
+            this.controls.moveRight(-PLAYER_SPEED);
+            moved = true;
+        }
+            
+        if(this.movement.s) {
+            this.controls.moveForward(-PLAYER_SPEED);
+            moved = true;
+        }
+            
+        if(this.movement.d) {
+            this.controls.moveRight(PLAYER_SPEED);
+            moved = true;
+        }
+        if(moved) {
+            let newPos = new T.Vector3(this.camera.position.x, this.camera.position.y - PLAYER_HEIGHT, this.camera.position.z);
+            this.mesh.position.copy(newPos);
+            
+            this.collider.start.x = this.camera.position.x;
+            this.collider.end.x = this.camera.position.x;        
+            this.collider.start.z = this.camera.position.z;
+            this.collider.end.z = this.camera.position.z;      
+        }
+
+
+        // // update jump
+        if(this.movement.spaceHold || !this.onGround) {
+
+            this.collider.start.y += this.speedY;
+            this.collider.end.y += this.speedY;
+            const center = this.collider.start.clone().add(this.collider.end).multiplyScalar(0.5);
+            const halfHeight = PLAYER_HEIGHT / 2;
+            this.mesh.position.set(center.x, center.y - halfHeight, center.z);
+            this.camera.position.set(center.x, center.y + halfHeight, center.z);
+
+            if(this.onGround) 
+                this.movement.spaceHold = false;
+            
+            this.speedY -= GRAVITY;
+        }
+
+        this.collisions();
+
     }
+
+    /**
+     * checks for collision
+     */
+    collisions() {
+        const result = this.worldCollide.capsuleIntersect(this.collider);
+        this.onGround = false;
+        
+        if (result) {
+
+            this.onGround = result.normal.y > 0.5;
+
+            if ( result.depth >= 1e-5 ) {
+                this.collider.translate(result.normal.multiplyScalar(result.depth));
+                
+            }
+
+            if(this.onGround)
+                this.speedY = 0;
+
+        }
+
+        const center = this.collider.start.clone().add(this.collider.end).multiplyScalar(0.5);
+        this.mesh.position.set(center.x, this.collider.start.y, center.z);
+        this.camera.position.set(center.x, this.collider.end.y, center.z);
+        
+    }
+
+    /**
+     * might need some other functions for colors and shooting
+     */
 }
 
 // global variables
 const PLAYER_HEIGHT = 0.5;
+const PLAYER_RADIUS = 0.5 * Math.sqrt(2) / 2;
 const PLAYER_SPEED = 0.02;
 const PLAYER_JUMP_HEIGHT = 1.2;
 const PLAYER_JUMP_SPEED = 0.03;
 const WORLD_BOUNDARY = 20;
 const GRAVITY = (PLAYER_JUMP_SPEED * PLAYER_JUMP_SPEED) / (2 * PLAYER_JUMP_HEIGHT);
+
+let startGame = false;
+
+// to switch between different levels
+let level1 = false;
+let level2 = true;
 
 // set up renderer
 let renderer = new T.WebGLRenderer({preserveDrawingBuffer:true});
@@ -90,12 +178,12 @@ renderer.domElement.id = "canvas";
 // set up scene
 let scene = new T.Scene();
 
-// perspective camera for debugging
-let perspCam = new T.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-perspCam.position.set(20, 5, 0);
-let controls = new OrbitControls(perspCam, renderer.domElement);
-controls.target.set(0, 5, 0);
-controls.update();
+// // perspective camera for debugging
+// let perspCam = new T.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+// perspCam.position.set(20, 5, 0);
+// let controls = new OrbitControls(perspCam, renderer.domElement);
+// controls.target.set(0, 5, 0);
+// controls.update();
 
 // let ocontrols = new OrbitControls(player2.camera, renderer.domElement);
 // ocontrols.target.set(0, 5, 0);
@@ -107,91 +195,124 @@ scene.add(new T.AmbientLight("white"));
 // simple start menu
 const menuOverlay = document.getElementById("menuOverlay");
 
-// ground
-// const groundGeo = new T.BoxGeometry(20, 0.05, 20);
-// const groundMat = new T.MeshStandardMaterial({color: "rgb(158, 158, 158)"});
-// const groundMesh = new T.Mesh(groundGeo, groundMat);
-// groundMesh.position.set(0, -0.025, 0);
-// scene.add(groundMesh);
+// handling collision
+const collisionWorld = new Octree();
 
-// loading Terrain1
-const loader = new O.OBJLoader();
-const object = await loader.loadAsync( './Objects/Terrain1.obj' );
-scene.add( object );
-object.traverse(child => {
-    if (child.isMesh) {
-        child.material = new T.MeshStandardMaterial({
+// loading terrain
+const levelLoader = new O.OBJLoader();
+let levelObj = null;
+if(level1) {
+    levelObj = await levelLoader.loadAsync( './Objects/Terrain1.obj' );
+}
+else if(level2) {
+    levelObj = await levelLoader.loadAsync( './Objects/Terrain2.obj' );
+}
+
+levelObj.traverse(obs => {
+    obs.updateWorldMatrix(true, false);
+    collisionWorld.fromGraphNode(obs);
+    // just assigning a random color for now
+    if (obs.isMesh) {
+        obs.material = new T.MeshStandardMaterial({
             color: new T.Color(Math.random(), Math.random(), Math.random())
         });
     }
 });
+scene.add(levelObj);
+
+// create playable player and put in scene
+let player1 = new Player(0, renderer, collisionWorld);
+scene.add(player1.object);
 
 // WASD controls: keydwon
 document.addEventListener('keydown', function (event) {
-    switch(event.key) {
-        case 'w':
-        case 'W':
-            player1.movement.w = true;
-            break;
-        case 'a':
-        case 'A':
-            player1.movement.a = true;
-            break;
-        case 's':
-        case 'S':
-            player1.movement.s = true;
-            break;
-        case 'd':
-        case 'D':
-            player1.movement.d = true;
-            break;
-        case ' ':
-            if(player1.movement.spaceHold)
+    if(startGame) {
+        switch(event.key) {
+            case 'w':
+            case 'W':
+                player1.movement.w = true;
                 break;
-            player1.movement.space = true;
-            player1.movement.spaceHold = true;
-            player1.speedY = PLAYER_JUMP_SPEED;
-            break;
+            case 'a':
+            case 'A':
+                player1.movement.a = true;
+                break;
+            case 's':
+            case 'S':
+                player1.movement.s = true;
+                break;
+            case 'd':
+            case 'D':
+                player1.movement.d = true;
+                break;
+            case ' ':
+                if(player1.movement.spaceHold)
+                    break;
+                player1.movement.space = true;
+                player1.movement.spaceHold = true;
+                player1.speedY = PLAYER_JUMP_SPEED;
+                break;
+        }        
     }
+
 });
 // WASD controls: keyup
 document.addEventListener('keyup', function (event) {
-    switch(event.key) {
-        case 'w':
-        case 'W':
-            player1.movement.w = false;
-            break;
-        case 'a':
-        case 'A':
-            player1.movement.a = false;
-            break;
-        case 's':
-        case 'S':
-            player1.movement.s = false;
-            break;
-        case 'd':
-        case 'D':
-            player1.movement.d = false;
-            break;
-        case ' ':
-            player1.movement.space = false;
-            break;
+    if(startGame) {
+        switch(event.key) {
+            case 'w':
+            case 'W':
+                player1.movement.w = false;
+                break;
+            case 'a':
+            case 'A':
+                player1.movement.a = false;
+                break;
+            case 's':
+            case 'S':
+                player1.movement.s = false;
+                break;
+            case 'd':
+            case 'D':
+                player1.movement.d = false;
+                break;
+            case ' ':
+                player1.movement.space = false;
+                break;
+        }
     }
+
+});
+
+// playe mesh rotates with first person perspective
+document.addEventListener('mousemove', function (event) {
+    if(startGame) {
+        let camDir = new T.Vector3();
+        player1.camera.getWorldDirection(camDir);
+        camDir.y = 0; 
+        camDir.normalize();
+        player1.mesh.rotation.y = Math.atan2(camDir.x, camDir.z);
+    }
+
 });
 
 // enable and disable PoiniterLockControls
 document.body.addEventListener('click', () => {
     menuOverlay.style.display = "none";
     player1.controls.lock();
+    startGame = true;
+
 });
-controls.addEventListener('unlock', () => {
+player1.controls.addEventListener('unlock', () => {
     menuOverlay.style.display = 'block';
+    startGame = false;
 });
 
-// create playable player and put in scene
-let player1 = new Player(0, renderer);
-player1.object.position.set(0, PLAYER_HEIGHT, 0);
-scene.add(player1.object);
+// // some helpers, leaving in for now so I don't have to type it again
+// const helper = new OctreeHelper( collisionWorld );
+// scene.add( helper );
+
+// const cameraHelper = new T.CameraHelper(player1.camera);
+// scene.add(cameraHelper);
 
 let previousTime = 0;
 
@@ -209,5 +330,3 @@ function animate(timestamp) {
     window.requestAnimationFrame(animate);
 }
 window.requestAnimationFrame(animate);
-
-
