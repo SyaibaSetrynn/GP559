@@ -109,7 +109,7 @@ class UI {
             y: this.height - 100,
             width: 180,
             height: 40,
-            text: '>>> Help',
+            text: 'Help >>>',
             fontSize: this.arrowButtonStyle.fontSize,
             baseFontSize: this.arrowButtonStyle.baseFontSize,
             clickFontSize: this.arrowButtonStyle.clickFontSize,
@@ -124,29 +124,44 @@ class UI {
             y: this.height - 50,
             width: 180,
             height: 40,
-            text: '>>> Play Tutorial',
+            text: 'Play Tutorial >>>',
             fontSize: this.arrowButtonStyle.fontSize,
             baseFontSize: this.arrowButtonStyle.baseFontSize,
             clickFontSize: this.arrowButtonStyle.clickFontSize,
             isHovered: false,
             isClicked: false,
-            targetPhase: 0,  // 可根据需要修改
+            targetPhase: 10,  // 跳转到phase10
             align: 'right'
         };
         
         // Phase 2 (Help界面) 元素
+        this.backButtonPhase2 = {
+            x: 20,  // 左下角
+            y: this.height - 60,
+            width: 150,
+            height: 40,
+            text: '<<< Back',
+            fontSize: this.arrowButtonStyle.fontSize,
+            baseFontSize: this.arrowButtonStyle.baseFontSize,
+            clickFontSize: this.arrowButtonStyle.clickFontSize,
+            isHovered: false,
+            isClicked: false,
+            targetPhase: 0,  // 跳转到phase0
+            align: 'left'
+        };
+        
         this.tutorialButton = {
             x: this.width - 200,  // 右下角
             y: this.height - 60,
             width: 180,
             height: 40,
-            text: '>>> Play Tutorial',
+            text: 'Play Tutorial >>>',
             fontSize: this.arrowButtonStyle.fontSize,
             baseFontSize: this.arrowButtonStyle.baseFontSize,
             clickFontSize: this.arrowButtonStyle.clickFontSize,
             isHovered: false,
             isClicked: false,
-            targetPhase: 0,  // 暂时设为0，可根据需要修改
+            targetPhase: 10,  // 跳转到phase10
             align: 'right'
         };
         
@@ -173,6 +188,82 @@ class UI {
             targetProgress: 0,
             startProgress: 0
         };
+        
+        // 主界面（phase 10-15）暂停功能
+        this.pauseButton = {
+            x: this.width - 60 - 40,  // 右上角，向左移40格
+            y: 20 + 20,  // 下移20格
+            width: 60,
+            height: 60,
+            barWidth: 20,
+            barHeight: 60,
+            barSpacing: 20,
+            isHovered: false,
+            isClicked: false
+        };
+        
+        this.isPaused = false;  // 暂停状态
+        this.pauseOverlay = {
+            alpha: 0,  // 黑幕透明度
+            isAnimating: false,
+            startTime: 0,
+            duration: 300,  // 0.3秒
+            startAlpha: 0,
+            targetAlpha: 0
+        };
+        
+        this.resumeButton = {
+            x: this.width / 2 - 100,  // 居中，200宽度的一半
+            y: 270 - 50,  // 中心高度270，按钮高度100的一半
+            width: 200,
+            height: 100,
+            cornerRadius: 10,
+            baseColor: '#000000',
+            hoverColor: '#2a2a2a',
+            strokeColor: '#ffffff',
+            strokeWidth: 6,
+            text: 'Resume',
+            fontSize: 32,
+            baseFontSize: 32,
+            clickFontSize: 28,
+            isHovered: false,
+            isClicked: false,
+            startX: -250,  // 从左边开始（屏幕外）
+            targetX: this.width / 2 - 100,
+            currentX: -250,
+            isAnimating: false,
+            animationStartTime: 0,
+            animationDuration: 300
+        };
+        
+        this.quitButton = {
+            x: this.width / 2 - 100,
+            y: 450 - 50,  // 中心高度450
+            width: 200,
+            height: 100,
+            cornerRadius: 10,
+            baseColor: '#000000',
+            hoverColor: '#2a2a2a',
+            strokeColor: '#ffffff',
+            strokeWidth: 6,
+            text: 'Quit',
+            fontSize: 32,
+            baseFontSize: 32,
+            clickFontSize: 28,
+            isHovered: false,
+            isClicked: false,
+            startX: this.width + 50,  // 从右边开始（屏幕外）
+            targetX: this.width / 2 - 100,
+            currentX: this.width + 50,
+            isAnimating: false,
+            animationStartTime: 0,
+            animationDuration: 300
+        };
+        
+        this.resumeButtonColor = this.resumeButton.baseColor;
+        this.quitButtonColor = this.quitButton.baseColor;
+        this.resumeButtonFontSize = this.resumeButton.baseFontSize;
+        this.quitButtonFontSize = this.quitButton.baseFontSize;
         this.tutorialButtonFontSize = this.tutorialButton.baseFontSize;
         this.backButtonFontSize = this.backButton.baseFontSize;
         this.leftArrowButtonFontSize = this.leftArrowButton.baseFontSize;
@@ -186,6 +277,8 @@ class UI {
         this.rightArrowButtonHoverFontSize = this.rightArrowButton.baseFontSize;
         this.helpButtonPhase1HoverFontSize = this.helpButtonPhase1.baseFontSize;
         this.tutorialButtonPhase1HoverFontSize = this.tutorialButtonPhase1.baseFontSize;
+        this.backButtonPhase2FontSize = this.backButtonPhase2.baseFontSize;
+        this.backButtonPhase2HoverFontSize = this.backButtonPhase2.baseFontSize;
         this.tutorialButtonHoverFontSize = this.tutorialButton.baseFontSize;
         
         // Level选择相关
@@ -237,6 +330,7 @@ class UI {
             this.helpButton.isHovered = false;
             this.tutorialButton.isHovered = false;
             this.backButton.isHovered = false;
+            this.backButtonPhase2.isHovered = false;
             this.leftArrowButton.isHovered = false;
             this.rightArrowButton.isHovered = false;
             this.helpButtonPhase1.isHovered = false;
@@ -281,8 +375,28 @@ class UI {
                     this.handleArrowButtonClick(this.tutorialButtonPhase1, 'tutorialButtonPhase1FontSize');
                 }
             } else if (currentPhase === 2) {
-                if (this.isPointInButton(x, y, this.tutorialButton)) {
+                if (this.isPointInButton(x, y, this.backButtonPhase2)) {
+                    this.handleArrowButtonClick(this.backButtonPhase2, 'backButtonPhase2FontSize');
+                } else if (this.isPointInButton(x, y, this.tutorialButton)) {
                     this.handleTutorialClick();
+                }
+            } else if (currentPhase >= 10 && currentPhase <= 15) {
+                // 主界面：检查暂停按钮和暂停菜单按钮
+                // 注意：当canvas的pointer-events是none时，这个事件可能不会触发
+                // 我们需要在3D canvas上添加点击监听，或者使用其他方法
+                if (!this.isPaused) {
+                    // 未暂停时，检查暂停按钮
+                    // 由于canvas的pointer-events可能是none，我们需要在LevelSelection3D中处理暂停按钮点击
+                    if (this.isPointInPauseButton(x, y)) {
+                        this.handlePauseClick();
+                    }
+                } else {
+                    // 暂停时，检查Resume和Quit按钮
+                    if (this.isPointInButton(x, y, this.resumeButton)) {
+                        this.handleResumeClick();
+                    } else if (this.isPointInButton(x, y, this.quitButton)) {
+                        this.handleQuitClick();
+                    }
                 }
             }
         });
@@ -323,8 +437,19 @@ class UI {
             this.helpButtonPhase1.isHovered = this.isPointInButton(x, y, this.helpButtonPhase1);
             this.tutorialButtonPhase1.isHovered = this.isPointInButton(x, y, this.tutorialButtonPhase1);
         } else if (currentPhase === 2) {
-            // Help界面：检查Tutorial按钮
+            // Help界面：检查Back和Tutorial按钮
+            this.backButtonPhase2.isHovered = this.isPointInButton(x, y, this.backButtonPhase2);
             this.tutorialButton.isHovered = this.isPointInButton(x, y, this.tutorialButton);
+        } else if (currentPhase >= 10 && currentPhase <= 15) {
+            // 主界面：检查暂停按钮和暂停菜单按钮
+            if (!this.isPaused) {
+                // 未暂停时，检查暂停按钮
+                this.pauseButton.isHovered = this.isPointInPauseButton(x, y);
+            } else {
+                // 暂停时，检查Resume和Quit按钮
+                this.resumeButton.isHovered = this.isPointInButton(x, y, this.resumeButton);
+                this.quitButton.isHovered = this.isPointInButton(x, y, this.quitButton);
+            }
         }
     }
     
@@ -502,6 +627,188 @@ class UI {
         }, 150);
     }
     
+    isPointInPauseButton(x, y) {
+        const btn = this.pauseButton;
+        // 检查是否在第一个竖条内
+        const bar1X = btn.x;
+        const bar1InBounds = x >= bar1X && x <= bar1X + btn.barWidth &&
+                            y >= btn.y && y <= btn.y + btn.barHeight;
+        // 检查是否在第二个竖条内
+        const bar2X = btn.x + btn.barWidth + btn.barSpacing;
+        const bar2InBounds = x >= bar2X && x <= bar2X + btn.barWidth &&
+                            y >= btn.y && y <= btn.y + btn.barHeight;
+        return bar1InBounds || bar2InBounds;
+    }
+    
+    handlePauseClick() {
+        if (this.pauseButton.isClicked || this.isPaused) return;
+        
+        this.pauseButton.isClicked = true;
+        this.isPaused = true;
+        
+        // 启动黑幕淡入动画
+        this.startOverlayAnimation(0.5);
+        
+        // 启动按钮淡入动画
+        this.startButtonSlideAnimation('resume', true);
+        this.startButtonSlideAnimation('quit', true);
+        
+        setTimeout(() => {
+            this.pauseButton.isClicked = false;
+        }, 150);
+    }
+    
+    handleResumeClick() {
+        if (this.resumeButton.isClicked || !this.isPaused) return;
+        
+        this.resumeButton.isClicked = true;
+        this.resumeButtonFontSize = this.resumeButton.clickFontSize;
+        
+        setTimeout(() => {
+            this.resumeButtonFontSize = this.resumeButton.baseFontSize;
+            this.resumeButton.isClicked = false;
+            
+            // 启动黑幕淡出动画
+            this.startOverlayAnimation(0);
+            
+            // 启动按钮淡出动画（原路返回）
+            this.startButtonSlideAnimation('resume', false);
+            this.startButtonSlideAnimation('quit', false);
+            
+            // 动画结束后取消暂停
+            setTimeout(() => {
+                this.isPaused = false;
+            }, 300);
+        }, 150);
+    }
+    
+    handleQuitClick() {
+        if (this.quitButton.isClicked || !this.isPaused) return;
+        
+        this.quitButton.isClicked = true;
+        this.quitButtonFontSize = this.quitButton.clickFontSize;
+        
+        setTimeout(() => {
+            this.quitButtonFontSize = this.quitButton.baseFontSize;
+            this.quitButton.isClicked = false;
+            
+            // 跳转到phase0
+            if (typeof StateManager !== 'undefined') {
+                StateManager.setPhase(0);
+            }
+            
+            // 重置暂停状态
+            this.isPaused = false;
+            this.pauseOverlay.alpha = 0;
+            this.resumeButton.currentX = this.resumeButton.startX;
+            this.quitButton.currentX = this.quitButton.startX;
+        }, 150);
+    }
+    
+    startOverlayAnimation(targetAlpha) {
+        this.pauseOverlay.startAlpha = this.pauseOverlay.alpha;
+        this.pauseOverlay.targetAlpha = targetAlpha;
+        this.pauseOverlay.startTime = Date.now();
+        this.pauseOverlay.isAnimating = true;
+    }
+    
+    updateOverlayAnimation() {
+        if (!this.pauseOverlay.isAnimating) return;
+        
+        const elapsed = Date.now() - this.pauseOverlay.startTime;
+        const progress = Math.min(elapsed / this.pauseOverlay.duration, 1);
+        
+        // 使用easeInOut缓动
+        const easedProgress = progress < 0.5 
+            ? 2 * progress * progress 
+            : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+        
+        this.pauseOverlay.alpha = this.pauseOverlay.startAlpha + 
+            (this.pauseOverlay.targetAlpha - this.pauseOverlay.startAlpha) * easedProgress;
+        
+        if (progress >= 1) {
+            this.pauseOverlay.alpha = this.pauseOverlay.targetAlpha;
+            this.pauseOverlay.isAnimating = false;
+        }
+    }
+    
+    startButtonSlideAnimation(buttonType, slideIn) {
+        const button = buttonType === 'resume' ? this.resumeButton : this.quitButton;
+        button.isAnimating = true;
+        button.animationStartTime = Date.now();
+        
+        // 记录动画方向
+        button.animationSlideIn = slideIn;
+        
+        if (slideIn) {
+            // 淡入：从startX开始
+            button.currentX = button.startX;
+        } else {
+            // 淡出：从targetX开始
+            button.currentX = button.targetX;
+        }
+    }
+    
+    updateButtonSlideAnimations() {
+        // 更新Resume按钮
+        if (this.resumeButton.isAnimating) {
+            const elapsed = Date.now() - this.resumeButton.animationStartTime;
+            const progress = Math.min(elapsed / this.resumeButton.animationDuration, 1);
+            
+            const easedProgress = progress < 0.5 
+                ? 2 * progress * progress 
+                : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+            
+            if (this.resumeButton.animationSlideIn) {
+                // 淡入：从startX到targetX
+                this.resumeButton.currentX = this.resumeButton.startX + 
+                    (this.resumeButton.targetX - this.resumeButton.startX) * easedProgress;
+            } else {
+                // 淡出：从targetX回到startX
+                this.resumeButton.currentX = this.resumeButton.targetX - 
+                    (this.resumeButton.targetX - this.resumeButton.startX) * easedProgress;
+            }
+            
+            if (progress >= 1) {
+                this.resumeButton.isAnimating = false;
+                if (this.resumeButton.animationSlideIn) {
+                    this.resumeButton.currentX = this.resumeButton.targetX;
+                } else {
+                    this.resumeButton.currentX = this.resumeButton.startX;
+                }
+            }
+        }
+        
+        // 更新Quit按钮
+        if (this.quitButton.isAnimating) {
+            const elapsed = Date.now() - this.quitButton.animationStartTime;
+            const progress = Math.min(elapsed / this.quitButton.animationDuration, 1);
+            
+            const easedProgress = progress < 0.5 
+                ? 2 * progress * progress 
+                : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+            
+            if (this.quitButton.animationSlideIn) {
+                // 淡入：从startX到targetX
+                this.quitButton.currentX = this.quitButton.startX + 
+                    (this.quitButton.targetX - this.quitButton.startX) * easedProgress;
+            } else {
+                // 淡出：从targetX回到startX
+                this.quitButton.currentX = this.quitButton.targetX - 
+                    (this.quitButton.targetX - this.quitButton.startX) * easedProgress;
+            }
+            
+            if (progress >= 1) {
+                this.quitButton.isAnimating = false;
+                if (this.quitButton.animationSlideIn) {
+                    this.quitButton.currentX = this.quitButton.targetX;
+                } else {
+                    this.quitButton.currentX = this.quitButton.startX;
+                }
+            }
+        }
+    }
+    
     drawRoundedRect(x, y, width, height, radius) {
         this.ctx.beginPath();
         this.ctx.moveTo(x + radius, y);
@@ -546,6 +853,9 @@ class UI {
             this.ctx.fillStyle = '#000';
             this.ctx.fillRect(0, 0, this.width, this.height);
             this.renderHelpScreen();
+        } else if (currentPhase >= 10 && currentPhase <= 15) {
+            // Phase 10-15：主界面
+            this.renderMainGameScreen();
         } else {
             // 关卡选择或其他阶段：黑屏
             this.ctx.fillStyle = '#000';
@@ -560,13 +870,45 @@ class UI {
             this.helpButton.isHovered = false;
             this.tutorialButton.isHovered = false;
             this.backButton.isHovered = false;
+            this.backButtonPhase2.isHovered = false;
             this.leftArrowButton.isHovered = false;
             this.rightArrowButton.isHovered = false;
             this.helpButtonPhase1.isHovered = false;
             this.tutorialButtonPhase1.isHovered = false;
             
-            // 进入phase1时，重置level为1并初始化3D场景
+            // 重置phase0按钮的填充进度（避免回来时显示填充白色）
+            if (currentPhase === 0) {
+                this.playButtonFillProgress = 0;
+                this.helpButtonFillProgress = 0;
+                this.playButtonFillAnimation.isAnimating = false;
+                this.helpButtonFillAnimation.isAnimating = false;
+            }
+            
+            // 在phase 1或phase 10-15时，根据状态决定是否拦截鼠标事件
             if (currentPhase === 1) {
+                // Phase 1: Level Selection，不拦截鼠标事件（让3D模型可以接收点击）
+                // UI按钮的点击通过LevelSelection3D转发处理
+                this.canvas.style.pointerEvents = 'none';
+            } else if (currentPhase >= 10 && currentPhase <= 15) {
+                // Phase 10-15: 主界面
+                // 如果暂停，需要拦截鼠标事件（用于暂停菜单）
+                // 如果未暂停，不拦截鼠标事件（让3D模型可以接收点击）
+                this.canvas.style.pointerEvents = this.isPaused ? 'auto' : 'none';
+            } else {
+                this.canvas.style.pointerEvents = 'auto';
+                // 离开phase 10-15时，重置暂停状态
+                if (this.isPaused) {
+                    this.isPaused = false;
+                    this.pauseOverlay.alpha = 0;
+                    this.resumeButton.currentX = this.resumeButton.startX;
+                    this.quitButton.currentX = this.quitButton.startX;
+                    this.resumeButton.isAnimating = false;
+                    this.quitButton.isAnimating = false;
+                }
+            }
+            
+            // 进入phase1或phase10-15时，重置level为1并初始化3D场景
+            if (currentPhase === 1 || (currentPhase >= 10 && currentPhase <= 15)) {
                 this.level = 1;
                 // 重置动画状态
                 this.levelAnimation.newLevel = 1;
@@ -578,10 +920,19 @@ class UI {
                     this.levelLabel.text = `Level ${this.level}`;
                 }
                 
-                // 初始化3D场景
+                // 初始化3D场景（如果还没有初始化）
                 if (!this.levelSelection3D) {
                     const container = this.canvas.parentElement;
-                    this.levelSelection3D = new LevelSelection3D(container, this.canvas);
+                    if (container) {
+                        this.levelSelection3D = new LevelSelection3D(container, this.width, this.height);
+                        // 将UI实例传递给LevelSelection3D，以便它可以访问暂停状态
+                        this.levelSelection3D.uiInstance = this;
+                    }
+                }
+                
+                // 更新3D场景的level
+                if (this.levelSelection3D) {
+                    this.levelSelection3D.updateLevel(this.level);
                 }
             } else {
                 // 离开phase1时，可以清理3D场景（可选）
@@ -592,8 +943,8 @@ class UI {
             }
         }
         
-        // 在phase1时，更新3D模型并渲染
-        if (currentPhase === 1 && this.levelSelection3D) {
+        // 在phase1或phase10-15时，更新3D模型并渲染
+        if ((currentPhase === 1 || (currentPhase >= 10 && currentPhase <= 15)) && this.levelSelection3D) {
             this.levelSelection3D.updateLevel(this.level);
             this.levelSelection3D.render();
         }
@@ -678,13 +1029,14 @@ class UI {
         }
     }
     
-    renderButton(button, currentColor, currentFontSize) {
+    renderButton(button, currentColor, currentFontSize, customX = null) {
         const isPlay = (button === this.playButton);
         const fillProgress = isPlay ? this.playButtonFillProgress : this.helpButtonFillProgress;
+        const x = customX !== null ? customX : button.x;
         
         // 绘制按钮（黑色填充）
         this.drawRoundedRect(
-            button.x,
+            x,
             button.y,
             button.width,
             button.height,
@@ -698,7 +1050,7 @@ class UI {
             this.ctx.save();
             // 创建裁剪路径（只绘制按钮区域内的内容）
             this.drawRoundedRect(
-                button.x,
+                x,
                 button.y,
                 button.width,
                 button.height,
@@ -709,7 +1061,7 @@ class UI {
             // 绘制从左到右的白色填充
             const fillWidth = button.width * fillProgress;
             this.drawRoundedRect(
-                button.x,
+                x,
                 button.y,
                 fillWidth,
                 button.height,
@@ -724,7 +1076,7 @@ class UI {
         this.ctx.strokeStyle = button.strokeColor;
         this.ctx.lineWidth = button.strokeWidth;
         this.drawRoundedRect(
-            button.x,
+            x,
             button.y,
             button.width,
             button.height,
@@ -740,7 +1092,73 @@ class UI {
         this.ctx.textBaseline = 'middle';
         this.ctx.fillText(
             button.text,
-            button.x + button.width / 2,
+            x + button.width / 2,
+            button.y + button.height / 2
+        );
+    }
+    
+    renderButtonAtPosition(button, currentColor, currentFontSize, x) {
+        // 暂停菜单按钮不使用填充效果
+        const fillProgress = 0;
+        
+        // 绘制按钮（黑色填充）
+        this.drawRoundedRect(
+            x,
+            button.y,
+            button.width,
+            button.height,
+            button.cornerRadius
+        );
+        this.ctx.fillStyle = currentColor;
+        this.ctx.fill();
+        
+        // 如果填充进度 > 0，绘制从左到右的白色填充
+        if (fillProgress > 0) {
+            this.ctx.save();
+            // 创建裁剪路径（只绘制按钮区域内的内容）
+            this.drawRoundedRect(
+                x,
+                button.y,
+                button.width,
+                button.height,
+                button.cornerRadius
+            );
+            this.ctx.clip();
+            
+            // 绘制从左到右的白色填充
+            const fillWidth = button.width * fillProgress;
+            this.drawRoundedRect(
+                x,
+                button.y,
+                fillWidth,
+                button.height,
+                button.cornerRadius
+            );
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.fill();
+            this.ctx.restore();
+        }
+        
+        // 绘制白色描边
+        this.ctx.strokeStyle = button.strokeColor;
+        this.ctx.lineWidth = button.strokeWidth;
+        this.drawRoundedRect(
+            x,
+            button.y,
+            button.width,
+            button.height,
+            button.cornerRadius
+        );
+        this.ctx.stroke();
+        
+        // 绘制文字（暂停菜单按钮文字始终白色）
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.font = `bold ${currentFontSize}px Arial`;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(
+            button.text,
+            x + button.width / 2,
             button.y + button.height / 2
         );
     }
@@ -896,8 +1314,62 @@ class UI {
         this.ctx.globalAlpha = 1.0;
     }
     
+    renderMainGameScreen() {
+        // 更新暂停菜单动画
+        this.updateOverlayAnimation();
+        this.updateButtonSlideAnimations();
+        
+        // 更新按钮颜色和字体大小
+        if (this.isPaused) {
+            this.updateButtonColor(this.resumeButton, 'resumeButtonColor');
+            this.updateButtonColor(this.quitButton, 'quitButtonColor');
+        }
+        
+        // 绘制暂停按钮（右上角两个白色竖条）
+        if (!this.isPaused) {
+            this.ctx.fillStyle = '#ffffff';
+            const btn = this.pauseButton;
+            const hoverAlpha = this.pauseButton.isHovered ? 0.8 : 1.0;
+            this.ctx.globalAlpha = hoverAlpha;
+            
+            // 第一个竖条
+            this.ctx.fillRect(btn.x, btn.y, btn.barWidth, btn.barHeight);
+            // 第二个竖条
+            this.ctx.fillRect(btn.x + btn.barWidth + btn.barSpacing, btn.y, btn.barWidth, btn.barHeight);
+            
+            this.ctx.globalAlpha = 1.0;
+        }
+        
+        // 如果暂停，绘制黑幕和按钮
+        if (this.isPaused) {
+            // 绘制黑幕（透明度50%）
+            this.ctx.fillStyle = `rgba(0, 0, 0, ${this.pauseOverlay.alpha * 0.5})`;
+            this.ctx.fillRect(0, 0, this.width, this.height);
+            
+            // 绘制Resume按钮（从左边滑入）
+            // 使用currentX作为按钮的x坐标
+            const resumeX = this.resumeButton.currentX;
+            this.renderButtonAtPosition(
+                this.resumeButton, 
+                this.resumeButtonColor, 
+                this.resumeButtonFontSize,
+                resumeX
+            );
+            
+            // 绘制Quit按钮（从右边滑入）
+            const quitX = this.quitButton.currentX;
+            this.renderButtonAtPosition(
+                this.quitButton, 
+                this.quitButtonColor, 
+                this.quitButtonFontSize,
+                quitX
+            );
+        }
+    }
+    
     renderHelpScreen() {
         // 更新hover字体大小（平滑过渡）
+        this.updateButtonHoverSize(this.backButtonPhase2, 'backButtonPhase2HoverFontSize');
         this.updateButtonHoverSize(this.tutorialButton, 'tutorialButtonHoverFontSize');
         
         // 左上角标题（边距扩大）
@@ -910,6 +1382,9 @@ class UI {
         // 左上角正文（在标题下方，间距扩大2倍）
         this.ctx.font = '24px Arial';
         this.ctx.fillText('Empty', 60, 140);  // 与标题间距从60扩大2倍到100，所以是40+100=140
+        
+        // 左下角Back按钮（使用统一箭头按钮样式，使用hover字体大小）
+        this.renderArrowButton(this.backButtonPhase2, this.backButtonPhase2HoverFontSize);
         
         // 右下角Tutorial按钮（使用统一箭头按钮样式，使用hover字体大小）
         this.renderArrowButton(this.tutorialButton, this.tutorialButtonHoverFontSize);

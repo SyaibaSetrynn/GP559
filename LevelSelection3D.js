@@ -1,11 +1,10 @@
 // LevelSelection3D.js - 3D关卡选择相关功能
 
 class LevelSelection3D {
-    constructor(container, canvas) {
+    constructor(container, width, height) {
         this.container = container;
-        this.canvas = canvas;
-        this.width = canvas.width;
-        this.height = canvas.height;
+        this.width = width;
+        this.height = height;
         this.currentLevel = 1;
         
         // 模型相关
@@ -14,6 +13,10 @@ class LevelSelection3D {
         this.modelGroups = {}; // 每个模型的组（包含模型和灯光）
         this.modelLights = {}; // 每个模型的灯光引用（用于动画）
         this.modelCenters = {}; // 每个模型的原始中心位置（用于位置计算）
+        this.modelScales = {}; // 每个模型的当前scale（用于动画）
+        this.modelBaseScales = {}; // 每个模型的基础scale（第一次加载时的scale）
+        this.modelScaleAnimations = {}; // 每个模型的scale动画状态
+        this.hoveredModel = null; // 当前hover的模型level
         this.scene = null;
         this.camera = null;
         this.renderer = null;
@@ -69,7 +72,7 @@ class LevelSelection3D {
         this.threeCanvas.style.top = '0';
         this.threeCanvas.style.left = '0';
         this.threeCanvas.style.zIndex = '1'; // 3D canvas 在 UI canvas 下方
-        this.threeCanvas.style.pointerEvents = 'none'; // 不拦截鼠标事件
+        this.threeCanvas.style.pointerEvents = 'auto'; // 允许鼠标事件（用于模型交互）
         this.container.appendChild(this.threeCanvas);
         
         this.renderer = new THREE.WebGLRenderer({ 
@@ -85,6 +88,9 @@ class LevelSelection3D {
         this.scene.add(ambientLight);
         
         console.log('Three.js scene initialized');
+        
+        // 设置鼠标事件
+        this.setupMouseEvents();
         
         // 初始化时加载当前level及其相邻的level
         this.updateVisibleLevels();
@@ -179,13 +185,19 @@ class LevelSelection3D {
             console.log(`Model size for level ${level}:`, size, `maxDimension:`, maxDimension);
             
             const targetHeight = 2.0;
-            const scale = targetHeight / maxDimension;
-            model.scale.set(scale, scale, scale);
+            const baseScale = targetHeight / maxDimension;
+            model.scale.set(baseScale, baseScale, baseScale);
             
-            console.log(`Model scaled by ${scale}, final size:`, {
-                x: size.x * scale,
-                y: size.y * scale,
-                z: size.z * scale
+            // 保存基础scale和当前scale（用于scale动画）
+            this.modelBaseScales[level] = baseScale;
+            if (!this.modelScales[level]) {
+                this.modelScales[level] = 1.0;
+            }
+            
+            console.log(`Model scaled by ${baseScale}, final size:`, {
+                x: size.x * baseScale,
+                y: size.y * baseScale,
+                z: size.z * baseScale
             });
             
             // 计算圆盘上的位置（考虑当前圆盘旋转）
@@ -244,6 +256,16 @@ class LevelSelection3D {
             this.modelLights[level] = {
                 spotlight: spotlight,
                 baseIntensity: baseLightIntensity
+            };
+            
+            // 初始化模型scale为1.0
+            this.modelScales[level] = 1.0;
+            this.modelScaleAnimations[level] = {
+                isAnimating: false,
+                startTime: 0,
+                duration: 200, // 0.2秒
+                startScale: 1.0,
+                targetScale: 1.0
             };
             
             // 缓存模型和组
@@ -631,6 +653,314 @@ class LevelSelection3D {
         }
     }
     
+    // 设置鼠标事件监听
+    setupMouseEvents() {
+        if (!this.threeCanvas) return;
+        
+        const raycaster = new window.THREE.Raycaster();
+        const mouse = new window.THREE.Vector2();
+        
+        // 鼠标移动事件
+        this.threeCanvas.addEventListener('mousemove', (e) => {
+            // 检查当前phase是否在1或10-15之间
+            const currentPhase = (typeof StateManager !== 'undefined') ? StateManager.getPhase() : 0;
+            if (currentPhase !== 1 && (currentPhase < 10 || currentPhase > 15)) {
+                return; // 不在level selection或主界面，不响应hover
+            }
+            
+            // 检查是否在暂停状态
+            if (this.uiInstance && this.uiInstance.isPaused) {
+                // 暂停状态下，不响应模型hover
+                if (this.hoveredModel !== null) {
+                    const oldHovered = this.hoveredModel;
+                    this.hoveredModel = null;
+                    this.startScaleAnimation(oldHovered, 1.0); // 恢复原大小
+                }
+                return;
+            }
+            
+            const rect = this.threeCanvas.getBoundingClientRect();
+            mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+            
+            raycaster.setFromCamera(mouse, this.camera);
+            
+            // 检查与哪个模型相交
+            let newHoveredModel = null;
+            for (const level in this.models) {
+                const model = this.models[level];
+                if (!model || !this.modelGroups[level]) continue;
+                
+                const intersects = raycaster.intersectObject(model, true);
+                if (intersects.length > 0) {
+                    // 只响应主选模型（当前level）
+                    if (parseInt(level) === this.currentLevel) {
+                        newHoveredModel = parseInt(level);
+                        break;
+                    }
+                }
+            }
+            
+            // 更新hover状态
+            if (newHoveredModel !== this.hoveredModel) {
+                const oldHovered = this.hoveredModel;
+                this.hoveredModel = newHoveredModel;
+                
+                // 更新scale动画
+                if (oldHovered !== null) {
+                    this.startScaleAnimation(oldHovered, 1.0); // 恢复原大小
+                }
+                if (this.hoveredModel !== null) {
+                    this.startScaleAnimation(this.hoveredModel, 1.05); // hover放大
+                }
+            }
+        });
+        
+        // 鼠标点击事件
+        this.threeCanvas.addEventListener('click', (e) => {
+            // 检查当前phase是否在1或10-15之间
+            const currentPhase = (typeof StateManager !== 'undefined') ? StateManager.getPhase() : 0;
+            if (currentPhase !== 1 && (currentPhase < 10 || currentPhase > 15)) {
+                return; // 不在level selection或主界面，不响应点击
+            }
+            
+            const rect = this.threeCanvas.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const clickY = e.clientY - rect.top;
+            
+            // Phase 1: Level Selection - 检查UI按钮点击
+            if (currentPhase === 1) {
+                // 检查是否点击了Back按钮（左上角）
+                if (this.uiInstance && this.uiInstance.backButton) {
+                    const backBtn = this.uiInstance.backButton;
+                    if (clickX >= backBtn.x && clickX <= backBtn.x + backBtn.width &&
+                        clickY >= backBtn.y && clickY <= backBtn.y + backBtn.height) {
+                        // 触发Back按钮点击
+                        if (typeof StateManager !== 'undefined') {
+                            StateManager.setPhase(0);
+                        }
+                        return;
+                    }
+                }
+                
+                // 检查是否点击了左箭头按钮
+                if (this.uiInstance && this.uiInstance.leftArrowButton) {
+                    const leftBtn = this.uiInstance.leftArrowButton;
+                    if (clickX >= leftBtn.x && clickX <= leftBtn.x + leftBtn.width &&
+                        clickY >= leftBtn.y && clickY <= leftBtn.y + leftBtn.height) {
+                        // 触发左箭头点击
+                        if (this.uiInstance && !this.uiInstance.levelAnimation.isAnimating) {
+                            if (this.uiInstance.level > 0) {
+                                this.uiInstance.level--;
+                                this.uiInstance.updateLevelLabel();
+                                this.updateLevel(this.uiInstance.level);
+                            }
+                        }
+                        return;
+                    }
+                }
+                
+                // 检查是否点击了右箭头按钮
+                if (this.uiInstance && this.uiInstance.rightArrowButton) {
+                    const rightBtn = this.uiInstance.rightArrowButton;
+                    if (clickX >= rightBtn.x && clickX <= rightBtn.x + rightBtn.width &&
+                        clickY >= rightBtn.y && clickY <= rightBtn.y + rightBtn.height) {
+                        // 触发右箭头点击
+                        if (this.uiInstance && !this.uiInstance.levelAnimation.isAnimating) {
+                            if (this.uiInstance.level < 2) {
+                                this.uiInstance.level++;
+                                this.uiInstance.updateLevelLabel();
+                                this.updateLevel(this.uiInstance.level);
+                            }
+                        }
+                        return;
+                    }
+                }
+                
+                // 检查是否点击了Help按钮（右下角）
+                if (this.uiInstance && this.uiInstance.helpButtonPhase1) {
+                    const helpBtn = this.uiInstance.helpButtonPhase1;
+                    if (clickX >= helpBtn.x && clickX <= helpBtn.x + helpBtn.width &&
+                        clickY >= helpBtn.y && clickY <= helpBtn.y + helpBtn.height) {
+                        // 触发Help按钮点击
+                        if (typeof StateManager !== 'undefined') {
+                            StateManager.setPhase(2);
+                        }
+                        return;
+                    }
+                }
+                
+                // 检查是否点击了Tutorial按钮（右下角）
+                if (this.uiInstance && this.uiInstance.tutorialButtonPhase1) {
+                    const tutorialBtn = this.uiInstance.tutorialButtonPhase1;
+                    if (clickX >= tutorialBtn.x && clickX <= tutorialBtn.x + tutorialBtn.width &&
+                        clickY >= tutorialBtn.y && clickY <= tutorialBtn.y + tutorialBtn.height) {
+                        // 触发Tutorial按钮点击
+                        if (typeof StateManager !== 'undefined') {
+                            StateManager.setPhase(10);
+                        }
+                        return;
+                    }
+                }
+            }
+            
+            // Phase 10-15: 主界面 - 检查暂停按钮
+            if (currentPhase >= 10 && currentPhase <= 15) {
+                // 检查是否点击了暂停按钮区域（右上角）
+                // 暂停按钮位置：x = width - 60 - 40, y = 20 + 20, 宽度60, 高度60
+                const pauseButtonX = this.width - 60 - 40;
+                const pauseButtonY = 20 + 20;
+                const pauseButtonWidth = 60;
+                const pauseButtonHeight = 60;
+                
+                if (clickX >= pauseButtonX && clickX <= pauseButtonX + pauseButtonWidth &&
+                    clickY >= pauseButtonY && clickY <= pauseButtonY + pauseButtonHeight) {
+                    // 点击了暂停按钮区域，通知UI处理
+                    if (this.uiInstance && !this.uiInstance.isPaused) {
+                        this.uiInstance.handlePauseClick();
+                    }
+                    return;
+                }
+                
+                // 检查是否在暂停状态
+                if (this.uiInstance && this.uiInstance.isPaused) {
+                    // 如果暂停，检查是否点击了Resume或Quit按钮
+                    const resumeButton = this.uiInstance.resumeButton;
+                    const quitButton = this.uiInstance.quitButton;
+                    
+                    // 检查Resume按钮（使用currentX作为实际位置）
+                    if (clickX >= resumeButton.currentX && clickX <= resumeButton.currentX + resumeButton.width &&
+                        clickY >= resumeButton.y && clickY <= resumeButton.y + resumeButton.height) {
+                        this.uiInstance.handleResumeClick();
+                        return;
+                    }
+                    
+                    // 检查Quit按钮
+                    if (clickX >= quitButton.currentX && clickX <= quitButton.currentX + quitButton.width &&
+                        clickY >= quitButton.y && clickY <= quitButton.y + quitButton.height) {
+                        this.uiInstance.handleQuitClick();
+                        return;
+                    }
+                    
+                    // 暂停状态下，不响应模型点击
+                    return;
+                }
+            }
+            
+            // 处理模型点击（phase 1和phase 10-15都支持）
+            mouse.x = (clickX / this.width) * 2 - 1;
+            mouse.y = -(clickY / this.height) * 2 + 1;
+            
+            raycaster.setFromCamera(mouse, this.camera);
+            
+            // 检查点击了哪个模型
+            for (const level in this.models) {
+                const model = this.models[level];
+                if (!model || !this.modelGroups[level]) continue;
+                
+                const intersects = raycaster.intersectObject(model, true);
+                if (intersects.length > 0) {
+                    // 只响应主选模型（当前level）
+                    if (parseInt(level) === this.currentLevel) {
+                        console.log(`Clicked model level ${level}, phase: ${currentPhase}`);
+                        
+                        // 点击动画：scale降到0.95
+                        this.startScaleAnimation(parseInt(level), 0.95);
+                        
+                        // 延迟后恢复并跳转
+                        setTimeout(() => {
+                            this.startScaleAnimation(parseInt(level), 1.0);
+                            
+                            // 跳转到对应phase
+                            if (typeof StateManager !== 'undefined') {
+                                if (currentPhase === 1) {
+                                    // Phase 1: Level Selection界面，点击模型跳转到对应关卡
+                                    if (parseInt(level) === 0) {
+                                        StateManager.setPhase(10); // Tutorial
+                                    } else if (parseInt(level) === 1) {
+                                        StateManager.setPhase(11); // Level 1
+                                    } else if (parseInt(level) === 2) {
+                                        StateManager.setPhase(12); // Level 2
+                                    }
+                                } else if (currentPhase >= 10 && currentPhase <= 15) {
+                                    // Phase 10-15: 主界面，点击模型跳转到对应关卡
+                                    if (parseInt(level) === 1) {
+                                        StateManager.setPhase(11);
+                                    } else if (parseInt(level) === 2) {
+                                        StateManager.setPhase(12);
+                                    }
+                                }
+                            }
+                        }, 150);
+                        break;
+                    }
+                }
+            }
+        });
+        
+        // 鼠标离开canvas
+        this.threeCanvas.addEventListener('mouseleave', () => {
+            if (this.hoveredModel !== null) {
+                const oldHovered = this.hoveredModel;
+                this.hoveredModel = null;
+                this.startScaleAnimation(oldHovered, 1.0); // 恢复原大小
+            }
+        });
+    }
+    
+    // 启动scale动画
+    startScaleAnimation(level, targetScale) {
+        if (!this.modelScales[level] || !this.modelGroups[level]) return;
+        
+        const anim = this.modelScaleAnimations[level];
+        anim.startScale = this.modelScales[level];
+        anim.targetScale = targetScale;
+        anim.startTime = Date.now();
+        anim.isAnimating = true;
+    }
+    
+    // 更新scale动画
+    updateScaleAnimations() {
+        const THREE = window.THREE;
+        if (!THREE) return;
+        
+        for (const level in this.modelScaleAnimations) {
+            const anim = this.modelScaleAnimations[level];
+            if (!anim.isAnimating || !this.modelGroups[level]) continue;
+            
+            const elapsed = Date.now() - anim.startTime;
+            const progress = Math.min(elapsed / anim.duration, 1);
+            
+            // 使用easeInOut缓动
+            const easedProgress = progress < 0.5 
+                ? 2 * progress * progress 
+                : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+            
+            // 插值scale
+            const startScale = anim.startScale;
+            this.modelScales[level] = startScale + (anim.targetScale - startScale) * easedProgress;
+            
+            // 更新模型scale
+            const model = this.models[level];
+            if (model && this.modelBaseScales[level]) {
+                const baseScale = this.modelBaseScales[level];
+                const currentScale = this.modelScales[level] || 1.0;
+                
+                // 应用动画scale
+                model.scale.set(
+                    baseScale * currentScale,
+                    baseScale * currentScale,
+                    baseScale * currentScale
+                );
+            }
+            
+            if (progress >= 1) {
+                this.modelScales[level] = anim.targetScale;
+                anim.isAnimating = false;
+            }
+        }
+    }
+    
     render() {
         if (this.renderer && this.scene && this.camera) {
             // 更新圆盘旋转动画
@@ -638,6 +968,9 @@ class LevelSelection3D {
             
             // 更新光照动画
             this.updateLightAnimations();
+            
+            // 更新scale动画
+            this.updateScaleAnimations();
             
             // 渲染场景
             this.renderer.render(this.scene, this.camera);
