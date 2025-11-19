@@ -501,7 +501,7 @@ vn 1.000000 0.000000 0.000000
 vn 1.000000 0.000000 0.000000
 vn 1.000000 0.000000 0.000000
 s 1
-g pCube1
+g Terrain
 usemtl initialShadingGroup
 f 1/1/1 25/47/2 26/49/3 3/3/4
 s off

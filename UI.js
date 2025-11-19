@@ -155,6 +155,24 @@ class UI {
         this.helpButtonColor = this.helpButton.baseColor;
         this.playButtonFontSize = this.playButton.baseFontSize;
         this.helpButtonFontSize = this.helpButton.baseFontSize;
+        
+        // 主界面按钮从左到右变白动画
+        this.playButtonFillProgress = 0;  // 0-1，填充进度
+        this.helpButtonFillProgress = 0;
+        this.playButtonFillAnimation = {
+            isAnimating: false,
+            startTime: 0,
+            duration: 100,  // 0.1秒
+            targetProgress: 0,
+            startProgress: 0
+        };
+        this.helpButtonFillAnimation = {
+            isAnimating: false,
+            startTime: 0,
+            duration: 100,  // 0.1秒
+            targetProgress: 0,
+            startProgress: 0
+        };
         this.tutorialButtonFontSize = this.tutorialButton.baseFontSize;
         this.backButtonFontSize = this.backButton.baseFontSize;
         this.leftArrowButtonFontSize = this.leftArrowButton.baseFontSize;
@@ -174,7 +192,7 @@ class UI {
         this.level = 1;  // 默认level为1，可以在0,1,2之间变化
         this.levelLabel = {
             x: this.width / 2,  // 水平居中
-            y: 600,  // 高度600位置
+            y: 650,  // 高度650位置（下移50格）
             fontSize: 36,
             text: 'Level 1'  // 默认文本
         };
@@ -213,6 +231,8 @@ class UI {
         
         // 鼠标离开canvas
         this.canvas.addEventListener('mouseleave', () => {
+            const prevPlayHovered = this.playButton.isHovered;
+            const prevHelpHovered = this.helpButton.isHovered;
             this.playButton.isHovered = false;
             this.helpButton.isHovered = false;
             this.tutorialButton.isHovered = false;
@@ -221,6 +241,17 @@ class UI {
             this.rightArrowButton.isHovered = false;
             this.helpButtonPhase1.isHovered = false;
             this.tutorialButtonPhase1.isHovered = false;
+            
+            // 如果hover状态改变，启动填充动画
+            const currentPhase = (typeof StateManager !== 'undefined') ? StateManager.getPhase() : 0;
+            if (currentPhase === 0) {
+                if (prevPlayHovered !== this.playButton.isHovered) {
+                    this.startFillAnimation('play');
+                }
+                if (prevHelpHovered !== this.helpButton.isHovered) {
+                    this.startFillAnimation('help');
+                }
+            }
         });
         
         // 鼠标点击事件
@@ -261,6 +292,8 @@ class UI {
         const currentPhase = (typeof StateManager !== 'undefined') ? StateManager.getPhase() : 0;
         
         // 重置所有hover状态
+        const prevPlayHovered = this.playButton.isHovered;
+        const prevHelpHovered = this.helpButton.isHovered;
         this.playButton.isHovered = false;
         this.helpButton.isHovered = false;
         this.tutorialButton.isHovered = false;
@@ -274,6 +307,14 @@ class UI {
             // 主界面：检查Play和Help按钮
             this.playButton.isHovered = this.isPointInButton(x, y, this.playButton);
             this.helpButton.isHovered = this.isPointInButton(x, y, this.helpButton);
+            
+            // 如果hover状态改变，启动填充动画
+            if (this.playButton.isHovered !== prevPlayHovered) {
+                this.startFillAnimation('play');
+            }
+            if (this.helpButton.isHovered !== prevHelpHovered) {
+                this.startFillAnimation('help');
+            }
         } else if (currentPhase === 1) {
             // Level Selection界面：检查所有按钮
             this.backButton.isHovered = this.isPointInButton(x, y, this.backButton);
@@ -559,6 +600,9 @@ class UI {
     }
     
     renderMainMenu() {
+        // 更新填充进度
+        this.updateFillProgress();
+        
         // 更新颜色（平滑过渡）
         this.updateButtonColor(this.playButton, 'playButtonColor');
         this.updateButtonColor(this.helpButton, 'helpButtonColor');
@@ -568,6 +612,60 @@ class UI {
         
         // 渲染Help按钮
         this.renderButton(this.helpButton, this.helpButtonColor, this.helpButtonFontSize);
+    }
+    
+    startFillAnimation(buttonType) {
+        const isPlay = buttonType === 'play';
+        const button = isPlay ? this.playButton : this.helpButton;
+        const animation = isPlay ? this.playButtonFillAnimation : this.helpButtonFillAnimation;
+        const progressProperty = isPlay ? 'playButtonFillProgress' : 'helpButtonFillProgress';
+        
+        // 设置动画目标
+        animation.startProgress = this[progressProperty];
+        animation.targetProgress = button.isHovered ? 1 : 0;
+        animation.startTime = Date.now();
+        animation.isAnimating = true;
+    }
+    
+    updateFillProgress() {
+        const currentPhase = (typeof StateManager !== 'undefined') ? StateManager.getPhase() : 0;
+        
+        // 只在 phase=0 时更新填充动画
+        if (currentPhase !== 0) {
+            return;
+        }
+        
+        // 更新 Play 按钮填充进度
+        if (this.playButtonFillAnimation.isAnimating) {
+            const elapsed = Date.now() - this.playButtonFillAnimation.startTime;
+            const progress = Math.min(elapsed / this.playButtonFillAnimation.duration, 1);
+            
+            if (progress >= 1) {
+                this.playButtonFillProgress = this.playButtonFillAnimation.targetProgress;
+                this.playButtonFillAnimation.isAnimating = false;
+            } else {
+                // 线性插值
+                const start = this.playButtonFillAnimation.startProgress;
+                const target = this.playButtonFillAnimation.targetProgress;
+                this.playButtonFillProgress = start + (target - start) * progress;
+            }
+        }
+        
+        // 更新 Help 按钮填充进度
+        if (this.helpButtonFillAnimation.isAnimating) {
+            const elapsed = Date.now() - this.helpButtonFillAnimation.startTime;
+            const progress = Math.min(elapsed / this.helpButtonFillAnimation.duration, 1);
+            
+            if (progress >= 1) {
+                this.helpButtonFillProgress = this.helpButtonFillAnimation.targetProgress;
+                this.helpButtonFillAnimation.isAnimating = false;
+            } else {
+                // 线性插值
+                const start = this.helpButtonFillAnimation.startProgress;
+                const target = this.helpButtonFillAnimation.targetProgress;
+                this.helpButtonFillProgress = start + (target - start) * progress;
+            }
+        }
     }
     
     updateButtonColor(button, colorProperty) {
@@ -581,6 +679,9 @@ class UI {
     }
     
     renderButton(button, currentColor, currentFontSize) {
+        const isPlay = (button === this.playButton);
+        const fillProgress = isPlay ? this.playButtonFillProgress : this.helpButtonFillProgress;
+        
         // 绘制按钮（黑色填充）
         this.drawRoundedRect(
             button.x,
@@ -592,13 +693,48 @@ class UI {
         this.ctx.fillStyle = currentColor;
         this.ctx.fill();
         
+        // 如果填充进度 > 0，绘制从左到右的白色填充
+        if (fillProgress > 0) {
+            this.ctx.save();
+            // 创建裁剪路径（只绘制按钮区域内的内容）
+            this.drawRoundedRect(
+                button.x,
+                button.y,
+                button.width,
+                button.height,
+                button.cornerRadius
+            );
+            this.ctx.clip();
+            
+            // 绘制从左到右的白色填充
+            const fillWidth = button.width * fillProgress;
+            this.drawRoundedRect(
+                button.x,
+                button.y,
+                fillWidth,
+                button.height,
+                button.cornerRadius
+            );
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.fill();
+            this.ctx.restore();
+        }
+        
         // 绘制白色描边
         this.ctx.strokeStyle = button.strokeColor;
         this.ctx.lineWidth = button.strokeWidth;
+        this.drawRoundedRect(
+            button.x,
+            button.y,
+            button.width,
+            button.height,
+            button.cornerRadius
+        );
         this.ctx.stroke();
         
-        // 绘制文字
-        this.ctx.fillStyle = '#ffffff';
+        // 绘制文字（根据填充进度从白色平滑变黑）
+        const textColor = this.lerpColor('#ffffff', '#000000', fillProgress);
+        this.ctx.fillStyle = textColor;
         this.ctx.font = `bold ${currentFontSize}px Arial`;
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';

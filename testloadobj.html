@@ -82,10 +82,22 @@
         
         // 渲染循环函数
         let animationId = null;
+        let lastCameraLogTime = 0;
+        
         function animate() {
             animationId = requestAnimationFrame(animate);
             controls.update(); // 更新控制器
             renderer.render(scene, camera);
+            
+            // 每2秒打印一次相机位置和lookAt
+            const now = Date.now();
+            if (now - lastCameraLogTime >= 2000) {
+                lastCameraLogTime = now;
+                const pos = camera.position;
+                const target = controls.target; // OrbitControls的目标点就是lookAt点
+                console.log(`Camera Position: (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
+                console.log(`Looking At: (${target.x.toFixed(2)}, ${target.y.toFixed(2)}, ${target.z.toFixed(2)})`);
+            }
         }
         
         // 添加灯光
@@ -151,26 +163,122 @@
                             console.log('OBJ loaded', object);
                             console.log('Number of children:', object.children.length);
                             
-                            // 遍历所有子对象，打印信息
+                            // 函数：删除经过y轴的face（定义在traverse之前）
+                            function removeFacesCrossingYAxis(mesh) {
+                                const geometry = mesh.geometry;
+                                if (!geometry || !geometry.attributes.position) {
+                                    return;
+                                }
+                                
+                                const positions = geometry.attributes.position;
+                                const indices = geometry.index;
+                                
+                                if (!indices) {
+                                    console.warn('Geometry has no index, cannot remove faces');
+                                    return;
+                                }
+                                
+                                // 找出所有经过y轴（y坐标接近某个值）的face
+                                const facesToRemove = new Set();
+                                const yThreshold = 1.0; // y坐标阈值，接近这个值的面（可能是盖子）
+                                const sizeThreshold = 5.0; // 大小阈值，大的面更可能是盖子
+                                
+                                for (let i = 0; i < indices.count; i += 3) {
+                                    const i1 = indices.getX(i);
+                                    const i2 = indices.getX(i + 1);
+                                    const i3 = indices.getX(i + 2);
+                                    
+                                    const y1 = positions.getY(i1);
+                                    const y2 = positions.getY(i2);
+                                    const y3 = positions.getY(i3);
+                                    
+                                    // 检查face是否接近某个y值（可能是盖子）
+                                    const avgY = (y1 + y2 + y3) / 3;
+                                    const yRange = Math.max(y1, y2, y3) - Math.min(y1, y2, y3);
+                                    
+                                    // 如果face的y坐标接近某个值，且y范围很小（说明是水平面）
+                                    if (Math.abs(avgY) < yThreshold && yRange < 0.5) {
+                                        // 进一步检查：如果face很大（覆盖范围大），更可能是盖子
+                                        const x1 = positions.getX(i1);
+                                        const x2 = positions.getX(i2);
+                                        const x3 = positions.getX(i3);
+                                        const z1 = positions.getZ(i1);
+                                        const z2 = positions.getZ(i2);
+                                        const z3 = positions.getZ(i3);
+                                        
+                                        const xRange = Math.max(x1, x2, x3) - Math.min(x1, x2, x3);
+                                        const zRange = Math.max(z1, z2, z3) - Math.min(z1, z2, z3);
+                                        
+                                        // 如果face覆盖范围很大（可能是盖子），标记为删除
+                                        if (xRange > sizeThreshold || zRange > sizeThreshold) {
+                                            facesToRemove.add(i);
+                                            facesToRemove.add(i + 1);
+                                            facesToRemove.add(i + 2);
+                                            console.log(`Found large face at y=${avgY.toFixed(2)}, size: x=${xRange.toFixed(2)}, z=${zRange.toFixed(2)}`);
+                                        }
+                                    }
+                                }
+                                    
+                                if (facesToRemove.size > 0) {
+                                    console.log(`Removing ${facesToRemove.size / 3} faces from Terrain (${facesToRemove.size} indices)`);
+                                    
+                                    // 创建新的索引数组，排除要删除的face
+                                    const newIndices = [];
+                                    for (let i = 0; i < indices.count; i += 3) {
+                                        if (!facesToRemove.has(i)) {
+                                            newIndices.push(indices.getX(i));
+                                            newIndices.push(indices.getX(i + 1));
+                                            newIndices.push(indices.getX(i + 2));
+                                        }
+                                    }
+                                    
+                                    // 更新几何体的索引
+                                    geometry.setIndex(newIndices);
+                                    geometry.computeVertexNormals(); // 重新计算法线
+                                    console.log(`Terrain geometry updated: ${newIndices.length / 3} faces remaining (removed ${facesToRemove.size / 3} faces)`);
+                                } else {
+                                    console.log('No faces found crossing y-axis in Terrain');
+                                }
+                            }
+                            
+                            // 遍历所有子对象，打印信息并修复材质
                             let meshCount = 0;
+                            let totalVertices = 0;
+                            
                             object.traverse((child) => {
                                 if (child.isMesh) {
                                     meshCount++;
-                                    console.log(`Mesh ${meshCount}:`, child.name, child.geometry, child.material);
+                                    const vertexCount = child.geometry ? child.geometry.attributes.position.count : 0;
+                                    totalVertices += vertexCount;
                                     
-                                    // 打印几何体信息
-                                    if (child.geometry) {
-                                        console.log(`  - Vertices: ${child.geometry.attributes.position.count}`);
-                                        console.log(`  - Faces: ${child.geometry.attributes.position.count / 3}`);
+                                    const meshName = child.name || 'unnamed';
+                                    console.log(`Mesh ${meshCount} [${meshName}]:`, {
+                                        vertices: vertexCount,
+                                        material: child.material ? (Array.isArray(child.material) ? 'array' : child.material.type) : 'none'
+                                    });
+                                    
+                                    // 如果是Terrain组，检查并删除经过y轴的face
+                                    if (meshName.includes('Terrain') || child.parent?.name?.includes('Terrain')) {
+                                        console.log(`Processing Terrain mesh, removing faces that cross y-axis...`);
+                                        removeFacesCrossingYAxis(child);
                                     }
                                     
-                                    // 修复材质
+                                    // 修复材质 - 确保所有mesh都有可见的材质
                                     if (child.material) {
                                         // 如果是黑色材质，替换为可见的材质
                                         if (Array.isArray(child.material)) {
                                             child.material = child.material.map(mat => {
-                                                if (mat && mat.color && mat.color.r === 0 && mat.color.g === 0 && mat.color.b === 0) {
+                                                if (!mat) {
                                                     return new THREE.MeshStandardMaterial({ color: 0x888888 });
+                                                }
+                                                if (mat.color && mat.color.r === 0 && mat.color.g === 0 && mat.color.b === 0) {
+                                                    return new THREE.MeshStandardMaterial({ color: 0x888888 });
+                                                }
+                                                // 确保材质是可见的
+                                                if (mat.opacity === 0 || mat.visible === false) {
+                                                    mat.opacity = 1;
+                                                    mat.transparent = false;
+                                                    mat.visible = true;
                                                 }
                                                 return mat;
                                             });
@@ -178,15 +286,32 @@
                                             if (child.material.color && child.material.color.r === 0 && child.material.color.g === 0 && child.material.color.b === 0) {
                                                 child.material = new THREE.MeshStandardMaterial({ color: 0x888888 });
                                             }
+                                            // 确保材质是可见的
+                                            if (child.material.opacity === 0 || child.material.visible === false) {
+                                                child.material.opacity = 1;
+                                                child.material.transparent = false;
+                                                child.material.visible = true;
+                                            }
                                         }
                                     } else {
                                         // 如果没有材质，添加默认材质
                                         child.material = new THREE.MeshStandardMaterial({ color: 0x888888 });
                                     }
+                                    
+                                    // 确保mesh是可见的
+                                    child.visible = true;
                                 }
                             });
                             
-                            console.log(`Total meshes found: ${meshCount}`);
+                            console.log(`Total meshes found: ${meshCount}, Total vertices: ${totalVertices}`);
+                            
+                            // 打印所有组的名称
+                            console.log('All groups in model:');
+                            object.traverse((child) => {
+                                if (child.name) {
+                                    console.log(`  - ${child.name}`);
+                                }
+                            });
                             
                             resolve(object);
                         },
