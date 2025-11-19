@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #1a1a1a;
+            font-family: Arial, sans-serif;
+        }
+        
+        #gameContainer {
+            position: relative;
+        }
+        
+        #gameCanvas {
+            display: block;
+            border: 2px solid #333;
+            background-color: transparent; /* 透明背景，让3D模型显示 */
+            position: relative;
+            z-index: 2; /* UI canvas 在上层 */
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="1280" height="720"></canvas>
+    </div>
+    
+    <!-- 使用 esm.sh，它有更好的 CORS 支持 -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://esm.sh/three@0.161.0",
+                "three/addons/": "https://esm.sh/three@0.161.0/examples/jsm/"
+            }
+        }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+        import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
+        
+        // 将 Three.js 和相关加载器暴露到全局
+        window.THREE = THREE;
+        window.OBJLoader = OBJLoader;
+        window.MTLLoader = MTLLoader;
+        
+        console.log('Three.js and loaders loaded successfully');
+    </script>
+    <script src="StateManager.js"></script>
+    <script src="LevelSelection3D.js"></script>
+    <script src="UI.js"></script>
+</body>
+</html>
+
