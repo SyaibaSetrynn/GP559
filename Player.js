@@ -2,9 +2,9 @@ import * as T from "https://unpkg.com/three@0.161.0/build/three.module.js";
 import {OrbitControls} from "https://unpkg.com/three@0.161.0/examples/jsm/controls/OrbitControls.js";
 import * as O from "https://unpkg.com/three@0.161.0/examples/jsm/loaders/OBJLoader.js";
 import * as P from "https://unpkg.com/three@0.161.0/examples/jsm/controls/PointerLockControls.js";
-import { Octree } from './three.js-dev/examples/jsm/math/Octree.js';
-import { OctreeHelper } from './three.js-dev/examples/jsm/helpers/OctreeHelper.js';
-import { Capsule } from './three.js-dev/examples/jsm/math/Capsule.js';
+import { Octree } from "https://unpkg.com/three@0.165.0/examples/jsm/math/Octree.js";
+import { OctreeHelper } from "https://unpkg.com/three@0.165.0/examples/jsm/helpers/OctreeHelper.js";
+import { Capsule } from "https://unpkg.com/three@0.165.0/examples/jsm/math/Capsule.js";
 
 /**
  * Some references: https://www.youtube.com/watch?v=oqKzxPMLWxo
