@@ -183,19 +183,15 @@ export class CriticalPointSystem {
         this.criticalPoints.forEach(cpData => {
             const cp = cpData.cp;
             if (cp.userData.isCriticalPoint) {
-                // Pulsing glow effect (faster if being hit by light)
-                const pulseSpeed = cp.userData.isBeingHit ? 
-                    (cp.userData.pulseSpeed || 3) * 2 : 
-                    (cp.userData.pulseSpeed || 3);
-                const pulse = Math.sin(time * pulseSpeed + cp.userData.pulsePhase) * 0.2 + 0.8;
-                cp.scale.setScalar(cp.userData.originalScale * (0.8 + pulse * 0.4));
+                // Static appearance - no pulsing
+                cp.scale.setScalar(cp.userData.originalScale);
                 
-                // Update material opacity for glow effect
-                cp.material.opacity = 0.7 + pulse * 0.3;
+                // Fixed material opacity
+                cp.material.opacity = 0.9;
                 
-                // Update glow child
+                // Fixed glow child opacity
                 if (cp.children[0]) {
-                    cp.children[0].material.opacity = 0.2 + pulse * 0.2;
+                    cp.children[0].material.opacity = 0.3;
                 }
             }
         });
