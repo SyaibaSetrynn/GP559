@@ -224,7 +224,7 @@ levelObj.traverse(obs => {
         // Add critical points to terrain meshes
         if (criticalPointsEnabled) {
             const CP_COLORS = window.CP_COLORS;
-            criticalPointSystem.addCriticalPoints(obs, 3, CP_COLORS.RED);
+            criticalPointSystem.addCriticalPoints(obs, 3, CP_COLORS.WHITE);
         }
     }
 });
@@ -243,7 +243,7 @@ function toggleCriticalPoints(enabled) {
         levelObj.traverse(obs => {
             if (obs.isMesh) {
                 const CP_COLORS = window.CP_COLORS;
-                criticalPointSystem.addCriticalPoints(obs, 3, CP_COLORS.RED);
+                criticalPointSystem.addCriticalPoints(obs, 3, CP_COLORS.WHITE);
             }
         });
         console.log("Critical points enabled");
