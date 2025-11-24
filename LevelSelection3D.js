@@ -144,11 +144,13 @@ class LevelSelection3D {
             // 创建一个临时场景用于生成地图（不添加到主场景）
             const tempScene = new THREE.Scene();
             
-            // 生成地板
+            // 生成地板（会添加到tempScene，我们需要手动移除并添加到model group）
             const floor = createFloor(tempScene, mapWidth, mapDepth, 0.2);
+            tempScene.remove(floor);
             
-            // 生成围墙
+            // 生成围墙（会添加到tempScene，我们需要手动移除并添加到model group）
             const walls = createWalls(tempScene, mapWidth, mapDepth, 2);
+            walls.forEach(wall => tempScene.remove(wall));
             
             // 将所有元素组合到一个Group中
             const model = new THREE.Group();
