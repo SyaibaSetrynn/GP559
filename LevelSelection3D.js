@@ -91,6 +91,10 @@ class LevelSelection3D {
         this.scene.add(ambientLight);
         
         console.log('Three.js scene initialized');
+
+        // Initialize Critical Point System
+        this.criticalPointSystem = new CriticalPointSystem(this.scene);
+        this.criticalPointsEnabled = false; 
         
         // 设置鼠标事件
         this.setupMouseEvents();
@@ -129,7 +133,13 @@ class LevelSelection3D {
                 return;
             }
             
-            console.log(`Generating map for level ${level}: ${mapWidth}x${mapDepth}`);
+
+            console.log(`Loading model for level ${level}: ${objPath}`);
+
+            if (this.criticalPointsEnabled && this.criticalPointSystem) {
+                const CP_COLORS = window.CP_COLORS;
+                this.criticalPointSystem.addCriticalPoints(model, 3, CP_COLORS.RED);
+            }
             
             // 创建一个临时场景用于生成地图（不添加到主场景）
             const tempScene = new THREE.Scene();
@@ -433,6 +443,24 @@ class LevelSelection3D {
                     this.startLightAnimation(visibleLevel, 5.0, true);
                 }
             }
+        }
+    }
+
+    // Toggle critical points on/off
+    toggleCriticalPoints(enabled) {
+        this.criticalPointsEnabled = enabled;
+        
+        if (!this.criticalPointSystem) return;
+        
+        if (enabled) {
+            // Add critical points to all loaded models
+            Object.values(this.models).forEach(model => {
+                const CP_COLORS = window.CP_COLORS;
+                this.criticalPointSystem.addCriticalPoints(model, 3, CP_COLORS.RED);
+            });
+        } else {
+            // Remove all critical points
+            this.criticalPointSystem.clearAllCriticalPoints();
         }
     }
     
@@ -849,6 +877,11 @@ class LevelSelection3D {
             
             // 更新scale动画
             this.updateScaleAnimations();
+
+            // Update critical points (if enabled)
+            if (this.criticalPointSystem) {
+                this.criticalPointSystem.updateCriticalPoints();
+}
             
             // 渲染场景
             this.renderer.render(this.scene, this.camera);

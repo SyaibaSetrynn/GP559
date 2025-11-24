@@ -51,12 +51,17 @@
         import * as THREE from 'three';
         import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
         import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
+        import { CriticalPointSystem, CP_COLORS } from './critical-point-system.js';
+        
         
         // 将 Three.js 和相关加载器暴露到全局
         window.THREE = THREE;
         window.OBJLoader = OBJLoader;
         window.MTLLoader = MTLLoader;
-        
+
+        window.CriticalPointSystem = CriticalPointSystem;
+        window.CP_COLORS = CP_COLORS;
+
         console.log('Three.js and loaders loaded successfully');
     </script>
     <script src="StateManager.js"></script>

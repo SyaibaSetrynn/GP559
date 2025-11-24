@@ -198,6 +198,10 @@ const menuOverlay = document.getElementById("menuOverlay");
 // handling collision
 const collisionWorld = new Octree();
 
+// Initialize Critical Point System
+const criticalPointSystem = new window.CriticalPointSystem(scene);
+let criticalPointsEnabled = true; // Toggle for critical points
+
 // loading terrain
 const levelLoader = new O.OBJLoader();
 let levelObj = null;
@@ -216,6 +220,12 @@ levelObj.traverse(obs => {
         obs.material = new T.MeshStandardMaterial({
             color: new T.Color(Math.random(), Math.random(), Math.random())
         });
+        
+        // Add critical points to terrain meshes
+        if (criticalPointsEnabled) {
+            const CP_COLORS = window.CP_COLORS;
+            criticalPointSystem.addCriticalPoints(obs, 3, CP_COLORS.RED);
+        }
     }
 });
 scene.add(levelObj);
@@ -223,6 +233,29 @@ scene.add(levelObj);
 // create playable player and put in scene
 let player1 = new Player(0, renderer, collisionWorld);
 scene.add(player1.object);
+
+// Function to toggle critical points on/off
+function toggleCriticalPoints(enabled) {
+    criticalPointsEnabled = enabled;
+    
+    if (enabled) {
+        // Add critical points to all terrain meshes
+        levelObj.traverse(obs => {
+            if (obs.isMesh) {
+                const CP_COLORS = window.CP_COLORS;
+                criticalPointSystem.addCriticalPoints(obs, 3, CP_COLORS.RED);
+            }
+        });
+        console.log("Critical points enabled");
+    } else {
+        // Remove all critical points
+        criticalPointSystem.clearAllCriticalPoints();
+        console.log("Critical points disabled");
+    }
+}
+
+// Make toggle function globally accessible (for debugging)
+window.toggleCriticalPoints = toggleCriticalPoints;
 
 // WASD controls: keydwon
 document.addEventListener('keydown', function (event) {
@@ -324,6 +357,11 @@ function animate(timestamp) {
     let delta = (timestamp - previousTime) / 1000;
 
     player1.update();
+    
+    // Update critical points animation
+    if (criticalPointSystem) {
+        criticalPointSystem.updateCriticalPoints();
+    }
 
     renderer.render(scene, player1.camera);
     previousTime = timestamp;
