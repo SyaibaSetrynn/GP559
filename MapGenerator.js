@@ -30,9 +30,11 @@ export function createFloor(scene, width, depth, thickness = 0.2) {
   // 创建地板网格
   const floorMesh = new T.Mesh(floorGeometry, floorMaterial);
   
-  // 设置地板位置：地板顶部在y=-0.8，所以地板中心在y=-0.8-thickness/2
-  // 地板中心应该在围墙中心：(width-1)/2, -0.8-thickness/2, (depth-1)/2
-  floorMesh.position.set((width - 1) / 2, -0.8 - thickness / 2, (depth - 1) / 2);
+  // 设置地板位置：
+  // - 围栏底部在 y=0，地板顶部应该在 y=0 或更高（覆盖围栏底部）
+  // - 地板顶部在 y=0，所以地板中心在 y=thickness/2
+  // - 地板中心应该在围墙区域中心：((width-1)/2, thickness/2, (depth-1)/2)
+  floorMesh.position.set((width - 1) / 2, thickness / 2, (depth - 1) / 2);
   
   // 将地板添加到场景
   scene.add(floorMesh);

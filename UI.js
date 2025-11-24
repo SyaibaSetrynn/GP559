@@ -943,9 +943,11 @@ class UI {
             }
         }
         
-        // 在phase1或phase10-15时，更新3D模型并渲染
+        // 在phase1或phase10-15时，渲染3D模型
+        // 注意：level 的更新由 LevelSelection3D 在点击箭头时直接控制，这里只负责渲染
         if ((currentPhase === 1 || (currentPhase >= 10 && currentPhase <= 15)) && this.levelSelection3D) {
-            this.levelSelection3D.updateLevel(this.level);
+            // 只在 phase 变化时同步 level，避免每帧都调用 updateLevel
+            // LevelSelection3D 自己会在点击箭头时调用 updateLevel
             this.levelSelection3D.render();
         }
     }
