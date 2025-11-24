@@ -17,6 +17,11 @@ class LevelSelection3D {
         this.modelBaseScales = {}; // 每个模型的基础scale（第一次加载时的scale）
         this.modelScaleAnimations = {}; // 每个模型的scale动画状态
         this.hoveredModel = null; // 当前hover的模型level
+        this.mazeBlocks = {}; // 每个level的迷宫障碍物 { level: [blocks...] }
+        this.inLevelMode = false; // 是否在关卡模式
+        this.currentLevelModel = null; // 当前进入的关卡模型
+        this.previousCameraPosition = null; // 进入关卡前的相机位置
+        this.previousCameraTarget = null; // 进入关卡前的相机lookAt目标
         this.scene = null;
         this.camera = null;
         this.renderer = null;
@@ -983,22 +988,30 @@ class LevelSelection3D {
                         setTimeout(() => {
                             this.startScaleAnimation(parseInt(level), 1.0);
                             
-                            // 跳转到对应phase
+                            // 跳转到对应phase并进入关卡模式
                             if (typeof StateManager !== 'undefined') {
                                 if (currentPhase === 1) {
-                                    // Phase 1: Level Selection界面，点击模型跳转到对应关卡
-                                    if (parseInt(level) === 0) {
+                                    // Phase 1: Level Selection界面，点击模型进入关卡
+                                    const clickedLevel = parseInt(level);
+                                    this.enterLevel(clickedLevel);
+                                    
+                                    // 跳转到对应phase
+                                    if (clickedLevel === 0) {
                                         StateManager.setPhase(10); // Tutorial
-                                    } else if (parseInt(level) === 1) {
+                                    } else if (clickedLevel === 1) {
                                         StateManager.setPhase(11); // Level 1
-                                    } else if (parseInt(level) === 2) {
+                                    } else if (clickedLevel === 2) {
                                         StateManager.setPhase(12); // Level 2
                                     }
                                 } else if (currentPhase >= 10 && currentPhase <= 15) {
-                                    // Phase 10-15: 主界面，点击模型跳转到对应关卡
-                                    if (parseInt(level) === 1) {
+                                    // Phase 10-15: 主界面，点击模型进入关卡
+                                    const clickedLevel = parseInt(level);
+                                    this.enterLevel(clickedLevel);
+                                    
+                                    // 跳转到对应关卡
+                                    if (clickedLevel === 1) {
                                         StateManager.setPhase(11);
-                                    } else if (parseInt(level) === 2) {
+                                    } else if (clickedLevel === 2) {
                                         StateManager.setPhase(12);
                                     }
                                 }
@@ -1073,17 +1086,320 @@ class LevelSelection3D {
         }
     }
     
+    // 进入关卡模式：隐藏其他模型，聚焦相机，生成迷宫
+    async enterLevel(level) {
+        const THREE = window.THREE;
+        if (!THREE) return;
+        
+        console.log(`Entering level ${level}`);
+        
+        // 保存进入关卡前的相机状态
+        if (!this.inLevelMode) {
+            this.previousCameraPosition = this.camera.position.clone();
+            if (this.controls) {
+                this.previousCameraTarget = this.controls.target.clone();
+            } else {
+                // 如果没有controls，计算lookAt目标
+                const direction = new THREE.Vector3();
+                this.camera.getWorldDirection(direction);
+                this.previousCameraTarget = this.camera.position.clone().add(direction.multiplyScalar(5));
+            }
+        }
+        
+        // 隐藏其他模型
+        for (const levelKey in this.modelGroups) {
+            const modelLevel = parseInt(levelKey);
+            if (modelLevel !== level) {
+                const modelGroup = this.modelGroups[modelLevel];
+                if (modelGroup) {
+                    modelGroup.visible = false;
+                }
+            }
+        }
+        
+        // 显示当前关卡模型
+        const currentModelGroup = this.modelGroups[level];
+        if (currentModelGroup) {
+            currentModelGroup.visible = true;
+            this.currentLevelModel = this.models[level];
+        }
+        
+        // 聚焦相机到当前模型
+        this.focusCameraOnModel(level);
+        
+        // 生成迷宫（清除旧的，重新生成）
+        await this.generateMaze(level);
+        
+        this.inLevelMode = true;
+    }
+    
+    // 聚焦相机到模型
+    focusCameraOnModel(level) {
+        const model = this.models[level];
+        if (!model) return;
+        
+        // 计算模型的边界框（考虑世界变换）
+        model.updateMatrixWorld(true);
+        const box = new THREE.Box3().setFromObject(model);
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+        
+        // 计算相机位置：在模型上方和前方
+        const maxSize = Math.max(size.x, size.y, size.z);
+        const distance = maxSize * 1.5; // 距离模型1.5倍大小
+        
+        // 相机位置：在模型中心上方和前方
+        const cameraPos = new THREE.Vector3(
+            center.x,
+            center.y + maxSize * 0.5,
+            center.z + distance
+        );
+        
+        this.camera.position.copy(cameraPos);
+        
+        // 更新controls的target
+        if (this.controls) {
+            this.controls.target.copy(center);
+            this.controls.update();
+        } else {
+            this.camera.lookAt(center);
+        }
+    }
+    
+    // 生成迷宫：使用递归回溯算法生成连通迷宫，70%空，30%墙
+    async generateMaze(level) {
+        const THREE = window.THREE;
+        if (!THREE) return;
+        
+        // 清除旧的迷宫
+        if (this.mazeBlocks[level]) {
+            this.mazeBlocks[level].forEach(block => {
+                if (block.parent) {
+                    block.parent.remove(block);
+                }
+                // 清理资源
+                if (block.geometry) block.geometry.dispose();
+                if (block.material) {
+                    if (Array.isArray(block.material)) {
+                        block.material.forEach(m => m.dispose());
+                    } else {
+                        block.material.dispose();
+                    }
+                }
+            });
+            this.mazeBlocks[level] = [];
+        }
+        
+        // 获取地图大小
+        let mapWidth, mapDepth;
+        if (level === 0) {
+            mapWidth = 10;
+            mapDepth = 10;
+        } else if (level === 1) {
+            mapWidth = 14;
+            mapDepth = 14;
+        } else if (level === 2) {
+            mapWidth = 18;
+            mapDepth = 18;
+        } else {
+            return;
+        }
+        
+        // 动态导入 MapGenerator
+        const { createBlock } = await import('./MapGenerator.js');
+        
+        // 内部空间大小（排除围墙）
+        const innerWidth = mapWidth - 2;  // x从1到mapWidth-2
+        const innerDepth = mapDepth - 2;  // z从1到mapDepth-2
+        const totalCells = innerWidth * innerDepth;
+        const targetWallCount = Math.floor(totalCells * 0.3);  // 30%墙
+        
+        // 使用递归回溯算法生成连通迷宫
+        const maze = this.generateConnectedMaze(innerWidth, innerDepth, targetWallCount);
+        
+        // 根据生成的迷宫放置障碍物
+        const mazeBlocks = [];
+        const model = this.models[level];
+        if (!model) return;
+        
+        for (let x = 0; x < innerWidth; x++) {
+            for (let z = 0; z < innerDepth; z++) {
+                // maze[x][z] === 1 表示墙，0 表示空
+                if (maze[x][z] === 1) {
+                    // 将内部坐标转换为实际坐标（内部是0-based，实际是1-based）
+                    const actualX = x + 1;
+                    const actualZ = z + 1;
+                    
+                    // 创建一个临时场景来生成block，然后移除并添加到模型
+                    const tempScene = new THREE.Scene();
+                    const block = createBlock(tempScene, actualX, actualZ, 2);
+                    tempScene.remove(block);
+                    
+                    // 将障碍添加到模型组中，这样它会跟随模型移动和缩放
+                    model.add(block);
+                    mazeBlocks.push(block);
+                }
+            }
+        }
+        
+        this.mazeBlocks[level] = mazeBlocks;
+        const wallCount = mazeBlocks.length;
+        const emptyCount = totalCells - wallCount;
+        console.log(`Generated connected maze for level ${level} (${mapWidth}x${mapDepth}): ${wallCount} walls (${(wallCount/totalCells*100).toFixed(1)}%), ${emptyCount} empty (${(emptyCount/totalCells*100).toFixed(1)}%)`);
+    }
+    
+    // 使用递归回溯算法生成连通迷宫
+    // 返回一个二维数组：1表示墙，0表示空（路径）
+    // 保证所有空地都是连通的
+    generateConnectedMaze(width, depth, targetWallCount) {
+        // 初始化：全部设为墙（1）
+        const maze = Array(width).fill(null).map(() => Array(depth).fill(1));
+        const visited = Array(width).fill(null).map(() => Array(depth).fill(false));
+        
+        // 方向：上、右、下、左（相对于(x,z)坐标系）
+        const directions = [
+            { dx: 0, dz: -1 },  // 上（-z）
+            { dx: 1, dz: 0 },   // 右（+x）
+            { dx: 0, dz: 1 },   // 下（+z）
+            { dx: -1, dz: 0 }   // 左（-x）
+        ];
+        
+        // 从随机起点开始生成路径
+        const startX = Math.floor(Math.random() * width);
+        const startZ = Math.floor(Math.random() * depth);
+        
+        // 递归回溯算法生成路径
+        const stack = [[startX, startZ]];
+        let pathCells = 0;
+        
+        // 先将起点设为空地
+        maze[startX][startZ] = 0;
+        visited[startX][startZ] = true;
+        pathCells++;
+        
+        while (stack.length > 0 && pathCells < (width * depth - targetWallCount)) {
+            const [currentX, currentZ] = stack[stack.length - 1];
+            
+            // 获取未访问的相邻单元格
+            const neighbors = [];
+            for (const dir of directions) {
+                const nextX = currentX + dir.dx * 2;  // 跳过中间的一格
+                const nextZ = currentZ + dir.dz * 2;
+                
+                if (nextX >= 0 && nextX < width && 
+                    nextZ >= 0 && nextZ < depth && 
+                    !visited[nextX][nextZ]) {
+                    neighbors.push({
+                        x: nextX,
+                        z: nextZ,
+                        midX: currentX + dir.dx,
+                        midZ: currentZ + dir.dz
+                    });
+                }
+            }
+            
+            if (neighbors.length > 0) {
+                // 随机选择一个邻居
+                const next = neighbors[Math.floor(Math.random() * neighbors.length)];
+                
+                // 打通路径：当前->中间->邻居
+                maze[next.midX][next.midZ] = 0;  // 中间格设为空
+                maze[next.x][next.z] = 0;        // 邻居格设为空
+                visited[next.x][next.z] = true;
+                pathCells++;
+                
+                stack.push([next.x, next.z]);
+            } else {
+                // 没有未访问的邻居，回溯
+                stack.pop();
+            }
+        }
+        
+        // 如果路径不够（还没达到目标空地数），继续从已访问的路径点扩展
+        // 但这次只打通相邻的一格（不跳过）
+        const allPathCells = [];
+        for (let x = 0; x < width; x++) {
+            for (let z = 0; z < depth; z++) {
+                if (maze[x][z] === 0) {
+                    allPathCells.push([x, z]);
+                }
+            }
+        }
+        
+        // 从路径点随机扩展，直到达到目标空地数
+        while (pathCells < (width * depth - targetWallCount) && allPathCells.length > 0) {
+            const randomIndex = Math.floor(Math.random() * allPathCells.length);
+            const [currentX, currentZ] = allPathCells[randomIndex];
+            
+            // 随机选择一个相邻的墙
+            const shuffledDirs = [...directions].sort(() => Math.random() - 0.5);
+            let expanded = false;
+            
+            for (const dir of shuffledDirs) {
+                const nextX = currentX + dir.dx;
+                const nextZ = currentZ + dir.dz;
+                
+                if (nextX >= 0 && nextX < width && 
+                    nextZ >= 0 && nextZ < depth && 
+                    maze[nextX][nextZ] === 1) {  // 如果是墙
+                    maze[nextX][nextZ] = 0;  // 打通
+                    allPathCells.push([nextX, nextZ]);
+                    pathCells++;
+                    expanded = true;
+                    break;
+                }
+            }
+            
+            if (!expanded) {
+                // 这个点无法扩展了，移除
+                allPathCells.splice(randomIndex, 1);
+            }
+        }
+        
+        return maze;
+    }
+    
+    // 退出关卡模式：恢复所有模型显示，恢复相机位置
+    exitLevel() {
+        if (!this.inLevelMode) return;
+        
+        // 显示所有模型
+        for (const levelKey in this.modelGroups) {
+            const modelGroup = this.modelGroups[levelKey];
+            if (modelGroup) {
+                modelGroup.visible = true;
+            }
+        }
+        
+        // 恢复相机位置
+        if (this.previousCameraPosition && this.previousCameraTarget) {
+            this.camera.position.copy(this.previousCameraPosition);
+            if (this.controls) {
+                this.controls.target.copy(this.previousCameraTarget);
+                this.controls.update();
+            } else {
+                this.camera.lookAt(this.previousCameraTarget);
+            }
+        }
+        
+        this.inLevelMode = false;
+        this.currentLevelModel = null;
+    }
+    
     render() {
         if (this.renderer && this.scene && this.camera) {
-            // 更新圆盘旋转动画（这个函数内部会在动画进行时调用 updateModelPositions）
-            this.updateDiskRotationAnimation();
-            
-            // 即使没有动画，也要确保模型位置是最新的
-            // 这样可以确保在动画结束后或初始加载时位置正确
-            // 注意：updateDiskRotationAnimation 在动画进行时已经调用了 updateModelPositions
-            // 所以这里只需要在没有动画时更新一次即可
-            if (!this.diskRotationAnimation.isAnimating) {
-                this.updateModelPositions();
+            // 如果不在关卡模式，更新圆盘旋转动画
+            if (!this.inLevelMode) {
+                // 更新圆盘旋转动画（这个函数内部会在动画进行时调用 updateModelPositions）
+                this.updateDiskRotationAnimation();
+                
+                // 即使没有动画，也要确保模型位置是最新的
+                // 这样可以确保在动画结束后或初始加载时位置正确
+                // 注意：updateDiskRotationAnimation 在动画进行时已经调用了 updateModelPositions
+                // 所以这里只需要在没有动画时更新一次即可
+                if (!this.diskRotationAnimation.isAnimating) {
+                    this.updateModelPositions();
+                }
             }
             
             // 更新光照动画
