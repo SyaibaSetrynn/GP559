@@ -88,6 +88,10 @@ class LevelSelection3D {
         this.scene.add(ambientLight);
         
         console.log('Three.js scene initialized');
+
+        // Initialize Critical Point System
+        this.criticalPointSystem = new CriticalPointSystem(this.scene);
+        this.criticalPointsEnabled = false; 
         
         // 设置鼠标事件
         this.setupMouseEvents();
@@ -117,6 +121,11 @@ class LevelSelection3D {
             const mtlPath = `Objects/${modelName}.mtl`;
             
             console.log(`Loading model for level ${level}: ${objPath}`);
+
+            if (this.criticalPointsEnabled && this.criticalPointSystem) {
+                const CP_COLORS = window.CP_COLORS;
+                this.criticalPointSystem.addCriticalPoints(model, 3, CP_COLORS.RED);
+            }
             
             // 加载 MTL 材质
             const mtlLoader = new MTLLoader();
@@ -557,6 +566,24 @@ class LevelSelection3D {
             }
         }
     }
+
+    // Toggle critical points on/off
+    toggleCriticalPoints(enabled) {
+        this.criticalPointsEnabled = enabled;
+        
+        if (!this.criticalPointSystem) return;
+        
+        if (enabled) {
+            // Add critical points to all loaded models
+            Object.values(this.models).forEach(model => {
+                const CP_COLORS = window.CP_COLORS;
+                this.criticalPointSystem.addCriticalPoints(model, 3, CP_COLORS.RED);
+            });
+        } else {
+            // Remove all critical points
+            this.criticalPointSystem.clearAllCriticalPoints();
+        }
+    }
     
     // 启动圆盘旋转动画
     startDiskRotationAnimation(targetRotation) {
@@ -971,6 +998,11 @@ class LevelSelection3D {
             
             // 更新scale动画
             this.updateScaleAnimations();
+
+            // Update critical points (if enabled)
+            if (this.criticalPointSystem) {
+                this.criticalPointSystem.updateCriticalPoints();
+}
             
             // 渲染场景
             this.renderer.render(this.scene, this.camera);
