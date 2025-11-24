@@ -1,5 +1,8 @@
 // LevelSelection3D.js - 3D关卡选择相关功能
 
+// @ts-ignore - URL import is handled by importmap in HTML
+import { createFloor, createWalls } from './MapGenerator.js';
+
 class LevelSelection3D {
     constructor(container, width, height) {
         this.container = container;
@@ -44,7 +47,7 @@ class LevelSelection3D {
     
     async initThree() {
         // 等待 Three.js 可用
-        while (!window.THREE || !window.OBJLoader || !window.MTLLoader) {
+        while (!window.THREE) {
             await new Promise(resolve => setTimeout(resolve, 50));
         }
         
@@ -98,7 +101,7 @@ class LevelSelection3D {
     
     async loadModel(level) {
         // 如果 Three.js 还没加载完成，等待
-        if (!window.THREE || !window.OBJLoader || !window.MTLLoader) {
+        if (!window.THREE) {
             await this.initThree();
         }
         
@@ -109,60 +112,38 @@ class LevelSelection3D {
         
         try {
             const THREE = window.THREE;
-            const OBJLoader = window.OBJLoader;
-            const MTLLoader = window.MTLLoader;
             
-            const modelName = `Terrain${level}Prev`;
-            const objPath = `Objects/${modelName}.obj`;
-            const mtlPath = `Objects/${modelName}.mtl`;
+            // 根据level确定地图大小
+            let mapWidth, mapDepth;
+            if (level === 0) {
+                mapWidth = 6;
+                mapDepth = 6;
+            } else if (level === 1) {
+                mapWidth = 10;
+                mapDepth = 10;
+            } else if (level === 2) {
+                mapWidth = 14;
+                mapDepth = 14;
+            } else {
+                console.error(`Unknown level: ${level}`);
+                return;
+            }
             
-            console.log(`Loading model for level ${level}: ${objPath}`);
+            console.log(`Generating map for level ${level}: ${mapWidth}x${mapDepth}`);
             
-            // 加载 MTL 材质
-            const mtlLoader = new MTLLoader();
-            mtlLoader.setPath('Objects/'); // 设置材质路径
-            const materials = await new Promise((resolve, reject) => {
-                mtlLoader.load(
-                    `${modelName}.mtl`,
-                    (materials) => {
-                        console.log(`MTL loaded for level ${level}`);
-                        materials.preload();
-                        resolve(materials);
-                    },
-                    (progress) => {
-                        console.log(`MTL loading progress: ${progress.loaded}/${progress.total}`);
-                    },
-                    (error) => {
-                        console.error(`MTL loading error for level ${level}:`, error);
-                        reject(error);
-                    }
-                );
-            });
+            // 创建一个临时场景用于生成地图（不添加到主场景）
+            const tempScene = new THREE.Scene();
             
-            // 加载 OBJ 模型
-            const objLoader = new OBJLoader();
-            objLoader.setMaterials(materials);
-            objLoader.setPath('Objects/'); // 设置模型路径
-            const model = await new Promise((resolve, reject) => {
-                objLoader.load(
-                    `${modelName}.obj`,
-                    (object) => {
-                        console.log(`OBJ loaded for level ${level}`, object);
-                        
-                        // 处理模型：删除Terrain组经过y轴的face，修复材质
-                        this.processModel(object);
-                        
-                        resolve(object);
-                    },
-                    (progress) => {
-                        console.log(`OBJ loading progress: ${progress.loaded}/${progress.total}`);
-                    },
-                    (error) => {
-                        console.error(`OBJ loading error for level ${level}:`, error);
-                        reject(error);
-                    }
-                );
-            });
+            // 生成地板
+            const floor = createFloor(tempScene, mapWidth, mapDepth, 0.2);
+            
+            // 生成围墙
+            const walls = createWalls(tempScene, mapWidth, mapDepth, 2);
+            
+            // 将所有元素组合到一个Group中
+            const model = new THREE.Group();
+            model.add(floor);
+            walls.forEach(wall => model.add(wall));
             
             // 计算模型边界框，用于居中
             const box = new THREE.Box3().setFromObject(model);
@@ -290,109 +271,6 @@ class LevelSelection3D {
         }
     }
     
-    processModel(model) {
-        const THREE = window.THREE;
-        if (!THREE) {
-            console.error('THREE not available');
-            return;
-        }
-        
-        // 遍历所有子对象，修复材质并增强metalness
-        model.traverse((child) => {
-            if (child.isMesh) {
-                // 检查是否是Terrain组
-                const meshName = child.name || '';
-                const isTerrain = meshName.includes('Terrain') || child.parent?.name?.includes('Terrain');
-                // Terrain使用0x848484，其他使用0x999999
-                const defaultColor = isTerrain ? 0x848484 : 0x999999;
-                
-                // 修复材质 - 确保所有mesh都有可见的材质，并增强metalness
-                if (child.material) {
-                    // 如果是黑色材质，替换为可见的材质
-                    if (Array.isArray(child.material)) {
-                        child.material = child.material.map(mat => {
-                            if (!mat) {
-                                const newMat = new THREE.MeshStandardMaterial({ 
-                                    color: defaultColor,
-                                    metalness: 0.5,
-                                    roughness: 0.3
-                                });
-                                return newMat;
-                            }
-                            if (mat.color && mat.color.r === 0 && mat.color.g === 0 && mat.color.b === 0) {
-                                const newMat = new THREE.MeshStandardMaterial({ 
-                                    color: defaultColor,
-                                    metalness: 0.5,
-                                    roughness: 0.3
-                                });
-                                return newMat;
-                            }
-                            // 设置color和metalness
-                            if (mat.color) {
-                                mat.color.setHex(defaultColor);
-                            }
-                            if (mat.metalness !== undefined) {
-                                mat.metalness = 0.5;
-                            } else {
-                                mat.metalness = 0.5;
-                            }
-                            if (mat.roughness !== undefined) {
-                                mat.roughness = 0.3;
-                            } else {
-                                mat.roughness = 0.3;
-                            }
-                            // 确保材质是可见的
-                            if (mat.opacity === 0 || mat.visible === false) {
-                                mat.opacity = 1;
-                                mat.transparent = false;
-                                mat.visible = true;
-                            }
-                            return mat;
-                        });
-                    } else {
-                        if (child.material.color && child.material.color.r === 0 && child.material.color.g === 0 && child.material.color.b === 0) {
-                            child.material = new THREE.MeshStandardMaterial({ 
-                                color: defaultColor,
-                                metalness: 0.5,
-                                roughness: 0.2
-                            });
-                        } else {
-                            // 设置color和metalness
-                            if (child.material.color) {
-                                child.material.color.setHex(defaultColor);
-                            }
-                            if (child.material.metalness !== undefined) {
-                                child.material.metalness = 0.5;
-                            } else {
-                                child.material.metalness = 0.5;
-                            }
-                            if (child.material.roughness !== undefined) {
-                                child.material.roughness = 0.3;
-                            } else {
-                                child.material.roughness = 0.3;
-                            }
-                        }
-                        // 确保材质是可见的
-                        if (child.material.opacity === 0 || child.material.visible === false) {
-                            child.material.opacity = 1;
-                            child.material.transparent = false;
-                            child.material.visible = true;
-                        }
-                    }
-                } else {
-                    // 如果没有材质，添加默认材质
-                    child.material = new THREE.MeshStandardMaterial({ 
-                        color: defaultColor,
-                        metalness: 0.5,
-                        roughness: 0.3
-                    });
-                }
-                
-                // 确保mesh是可见的
-                child.visible = true;
-            }
-        });
-    }
     
     // 获取应该显示的level列表（当前、上一个、下一个）
     getVisibleLevels() {
