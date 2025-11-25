@@ -32,7 +32,7 @@ export function createFloor(scene, width, depth, thickness) {
     
     // 设置位置：地板上表面在 y=0
     // 由于地板厚度为 thickness，中心应该在 y = -thickness/2
-    floor.position.set(0, -thickness / 2, 0);
+    floor.position.set(0, -thickness / 2+0.15, 0);
     
     // 接收阴影
     floor.receiveShadow = true;

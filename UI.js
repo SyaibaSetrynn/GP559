@@ -119,21 +119,6 @@ class UI {
             align: 'right'
         };
         
-        this.tutorialButtonPhase1 = {
-            x: this.width - 200,
-            y: this.height - 50,
-            width: 180,
-            height: 40,
-            text: 'Play Tutorial >>>',
-            fontSize: this.arrowButtonStyle.fontSize,
-            baseFontSize: this.arrowButtonStyle.baseFontSize,
-            clickFontSize: this.arrowButtonStyle.clickFontSize,
-            isHovered: false,
-            isClicked: false,
-            targetPhase: 10,  // 跳转到phase10
-            align: 'right'
-        };
-        
         // Phase 2 (Help界面) 元素
         this.backButtonPhase2 = {
             x: 20,  // 左下角
@@ -150,20 +135,7 @@ class UI {
             align: 'left'
         };
         
-        this.tutorialButton = {
-            x: this.width - 200,  // 右下角
-            y: this.height - 60,
-            width: 180,
-            height: 40,
-            text: 'Play Tutorial >>>',
-            fontSize: this.arrowButtonStyle.fontSize,
-            baseFontSize: this.arrowButtonStyle.baseFontSize,
-            clickFontSize: this.arrowButtonStyle.clickFontSize,
-            isHovered: false,
-            isClicked: false,
-            targetPhase: 10,  // 跳转到phase10
-            align: 'right'
-        };
+        // tutorialButton 已删除（Help 界面不再需要）
         
         // 动画相关
         this.playButtonColor = this.playButton.baseColor;
@@ -203,7 +175,8 @@ class UI {
         };
         
         this.isPaused = false;  // 暂停状态
-        this.enteringTutorialLevel = false;  // 标记是否正在进入 tutorial level
+        this.enteringTutorialLevel = false;  // 标记是否正在进入 tutorial level（Level Selection 界面）
+        this.directEnterTutorial = false;  // 标记是否从 Help 界面直接进入 tutorial（不需要转盘旋转）
         this.pauseOverlay = {
             alpha: 0,  // 黑幕透明度
             isAnimating: false,
@@ -265,30 +238,30 @@ class UI {
         this.quitButtonColor = this.quitButton.baseColor;
         this.resumeButtonFontSize = this.resumeButton.baseFontSize;
         this.quitButtonFontSize = this.quitButton.baseFontSize;
-        this.tutorialButtonFontSize = this.tutorialButton.baseFontSize;
+        // tutorialButton 已删除
         this.backButtonFontSize = this.backButton.baseFontSize;
         this.leftArrowButtonFontSize = this.leftArrowButton.baseFontSize;
         this.rightArrowButtonFontSize = this.rightArrowButton.baseFontSize;
         this.helpButtonPhase1FontSize = this.helpButtonPhase1.baseFontSize;
-        this.tutorialButtonPhase1FontSize = this.tutorialButtonPhase1.baseFontSize;
+        // tutorialButtonPhase1 已删除
         
         // Hover字体大小（用于平滑放大效果）
         this.backButtonHoverFontSize = this.backButton.baseFontSize;
         this.leftArrowButtonHoverFontSize = this.leftArrowButton.baseFontSize;
         this.rightArrowButtonHoverFontSize = this.rightArrowButton.baseFontSize;
         this.helpButtonPhase1HoverFontSize = this.helpButtonPhase1.baseFontSize;
-        this.tutorialButtonPhase1HoverFontSize = this.tutorialButtonPhase1.baseFontSize;
+        // tutorialButtonPhase1 已删除
         this.backButtonPhase2FontSize = this.backButtonPhase2.baseFontSize;
         this.backButtonPhase2HoverFontSize = this.backButtonPhase2.baseFontSize;
-        this.tutorialButtonHoverFontSize = this.tutorialButton.baseFontSize;
+        // tutorialButton 已删除
         
         // Level选择相关
-        this.level = 1;  // 默认level为1，可以在0,1,2之间变化
+        this.level = 0;  // 默认level为0（Tutorial），可以在0,1,2之间变化
         this.levelLabel = {
             x: this.width / 2,  // 水平居中
             y: 650,  // 高度650位置（下移50格）
             fontSize: 36,
-            text: 'Level 1'  // 默认文本
+            text: 'Tutorial'  // 默认文本（level 0）
         };
         
         // Level切换动画相关
@@ -329,13 +302,13 @@ class UI {
             const prevHelpHovered = this.helpButton.isHovered;
             this.playButton.isHovered = false;
             this.helpButton.isHovered = false;
-            this.tutorialButton.isHovered = false;
+            // tutorialButton 已删除
             this.backButton.isHovered = false;
             this.backButtonPhase2.isHovered = false;
             this.leftArrowButton.isHovered = false;
             this.rightArrowButton.isHovered = false;
             this.helpButtonPhase1.isHovered = false;
-            this.tutorialButtonPhase1.isHovered = false;
+            // tutorialButtonPhase1 已删除
             
             // 如果hover状态改变，启动填充动画
             const currentPhase = (typeof StateManager !== 'undefined') ? StateManager.getPhase() : 0;
@@ -372,14 +345,12 @@ class UI {
                     this.handleArrowButtonClick(this.rightArrowButton, 'rightArrowButtonFontSize');
                 } else if (this.isPointInButton(x, y, this.helpButtonPhase1)) {
                     this.handleArrowButtonClick(this.helpButtonPhase1, 'helpButtonPhase1FontSize');
-                } else if (this.isPointInButton(x, y, this.tutorialButtonPhase1)) {
-                    this.handleArrowButtonClick(this.tutorialButtonPhase1, 'tutorialButtonPhase1FontSize');
                 }
+                // tutorialButtonPhase1 已删除
             } else if (currentPhase === 2) {
                 if (this.isPointInButton(x, y, this.backButtonPhase2)) {
                     this.handleArrowButtonClick(this.backButtonPhase2, 'backButtonPhase2FontSize');
-                } else if (this.isPointInButton(x, y, this.tutorialButton)) {
-                    this.handleTutorialClick();
+                // tutorialButton 已删除
                 }
             } else if (currentPhase >= 10 && currentPhase <= 15) {
                 // 主界面：检查暂停按钮和暂停菜单按钮
@@ -411,12 +382,12 @@ class UI {
         const prevHelpHovered = this.helpButton.isHovered;
         this.playButton.isHovered = false;
         this.helpButton.isHovered = false;
-        this.tutorialButton.isHovered = false;
+        // tutorialButton 已删除
         this.backButton.isHovered = false;
         this.leftArrowButton.isHovered = false;
         this.rightArrowButton.isHovered = false;
         this.helpButtonPhase1.isHovered = false;
-        this.tutorialButtonPhase1.isHovered = false;
+        // tutorialButtonPhase1 已删除
         
         if (currentPhase === 0) {
             // 主界面：检查Play和Help按钮
@@ -436,11 +407,11 @@ class UI {
             this.leftArrowButton.isHovered = this.isPointInButton(x, y, this.leftArrowButton);
             this.rightArrowButton.isHovered = this.isPointInButton(x, y, this.rightArrowButton);
             this.helpButtonPhase1.isHovered = this.isPointInButton(x, y, this.helpButtonPhase1);
-            this.tutorialButtonPhase1.isHovered = this.isPointInButton(x, y, this.tutorialButtonPhase1);
+            // tutorialButtonPhase1 已删除
         } else if (currentPhase === 2) {
             // Help界面：检查Back和Tutorial按钮
             this.backButtonPhase2.isHovered = this.isPointInButton(x, y, this.backButtonPhase2);
-            this.tutorialButton.isHovered = this.isPointInButton(x, y, this.tutorialButton);
+            // tutorialButton 已删除
         } else if (currentPhase >= 10 && currentPhase <= 15) {
             // 主界面：检查暂停按钮和暂停菜单按钮
             if (!this.isPaused) {
@@ -502,11 +473,7 @@ class UI {
             return;
         }
         
-        // 处理 tutorial 按钮（Phase 1 的 tutorialButtonPhase1）
-        if (button === this.tutorialButtonPhase1 && currentPhase === 1) {
-            // 设置标记，表示要进入 tutorial level (level 0)
-            this.enteringTutorialLevel = true;
-        }
+        // tutorialButtonPhase1 已删除
         
         // 处理左右箭头按钮的level变化（只在phase=1时）
         if (currentPhase === 1) {
@@ -544,8 +511,8 @@ class UI {
             'leftArrowButtonFontSize': 'leftArrowButtonHoverFontSize',
             'rightArrowButtonFontSize': 'rightArrowButtonHoverFontSize',
             'helpButtonPhase1FontSize': 'helpButtonPhase1HoverFontSize',
-            'tutorialButtonPhase1FontSize': 'tutorialButtonPhase1HoverFontSize',
-            'tutorialButtonFontSize': 'tutorialButtonHoverFontSize'
+            // tutorialButtonPhase1 已删除
+            // tutorialButton 已删除
         };
         
         const hoverProperty = hoverPropertyMap[fontSizeProperty] || fontSizeProperty.replace('FontSize', 'HoverFontSize');
@@ -611,31 +578,7 @@ class UI {
         return 1 - (1 - t) * (1 - t);
     }
     
-    handleTutorialClick() {
-        if (this.tutorialButton.isClicked) return;
-        
-        // 只在phase=2时响应点击
-        if (typeof StateManager !== 'undefined' && StateManager.getPhase() !== 2) {
-            return;
-        }
-        
-        this.tutorialButton.isClicked = true;
-        this.tutorialButtonHoverFontSize = this.tutorialButton.clickFontSize;
-        
-        // 设置标记，表示要进入 tutorial level (level 0)
-        this.enteringTutorialLevel = true;
-        
-        // 恢复字体大小并切换phase
-        setTimeout(() => {
-            this.tutorialButtonHoverFontSize = this.tutorialButton.baseFontSize;
-            this.tutorialButton.isClicked = false;
-            
-            // 切换phase（可根据需要修改）
-            if (typeof StateManager !== 'undefined') {
-                StateManager.setPhase(this.tutorialButton.targetPhase);
-            }
-        }, 150);
-    }
+    // handleTutorialClick 已删除（Help 界面不再需要 tutorial 按钮）
     
     isPointInPauseButton(x, y) {
         const btn = this.pauseButton;
@@ -880,13 +823,13 @@ class UI {
             // phase变化时重置hover状态
             this.playButton.isHovered = false;
             this.helpButton.isHovered = false;
-            this.tutorialButton.isHovered = false;
+            // tutorialButton 已删除
             this.backButton.isHovered = false;
             this.backButtonPhase2.isHovered = false;
             this.leftArrowButton.isHovered = false;
             this.rightArrowButton.isHovered = false;
             this.helpButtonPhase1.isHovered = false;
-            this.tutorialButtonPhase1.isHovered = false;
+            // tutorialButtonPhase1 已删除
             
             // 重置phase0按钮的填充进度（避免回来时显示填充白色）
             if (currentPhase === 0) {
@@ -928,17 +871,12 @@ class UI {
             
             // 进入phase1或phase10-15时，重置level并初始化3D场景
             if (currentPhase === 1 || (currentPhase >= 10 && currentPhase <= 15)) {
-                // 检查是否是从 tutorial 按钮进入的
-                if (this.enteringTutorialLevel && currentPhase === 10) {
-                    this.level = 0;  // Tutorial level
-                    this.enteringTutorialLevel = false;  // 重置标记
+                // Phase 1: Level Selection界面
+                if (currentPhase === 1) {
+                    // Phase 1: Level Selection界面，默认level为0
+                    this.level = 0;
                     this.levelAnimation.newLevel = 0;
                     this.levelAnimation.oldLevel = 0;
-                } else if (currentPhase === 1) {
-                    // Phase 1: Level Selection界面，默认level为1
-                    this.level = 1;
-                    this.levelAnimation.newLevel = 1;
-                    this.levelAnimation.oldLevel = 1;
                 } else {
                     // Phase 10-15: 主界面，如果不是 tutorial，保持之前的level或设为1
                     if (this.level === undefined || this.level === null) {
@@ -967,16 +905,32 @@ class UI {
                 
                 // 更新3D场景的level
                 if (this.levelSelection3D) {
-                    this.levelSelection3D.updateLevel(this.level);
+                    // 如果是从 Help 界面直接进入 tutorial（directEnterTutorial），先加载迷宫和玩家
+                    if (this.directEnterTutorial && currentPhase === 1 && this.level === 0) {
+                        // 直接调用 enterLevel 来加载迷宫和玩家（参考点击模型的行为）
+                        if (!this.levelSelection3D.inLevelMode) {
+                            this.levelSelection3D.enterLevel(0).then(() => {
+                                // 加载完成后，切换到 phase 10
+                                this.directEnterTutorial = false;
+                                StateManager.setPhase(10);
+                            });
+                        }
+                    } else if (!this.directEnterTutorial) {
+                        // 正常情况下的更新
+                        this.levelSelection3D.updateLevel(this.level);
+                    }
                     
                     // 确保 UI 实例被传递给 LevelContent3D（用于暂停功能）
                     if (this.levelSelection3D.levelContent && !this.levelSelection3D.levelContent.uiInstance) {
                         this.levelSelection3D.levelContent.setUIInstance(this);
                     }
                     
-                    // 如果进入 tutorial level (level 0)，直接进入关卡
-                    if (this.level === 0 && currentPhase === 10) {
-                        this.levelSelection3D.enterLevel(0);
+                    // 如果进入 tutorial level (level 0)，且已经在 phase 10，确保进入关卡
+                    if (this.level === 0 && currentPhase === 10 && !this.directEnterTutorial) {
+                        // 如果还没有进入关卡模式，则进入
+                        if (!this.levelSelection3D.inLevelMode) {
+                            this.levelSelection3D.enterLevel(0);
+                        }
                     }
                 }
             } else {
@@ -1216,7 +1170,7 @@ class UI {
         this.updateButtonHoverSize(this.leftArrowButton, 'leftArrowButtonHoverFontSize');
         this.updateButtonHoverSize(this.rightArrowButton, 'rightArrowButtonHoverFontSize');
         this.updateButtonHoverSize(this.helpButtonPhase1, 'helpButtonPhase1HoverFontSize');
-        this.updateButtonHoverSize(this.tutorialButtonPhase1, 'tutorialButtonPhase1HoverFontSize');
+        // tutorialButtonPhase1 已删除
         
         // 顶部居中标题
         this.ctx.fillStyle = '#ffffff';
@@ -1234,7 +1188,7 @@ class UI {
         this.renderArrowButton(this.leftArrowButton, this.leftArrowButtonHoverFontSize, leftArrowEnabled);
         this.renderArrowButton(this.rightArrowButton, this.rightArrowButtonHoverFontSize, rightArrowEnabled);
         this.renderArrowButton(this.helpButtonPhase1, this.helpButtonPhase1HoverFontSize);
-        this.renderArrowButton(this.tutorialButtonPhase1, this.tutorialButtonPhase1HoverFontSize);
+        // tutorialButtonPhase1 已删除
         
         // 渲染levelLabel（高度600位置居中）
         this.renderLevelLabel();
@@ -1417,7 +1371,7 @@ class UI {
     renderHelpScreen() {
         // 更新hover字体大小（平滑过渡）
         this.updateButtonHoverSize(this.backButtonPhase2, 'backButtonPhase2HoverFontSize');
-        this.updateButtonHoverSize(this.tutorialButton, 'tutorialButtonHoverFontSize');
+        // tutorialButton 已删除
         
         // 左上角标题（边距扩大）
         this.ctx.fillStyle = '#ffffff';
@@ -1433,8 +1387,7 @@ class UI {
         // 左下角Back按钮（使用统一箭头按钮样式，使用hover字体大小）
         this.renderArrowButton(this.backButtonPhase2, this.backButtonPhase2HoverFontSize);
         
-        // 右下角Tutorial按钮（使用统一箭头按钮样式，使用hover字体大小）
-        this.renderArrowButton(this.tutorialButton, this.tutorialButtonHoverFontSize);
+        // tutorialButton 已删除
     }
     
     // 颜色插值函数（用于平滑过渡）

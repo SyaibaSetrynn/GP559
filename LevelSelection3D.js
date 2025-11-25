@@ -5,7 +5,7 @@ class LevelSelection3D {
         this.container = container;
         this.width = width;
         this.height = height;
-        this.currentLevel = 1;
+        this.currentLevel = 0;
         
         // 模型相关
         this.currentModel = null;
@@ -36,7 +36,9 @@ class LevelSelection3D {
         // 圆盘配置（在 initThree 中初始化）
         this.diskCenter = null;
         this.diskRadius = 8;
-        this.diskRotation = 0; // 当前圆盘旋转角度（弧度）
+        // 初始转盘旋转角度设置为 -30°，使 level 0 在中心
+        // level 0 的 baseAngle 是 +30°，所以需要 -30° 的旋转才能让它在中心（0°）
+        this.diskRotation = -30 * Math.PI / 180; // 当前圆盘旋转角度（弧度）
         this.targetDiskRotation = 0; // 目标圆盘旋转角度（弧度）
         this.diskRotationAnimation = {
             isAnimating: false,
@@ -71,9 +73,9 @@ class LevelSelection3D {
         // 创建相机（透视相机，适合预览）
         const aspect = this.width / this.height;
         this.camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 1000);
-        // 相机位置（上移2个单位）
-        this.camera.position.set(0, 4, -4); // y从6改为4（下移2个单位）
-        this.camera.lookAt(0, 1.5, 0); // 相机看向(0, 1.5, 0)，y从3.5改为1.5（下移2个单位）
+        // 相机位置
+        this.camera.position.set(0, 2, -8); // y=3（下移1单位：从4改为3）
+        this.camera.lookAt(0, -0.5, 0); // 相机看向(0, 0.5, 0)，y=0.5（下移1单位：从1.5改为0.5）
         
         // 初始化圆盘中心 - 圆心是(0, 0, 8)，三个模型都在半径为8的圆上
         // level1在(0, 0, 0)，在圆上的角度0位置
@@ -547,6 +549,13 @@ class LevelSelection3D {
     
     updateLevel(level) {
         console.log(`updateLevel called: level=${level}, currentLevel=${this.currentLevel}, diskRotation=${(this.diskRotation * 180 / Math.PI).toFixed(1)}°`);
+        
+        // 如果 level 和 currentLevel 相同，仍然需要更新模型位置（确保初始位置正确）
+        if (level === this.currentLevel) {
+            // 更新模型位置，确保它们基于当前的 diskRotation 正确放置
+            this.updateModelPositions();
+            return;
+        }
         
         if (level !== this.currentLevel) {
             // 计算圆盘旋转角度差
@@ -1296,12 +1305,12 @@ class LevelSelection3D {
         
         // 重置相机位置到初始状态（而不是恢复到进入关卡前的位置）
         // 这样可以确保退出后再进入时相机位置正确
-        this.camera.position.set(0, 4, -4); // 初始相机位置
+        this.camera.position.set(0, 2, -8); // 初始相机位置（下移1单位）
             if (this.controls) {
-            this.controls.target.set(0, 1.5, 0); // 初始目标位置
+            this.controls.target.set(0, -0.5, 0); // 初始目标位置（下移1单位）
                 this.controls.update();
             } else {
-            this.camera.lookAt(0, 1.5, 0);
+            this.camera.lookAt(0, -0.5, 0);
         }
         
         // 清除保存的相机位置，以便下次进入时重新保存
