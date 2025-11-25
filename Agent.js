@@ -57,8 +57,12 @@ class Agent {
     createObject() {
         let characterGrp = new T.Group();
         const dummyGeo = new T.BoxGeometry(AGENT_HEIGHT, AGENT_HEIGHT, AGENT_HEIGHT);
-        // Different color for agent - blue instead of pink
-        const dummyMat = new T.MeshStandardMaterial({color: "rgb(123, 123, 255)"});
+        // Different color for agent - blue instead of pink, with transparency
+        const dummyMat = new T.MeshStandardMaterial({
+            color: "rgb(123, 123, 255)",
+            transparent: true,
+            opacity: 0.7
+        });
         const dummyMesh = new T.Mesh(dummyGeo, dummyMat);
         characterGrp.add(dummyMesh);
 
