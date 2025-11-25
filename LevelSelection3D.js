@@ -352,7 +352,7 @@ class LevelSelection3D {
             if (this.criticalPointsEnabled && this.criticalPointSystem) {
                 const CP_COLORS = window.CP_COLORS;
                 if (CP_COLORS) {
-                    this.criticalPointSystem.addCriticalPoints(model, 3, CP_COLORS.RED);
+                    this.criticalPointSystem.addCriticalPoints(model, 3, window.CP_COLORS.WHITE);
                 }
             }
             
@@ -542,7 +542,7 @@ class LevelSelection3D {
             // Add critical points to all loaded models
             Object.values(this.models).forEach(model => {
                 const CP_COLORS = window.CP_COLORS;
-                this.criticalPointSystem.addCriticalPoints(model, 3, CP_COLORS.RED);
+                this.criticalPointSystem.addCriticalPoints(model, 3, window.CP_COLORS.WHITE);
             });
         } else {
             // Remove all critical points

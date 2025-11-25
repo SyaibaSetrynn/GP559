@@ -8,6 +8,26 @@ import * as T from "https://unpkg.com/three@0.161.0/build/three.module.js";
 const FLOOR_COLOR = 0x888888; // 地板颜色（灰色）
 const MAZE_COLOR = 0x4a4a4a;  // 迷宫颜色（深灰色）
 
+// Critical Point System integration
+let criticalPointSystem = null;
+let criticalPointsEnabled = true;
+
+/**
+ * Initialize the critical point system
+ * @param {*} cpSystem - The critical point system instance
+ */
+export function initializeCriticalPoints(cpSystem) {
+  criticalPointSystem = cpSystem;
+}
+
+/**
+ * Toggle critical points on/off
+ * @param {boolean} enabled - Whether to enable critical points
+ */
+export function toggleCriticalPoints(enabled) {
+  criticalPointsEnabled = enabled;
+}
+
 /**
  * 生成巨大的地板
  * @param {T.Scene} scene - Three.js场景对象
@@ -69,6 +89,11 @@ export function createBlock(scene, x, z, height = 2) {
   
   // 将方块添加到场景
   scene.add(blockMesh);
+  
+  // Add critical points to the block
+  if (criticalPointSystem && criticalPointsEnabled && window.CP_COLORS) {
+    criticalPointSystem.addCriticalPoints(blockMesh, 2, window.CP_COLORS.WHITE);
+  }
   
   return blockMesh;
 }

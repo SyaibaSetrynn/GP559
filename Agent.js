@@ -66,6 +66,38 @@ class Agent {
         const dummyMesh = new T.Mesh(dummyGeo, dummyMat);
         characterGrp.add(dummyMesh);
 
+        // Add a critical point at the exact center of the cube
+        if (window.CriticalPointSystem && window.CP_COLORS) {
+            // Create a small sphere for the critical point at center (0, 0, 0) relative to the agent
+            const cpGeometry = new T.SphereGeometry(0.08, 16, 16);
+            const cpMaterial = new T.MeshBasicMaterial({
+                color: window.CP_COLORS.WHITE,
+                transparent: true,
+                opacity: 1.0,
+                depthTest: false,  // Makes it render on top of other objects
+                depthWrite: false  // Prevents it from blocking other objects
+            });
+            const criticalPoint = new T.Mesh(cpGeometry, cpMaterial);
+            
+            // Add glow effect that's also visible through the body
+            const glowGeometry = new T.SphereGeometry(0.15, 16, 16);
+            const glowMaterial = new T.MeshBasicMaterial({
+                color: window.CP_COLORS.WHITE,
+                transparent: true,
+                opacity: 0.5,
+                side: T.DoubleSide,
+                depthTest: false,
+                depthWrite: false
+            });
+            const glow = new T.Mesh(glowGeometry, glowMaterial);
+            criticalPoint.add(glow);
+            
+            // Position at exact center of the cube (0, 0, 0) relative to characterGrp
+            criticalPoint.position.set(0, 0, 0);
+            
+            characterGrp.add(criticalPoint);
+        }
+
         return characterGrp;
     }
 
