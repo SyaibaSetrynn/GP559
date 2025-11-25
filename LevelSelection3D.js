@@ -17,10 +17,16 @@ class LevelSelection3D {
         this.modelBaseScales = {}; // 每个模型的基础scale（第一次加载时的scale）
         this.modelScaleAnimations = {}; // 每个模型的scale动画状态
         this.hoveredModel = null; // 当前hover的模型level
+        this.mazeBlocks = {}; // 每个level的迷宫障碍物 { level: [blocks...] }
+        this.inLevelMode = false; // 是否在关卡模式
+        this.currentLevelModel = null; // 当前进入的关卡模型
+        this.previousCameraPosition = null; // 进入关卡前的相机位置
+        this.previousCameraTarget = null; // 进入关卡前的相机lookAt目标
         this.scene = null;
         this.camera = null;
         this.renderer = null;
         this.threeCanvas = null;
+        this.controls = null; // OrbitControls
         
         // 圆盘配置（在 initThree 中初始化）
         this.diskCenter = null;
@@ -44,7 +50,7 @@ class LevelSelection3D {
     
     async initThree() {
         // 等待 Three.js 可用
-        while (!window.THREE || !window.OBJLoader || !window.MTLLoader) {
+        while (!window.THREE) {
             await new Promise(resolve => setTimeout(resolve, 50));
         }
         
@@ -57,11 +63,12 @@ class LevelSelection3D {
         // 创建相机（透视相机，适合预览）
         const aspect = this.width / this.height;
         this.camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 1000);
-        // 相机位置
-        this.camera.position.set(0, 2, -4);
-        this.camera.lookAt(0, -0.5, 0); // 相机看向(0, -0.5, 0)
+        // 相机位置（上移2个单位）
+        this.camera.position.set(0, 4, -4); // y从6改为4（下移2个单位）
+        this.camera.lookAt(0, 1.5, 0); // 相机看向(0, 1.5, 0)，y从3.5改为1.5（下移2个单位）
         
-        // 初始化圆盘中心 - 圆心是(0, 0, 8)
+        // 初始化圆盘中心 - 圆心是(0, 0, 8)，三个模型都在半径为8的圆上
+        // level1在(0, 0, 0)，在圆上的角度0位置
         this.diskCenter = new THREE.Vector3(0, 0, 8);
         
         // 创建渲染器（使用新的 canvas，避免与 UI canvas 冲突）
@@ -87,11 +94,19 @@ class LevelSelection3D {
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.1);
         this.scene.add(ambientLight);
         
+        // 初始化 OrbitControls
+        this.initOrbitControls();
+        
         console.log('Three.js scene initialized');
 
-        // Initialize Critical Point System
-        this.criticalPointSystem = new CriticalPointSystem(this.scene);
-        this.criticalPointsEnabled = false; 
+        // Initialize Critical Point System (if available)
+        if (typeof window.CriticalPointSystem !== 'undefined') {
+            this.criticalPointSystem = new window.CriticalPointSystem(this.scene);
+            this.criticalPointsEnabled = false;
+        } else {
+            this.criticalPointSystem = null;
+            this.criticalPointsEnabled = false;
+        } 
         
         // 设置鼠标事件
         this.setupMouseEvents();
@@ -100,9 +115,34 @@ class LevelSelection3D {
         this.updateVisibleLevels();
     }
     
+    // 初始化 OrbitControls
+    async initOrbitControls() {
+        const THREE = window.THREE;
+        if (!THREE) return;
+        
+        // 尝试动态导入 OrbitControls
+        try {
+            // 使用动态导入加载 OrbitControls
+            const { OrbitControls } = await import('https://unpkg.com/three@0.161.0/examples/jsm/controls/OrbitControls.js');
+            
+            this.controls = new OrbitControls(this.camera, this.threeCanvas);
+            
+            // 设置控制参数
+            this.controls.target.set(0, 1.5, 0); // 看向中心点（与相机 lookAt 一致）
+            this.controls.enableDamping = true; // 启用阻尼效果，让旋转更平滑
+            this.controls.dampingFactor = 0.05;
+            this.controls.update(); // 应用初始设置
+            
+            console.log('OrbitControls initialized');
+        } catch (error) {
+            console.warn('Failed to load OrbitControls:', error);
+            // 如果加载失败，不影响其他功能
+        }
+    }
+    
     async loadModel(level) {
         // 如果 Three.js 还没加载完成，等待
-        if (!window.THREE || !window.OBJLoader || !window.MTLLoader) {
+        if (!window.THREE) {
             await this.initThree();
         }
         
@@ -113,65 +153,44 @@ class LevelSelection3D {
         
         try {
             const THREE = window.THREE;
-            const OBJLoader = window.OBJLoader;
-            const MTLLoader = window.MTLLoader;
             
-            const modelName = `Terrain${level}Prev`;
-            const objPath = `Objects/${modelName}.obj`;
-            const mtlPath = `Objects/${modelName}.mtl`;
-            
-            console.log(`Loading model for level ${level}: ${objPath}`);
-
-            if (this.criticalPointsEnabled && this.criticalPointSystem) {
-                const CP_COLORS = window.CP_COLORS;
-                this.criticalPointSystem.addCriticalPoints(model, 3, CP_COLORS.RED);
+            // 根据level确定地图大小
+            let mapWidth, mapDepth;
+            if (level === 0) {
+                mapWidth = 10;
+                mapDepth = 10;
+            } else if (level === 1) {
+                mapWidth = 14;
+                mapDepth = 14;
+            } else if (level === 2) {
+                mapWidth = 18;
+                mapDepth = 18;
+            } else {
+                console.error(`Unknown level: ${level}`);
+                return;
             }
             
-            // 加载 MTL 材质
-            const mtlLoader = new MTLLoader();
-            mtlLoader.setPath('Objects/'); // 设置材质路径
-            const materials = await new Promise((resolve, reject) => {
-                mtlLoader.load(
-                    `${modelName}.mtl`,
-                    (materials) => {
-                        console.log(`MTL loaded for level ${level}`);
-                        materials.preload();
-                        resolve(materials);
-                    },
-                    (progress) => {
-                        console.log(`MTL loading progress: ${progress.loaded}/${progress.total}`);
-                    },
-                    (error) => {
-                        console.error(`MTL loading error for level ${level}:`, error);
-                        reject(error);
-                    }
-                );
-            });
+            console.log(`Generating map for level ${level}: ${mapWidth}x${mapDepth}`);
             
-            // 加载 OBJ 模型
-            const objLoader = new OBJLoader();
-            objLoader.setMaterials(materials);
-            objLoader.setPath('Objects/'); // 设置模型路径
-            const model = await new Promise((resolve, reject) => {
-                objLoader.load(
-                    `${modelName}.obj`,
-                    (object) => {
-                        console.log(`OBJ loaded for level ${level}`, object);
-                        
-                        // 处理模型：删除Terrain组经过y轴的face，修复材质
-                        this.processModel(object);
-                        
-                        resolve(object);
-                    },
-                    (progress) => {
-                        console.log(`OBJ loading progress: ${progress.loaded}/${progress.total}`);
-                    },
-                    (error) => {
-                        console.error(`OBJ loading error for level ${level}:`, error);
-                        reject(error);
-                    }
-                );
-            });
+            // 动态导入 MapGenerator
+            const { createFloor, createWalls } = await import('./MapGenerator.js');
+            
+            // 创建一个临时场景用于生成地图（不添加到主场景）
+            const tempScene = new THREE.Scene();
+            
+            // 生成地板（会添加到tempScene，我们需要手动移除并添加到model group）
+            const floor = createFloor(tempScene, mapWidth, mapDepth, 0.2);
+            tempScene.remove(floor);
+            
+            // 生成围墙（会添加到tempScene，我们需要手动移除并添加到model group）
+            // 围墙高度统一为2，无论地图大小如何
+            const walls = createWalls(tempScene, mapWidth, mapDepth, 2);
+            walls.forEach(wall => tempScene.remove(wall));
+            
+            // 将所有元素组合到一个Group中
+            const model = new THREE.Group();
+            model.add(floor);
+            walls.forEach(wall => model.add(wall));
             
             // 计算模型边界框，用于居中
             const box = new THREE.Box3().setFromObject(model);
@@ -182,6 +201,7 @@ class LevelSelection3D {
             this.modelCenters[level] = center.clone();
             
             // 居中模型（在原点）
+            // 这意味着模型的中心现在在 (0,0,0)
             model.position.x = -center.x;
             model.position.y = -center.y;
             model.position.z = -center.z;
@@ -189,11 +209,20 @@ class LevelSelection3D {
             // 沿 y 轴顺时针旋转 30 度（注意：Three.js 中顺时针是负值）
             model.rotation.y = -Math.PI / 6; // -30度 = -π/6 弧度
             
-            // 计算缩放
+            // 计算缩放 - 根据level设置不同的目标高度，使模型从小到大有区别
             const maxDimension = Math.max(size.x, size.y, size.z);
             console.log(`Model size for level ${level}:`, size, `maxDimension:`, maxDimension);
             
-            const targetHeight = 2.0;
+            // level 0 (10x10) 最小，level 1 (14x14) 中等，level 2 (18x18) 最大
+            let targetHeight;
+            if (level === 0) {
+                targetHeight = 1.5;  // 最小
+            } else if (level === 1) {
+                targetHeight = 2.0;  // 中等
+            } else if (level === 2) {
+                targetHeight = 2.5;  // 最大
+            }
+            
             const baseScale = targetHeight / maxDimension;
             model.scale.set(baseScale, baseScale, baseScale);
             
@@ -209,52 +238,78 @@ class LevelSelection3D {
                 z: size.z * baseScale
             });
             
-            // 计算圆盘上的位置（考虑当前圆盘旋转）
-            // 圆心是(0, 0, 8)，半径8
-            // level1 在(0, 0, 0) - 从圆心向下（-z方向，角度0）
-            // level0 在左边 30 度 - 从圆心向左下30度
-            // level2 在右边 30 度 - 从圆心向右下30度
-            // 在xz平面上，标准方向是-z（向下），左边是-x方向
+            // 计算模型位置：围绕圆盘中心 (0, 0, 8) 排列
+            // level1 在圆盘中心 (0, 0, 0)
+            // level0 在右边（+30°），level2 在左边（-30°）
             let baseAngle;
+            let radius;
+            // 所有模型都在半径为8的圆上，圆盘中心在(0, 0, 8)
+            // level1在(0, 0, 0)，对应角度0（正前方）
+            // level0在角度+30°位置，level2在角度-30°位置
+            radius = 8;  // 所有模型都在半径为8的圆上
+            
             if (level === 0) {
-                baseAngle = -30 * Math.PI / 180; // 左边30度
-            } else if (level === 1) {
-                baseAngle = 0; // 中间（向下）
-            } else if (level === 2) {
                 baseAngle = 30 * Math.PI / 180; // 右边30度
+            } else if (level === 1) {
+                baseAngle = 0; // 角度0（正前方，对应位置(0, 0, 0)）
+            } else if (level === 2) {
+                baseAngle = -30 * Math.PI / 180; // 左边30度
             }
             
             // 应用圆盘旋转
             const angle = baseAngle + this.diskRotation;
             
-            // 在xz平面上，从圆心出发，标准方向是-z（向下）
-            // 角度0是-z方向，正角度是逆时针（向左），负角度是顺时针（向右）
-            // 所以：x = -radius * sin(angle), z = center.z - radius * cos(angle)
-            const x = this.diskCenter.x - this.diskRadius * Math.sin(angle);
-            const z = this.diskCenter.z - this.diskRadius * Math.cos(angle);
-            const y = this.diskCenter.y;
+            // 围绕圆盘中心 (0, 0, 8) 排列，所有模型都在半径为8的圆上
+            // level1在角度0位置，对应(0, 0, 0)
+            const diskCenterX = this.diskCenter.x;  // 0
+            const diskCenterY = this.diskCenter.y;  // 0
+            const diskCenterZ = this.diskCenter.z;  // 8
+            const x = diskCenterX + radius * Math.sin(angle);   // 角度 -30° 时 x < 0，+30° 时 x > 0
+            const z = diskCenterZ - radius * Math.cos(angle);   // z = 8 - 8*cos(angle)
+            const y = diskCenterY;  // y = 0
             
-            // 将模型移动到圆盘上的位置
-            // 注意：model.position 已经包含了 -center，所以直接加上目标位置即可
-            model.position.x += x;
-            model.position.y += y;
-            model.position.z += z;
+            // 将模型移动到目标位置
+            // 注意：model.position 已经在前面被设置为 -center（居中），
+            // 这意味着模型的中心现在在 (0,0,0)
+            // 要将模型的中心移动到目标位置 (x, y, z)，我们需要：
+            // 因为模型已经居中（position = -center），要移动到 (x, y, z)，
+            // 应该设置 position = -center + (x, y, z) = (x - center.x, y - center.y, z - center.z)
+            // 但实际上，由于模型已经在 group 中，且 group 在原点，我们直接设置目标位置即可
+            model.position.set(x, y, z);
+            
+            // 调试信息：打印每个level的位置（仅在首次加载时打印）
+            if (!this.models[level]) {
+                console.log(`Level ${level} initial position:`, {
+                    level: level,
+                    mapSize: `${mapWidth}x${mapDepth}`,
+                    baseAngle: (baseAngle * 180 / Math.PI).toFixed(1) + '°',
+                    targetPosition: { x: x.toFixed(2), y: y.toFixed(2), z: z.toFixed(2) },
+                    modelPosition: { x: model.position.x.toFixed(2), y: model.position.y.toFixed(2), z: model.position.z.toFixed(2) },
+                    modelCenter: { x: center.x.toFixed(2), y: center.y.toFixed(2), z: center.z.toFixed(2) },
+                    modelSize: { x: size.x.toFixed(2), y: size.y.toFixed(2), z: size.z.toFixed(2) },
+                    scale: baseScale.toFixed(3)
+                });
+            }
             
             // 创建模型组（包含模型和独立灯光系统）
             const modelGroup = new THREE.Group();
+            // 确保 modelGroup 在原点
+            modelGroup.position.set(0, 0, 0);
             modelGroup.add(model);
             
             // 为每个模型创建独立的灯光系统（使用Spotlight）
             // 初始亮度为0，将通过动画平滑增加
-            // 主选（当前level）亮度20.0，次选（相邻level）亮度5.0
-            const baseLightIntensity = (level === this.currentLevel) ? 20.0 : 5.0;
+            // 主选（当前level）亮度24.0，次选（相邻level）亮度6.0（加强20%）
+            const baseLightIntensity = (level === this.currentLevel) ? 24.0 : 6.0;
             const initialIntensity = 0; // 初始为0，等待动画
             
             // 使用Spotlight从上方照射模型
+            // 位置抬高20%：从 y+10 改为 y+12
+            // 亮度加强20%：在设置baseLightIntensity时已处理
             const spotlight = new THREE.SpotLight(0xffffff, initialIntensity);
-            spotlight.position.set(x, y + 10, z);
+            spotlight.position.set(x, y + 12, z);  // 抬高20% (10 * 1.2 = 12)
             spotlight.target.position.set(x, y, z);
-            spotlight.angle = Math.PI / 12; // 15度锥角（收窄，只照到选中的object）
+            spotlight.angle = (Math.PI / 12) * 1.2; // 18度锥角（增大20%，从15度到18度）
             spotlight.penumbra = 0.3; // 边缘柔和度（减小，使边缘更硬）
             spotlight.decay = 2; // 衰减
             spotlight.distance = 20; // 照射距离
@@ -285,11 +340,21 @@ class LevelSelection3D {
             this.scene.add(modelGroup);
             
             // 初始化光照动画（从0平滑增加到目标值）
-            // 主选亮度20.0，次选亮度5.0
-            const targetIntensity = (level === this.currentLevel) ? 20.0 : 5.0;
+            // 主选亮度24.0，次选亮度6.0（加强20%）
+            const targetIntensity = (level === this.currentLevel) ? 24.0 : 6.0;
             this.startLightAnimation(level, targetIntensity, true);
             
             console.log(`Model for level ${level} processed and positioned at (${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)})`);
+            console.log(`  - baseAngle: ${(baseAngle * 180 / Math.PI).toFixed(1)}°, radius: ${radius}, angle: ${(angle * 180 / Math.PI).toFixed(1)}°`);
+            console.log(`  - model.position after setting: (${model.position.x.toFixed(2)}, ${model.position.y.toFixed(2)}, ${model.position.z.toFixed(2)})`);
+            
+            // 如果启用了关键点系统，添加关键点
+            if (this.criticalPointsEnabled && this.criticalPointSystem) {
+                const CP_COLORS = window.CP_COLORS;
+                if (CP_COLORS) {
+                    this.criticalPointSystem.addCriticalPoints(model, 3, CP_COLORS.RED);
+                }
+            }
             
             // 立即渲染一次
             this.render();
@@ -299,129 +364,18 @@ class LevelSelection3D {
         }
     }
     
-    processModel(model) {
-        const THREE = window.THREE;
-        if (!THREE) {
-            console.error('THREE not available');
-            return;
-        }
-        
-        // 遍历所有子对象，修复材质并增强metalness
-        model.traverse((child) => {
-            if (child.isMesh) {
-                // 检查是否是Terrain组
-                const meshName = child.name || '';
-                const isTerrain = meshName.includes('Terrain') || child.parent?.name?.includes('Terrain');
-                // Terrain使用0x848484，其他使用0x999999
-                const defaultColor = isTerrain ? 0x848484 : 0x999999;
-                
-                // 修复材质 - 确保所有mesh都有可见的材质，并增强metalness
-                if (child.material) {
-                    // 如果是黑色材质，替换为可见的材质
-                    if (Array.isArray(child.material)) {
-                        child.material = child.material.map(mat => {
-                            if (!mat) {
-                                const newMat = new THREE.MeshStandardMaterial({ 
-                                    color: defaultColor,
-                                    metalness: 0.5,
-                                    roughness: 0.3
-                                });
-                                return newMat;
-                            }
-                            if (mat.color && mat.color.r === 0 && mat.color.g === 0 && mat.color.b === 0) {
-                                const newMat = new THREE.MeshStandardMaterial({ 
-                                    color: defaultColor,
-                                    metalness: 0.5,
-                                    roughness: 0.3
-                                });
-                                return newMat;
-                            }
-                            // 设置color和metalness
-                            if (mat.color) {
-                                mat.color.setHex(defaultColor);
-                            }
-                            if (mat.metalness !== undefined) {
-                                mat.metalness = 0.5;
-                            } else {
-                                mat.metalness = 0.5;
-                            }
-                            if (mat.roughness !== undefined) {
-                                mat.roughness = 0.3;
-                            } else {
-                                mat.roughness = 0.3;
-                            }
-                            // 确保材质是可见的
-                            if (mat.opacity === 0 || mat.visible === false) {
-                                mat.opacity = 1;
-                                mat.transparent = false;
-                                mat.visible = true;
-                            }
-                            return mat;
-                        });
-                    } else {
-                        if (child.material.color && child.material.color.r === 0 && child.material.color.g === 0 && child.material.color.b === 0) {
-                            child.material = new THREE.MeshStandardMaterial({ 
-                                color: defaultColor,
-                                metalness: 0.5,
-                                roughness: 0.2
-                            });
-                        } else {
-                            // 设置color和metalness
-                            if (child.material.color) {
-                                child.material.color.setHex(defaultColor);
-                            }
-                            if (child.material.metalness !== undefined) {
-                                child.material.metalness = 0.5;
-                            } else {
-                                child.material.metalness = 0.5;
-                            }
-                            if (child.material.roughness !== undefined) {
-                                child.material.roughness = 0.3;
-                            } else {
-                                child.material.roughness = 0.3;
-                            }
-                        }
-                        // 确保材质是可见的
-                        if (child.material.opacity === 0 || child.material.visible === false) {
-                            child.material.opacity = 1;
-                            child.material.transparent = false;
-                            child.material.visible = true;
-                        }
-                    }
-                } else {
-                    // 如果没有材质，添加默认材质
-                    child.material = new THREE.MeshStandardMaterial({ 
-                        color: defaultColor,
-                        metalness: 0.5,
-                        roughness: 0.3
-                    });
-                }
-                
-                // 确保mesh是可见的
-                child.visible = true;
-            }
-        });
-    }
-    
-    // 获取应该显示的level列表（当前、上一个、下一个）
+    // 获取应该显示的level列表（始终显示所有三个模型）
     getVisibleLevels() {
-        const levels = [];
-        if (this.currentLevel > 0) {
-            levels.push(this.currentLevel - 1);
-        }
-        levels.push(this.currentLevel);
-        if (this.currentLevel < 2) {
-            levels.push(this.currentLevel + 1);
-        }
-        return levels;
+        // 始终返回所有三个level，让所有模型都可见
+        return [0, 1, 2];
     }
     
     // 更新可见的level，加载需要的，卸载不需要的
     async updateVisibleLevels() {
-        const visibleLevels = this.getVisibleLevels();
+        const visibleLevels = this.getVisibleLevels(); // 现在返回 [0, 1, 2]
         const allLevels = [0, 1, 2];
         
-        // 对于每个level
+        // 对于每个level，确保都被加载和显示
         for (const level of allLevels) {
             const shouldBeVisible = visibleLevels.includes(level);
             const isLoaded = this.models[level] !== undefined;
@@ -433,18 +387,18 @@ class LevelSelection3D {
             } else if (shouldBeVisible && isLoaded && !isInScene) {
                 // 已加载但不在场景中，重新添加
                 this.scene.add(this.modelGroups[level]);
-                // 平滑增加光照：主选20.0，次选5.0
-                const baseIntensity = (level === this.currentLevel) ? 20.0 : 5.0;
+                // 平滑增加光照：主选24.0，次选6.0（加强20%）
+                const baseIntensity = (level === this.currentLevel) ? 24.0 : 6.0;
                 this.startLightAnimation(level, baseIntensity, true);
-            } else if (!shouldBeVisible && isInScene) {
-                // 需要卸载，先平滑降低光照
-                this.startLightAnimation(level, 0, false, () => {
-                    // 光照降到0后，从场景中移除
-                    if (this.modelGroups[level]) {
-                        this.scene.remove(this.modelGroups[level]);
-                    }
-                });
+            } else if (shouldBeVisible && isLoaded && isInScene) {
+                // 已经在场景中，只需更新光照强度（当前选中的更亮）
+                const baseIntensity = (level === this.currentLevel) ? 24.0 : 6.0;
+                if (this.modelLights[level] && this.modelLights[level].baseIntensity !== baseIntensity) {
+                    this.modelLights[level].baseIntensity = baseIntensity;
+                    this.startLightAnimation(level, baseIntensity, true);
+                }
             }
+            // 不再卸载模型，因为现在所有模型都应该始终可见
         }
     }
     
@@ -529,15 +483,26 @@ class LevelSelection3D {
     }
     
     updateLevel(level) {
+        console.log(`updateLevel called: level=${level}, currentLevel=${this.currentLevel}, diskRotation=${(this.diskRotation * 180 / Math.PI).toFixed(1)}°`);
+        
         if (level !== this.currentLevel) {
             // 计算圆盘旋转角度差
+            // 每个level相差30度，从level1切换到level2需要逆时针旋转-30度（让level2到中心）
             const angleDiff = (level - this.currentLevel) * 30 * Math.PI / 180; // 每个level相差30度
             
+            console.log(`Angle diff: ${(angleDiff * 180 / Math.PI).toFixed(1)}°, Current diskRotation: ${(this.diskRotation * 180 / Math.PI).toFixed(1)}°`);
+            
             // 启动平滑旋转动画
-            this.startDiskRotationAnimation(this.diskRotation - angleDiff);
+            // 目标旋转 = 当前旋转 + 角度差（反向旋转）
+            const targetRotation = this.diskRotation + angleDiff;
+            console.log(`Target rotation: ${(targetRotation * 180 / Math.PI).toFixed(1)}°`);
+            
+            this.startDiskRotationAnimation(targetRotation);
             
             const oldLevel = this.currentLevel;
             this.currentLevel = level;
+            
+            console.log(`Starting rotation animation from ${(this.diskRotation * 180 / Math.PI).toFixed(1)}° to ${(targetRotation * 180 / Math.PI).toFixed(1)}°`);
             
             // 更新可见的level
             this.updateVisibleLevels();
@@ -545,23 +510,23 @@ class LevelSelection3D {
             // 更新亮度：新的当前level应该是1.0，旧的当前level应该是0.5（如果还在可见列表中）
             const visibleLevels = this.getVisibleLevels();
             
-            // 更新新当前level的亮度到20.0（主选）
+            // 更新新当前level的亮度到24.0（主选，加强20%）
             if (this.modelLights[level] && visibleLevels.includes(level)) {
-                this.modelLights[level].baseIntensity = 20.0;
-                this.startLightAnimation(level, 20.0, true);
+                this.modelLights[level].baseIntensity = 24.0;
+                this.startLightAnimation(level, 24.0, true);
             }
             
-            // 更新旧当前level的亮度到5.0（次选，如果还在可见列表中）
+            // 更新旧当前level的亮度到6.0（次选，加强20%，如果还在可见列表中）
             if (this.modelLights[oldLevel] && visibleLevels.includes(oldLevel) && oldLevel !== level) {
-                this.modelLights[oldLevel].baseIntensity = 5.0;
-                this.startLightAnimation(oldLevel, 5.0, true);
+                this.modelLights[oldLevel].baseIntensity = 6.0;
+                this.startLightAnimation(oldLevel, 6.0, true);
             }
             
-            // 更新相邻level的亮度到5.0（次选）
+            // 更新相邻level的亮度到6.0（次选，加强20%）
             for (const visibleLevel of visibleLevels) {
                 if (visibleLevel !== level && this.modelLights[visibleLevel]) {
-                    this.modelLights[visibleLevel].baseIntensity = 5.0;
-                    this.startLightAnimation(visibleLevel, 5.0, true);
+                    this.modelLights[visibleLevel].baseIntensity = 6.0;
+                    this.startLightAnimation(visibleLevel, 6.0, true);
                 }
             }
         }
@@ -592,6 +557,12 @@ class LevelSelection3D {
         this.diskRotationAnimation.targetRotation = targetRotation;
         this.diskRotationAnimation.startTime = Date.now();
         this.diskRotationAnimation.isAnimating = true;
+        
+        console.log(`Disk rotation animation started:`, {
+            startRotation: (this.diskRotationAnimation.startRotation * 180 / Math.PI).toFixed(1) + '°',
+            targetRotation: (this.diskRotationAnimation.targetRotation * 180 / Math.PI).toFixed(1) + '°',
+            isAnimating: this.diskRotationAnimation.isAnimating
+        });
     }
     
     // 更新圆盘旋转动画
@@ -611,14 +582,23 @@ class LevelSelection3D {
         // 插值旋转角度
         const startRotation = this.diskRotationAnimation.startRotation;
         const targetRotation = this.diskRotationAnimation.targetRotation;
+        const oldDiskRotation = this.diskRotation;
         this.diskRotation = startRotation + (targetRotation - startRotation) * easedProgress;
         
-        // 更新所有模型位置
-        this.updateModelPositions();
+        // 更新所有模型位置（跟随 diskRotation 的变化）
+        // 这是关键：每次 diskRotation 更新时，都要重新计算所有模型的位置
+        // 模型位置依赖于 diskRotation，所以必须每次动画帧都更新
+        // 只有在旋转角度确实变化时才更新（避免不必要的计算）
+        if (Math.abs(this.diskRotation - oldDiskRotation) > 0.0001) {
+            this.updateModelPositions();
+        }
         
         if (progress >= 1) {
             this.diskRotation = targetRotation;
             this.diskRotationAnimation.isAnimating = false;
+            // 动画结束后，确保位置更新到最终位置
+            this.updateModelPositions();
+            console.log(`Disk rotation animation completed. Final rotation: ${(this.diskRotation * 180 / Math.PI).toFixed(1)}°`);
         }
     }
     
@@ -629,54 +609,110 @@ class LevelSelection3D {
         const THREE = window.THREE;
         if (!THREE) return;
         
-        for (const level in this.models) {
+        // 调试：记录函数调用
+        if (this.diskRotationAnimation && this.diskRotationAnimation.isAnimating) {
+            // 在动画过程中，每帧都会调用，只在前几次打印
+            if (!this._updateModelPositionsCallCount) {
+                this._updateModelPositionsCallCount = 0;
+            }
+            this._updateModelPositionsCallCount++;
+            if (this._updateModelPositionsCallCount <= 3 || this._updateModelPositionsCallCount % 10 === 0) {
+                console.log(`updateModelPositions called (count: ${this._updateModelPositionsCallCount}), diskRotation: ${(this.diskRotation * 180 / Math.PI).toFixed(1)}°`);
+            }
+        }
+        
+        for (const levelKey in this.models) {
+            const level = parseInt(levelKey);  // 确保 level 是数字
             const model = this.models[level];
             if (!model) continue;
             
-            // 计算位置（所有level都在圆盘上，包括level1）
+            // 获取模型组（包含模型和灯光）
+            const modelGroup = this.modelGroups[level];
+            if (!modelGroup) continue;
+            
+            // 计算位置：所有模型都在半径为8的圆上，圆盘中心在(0, 0, 8)
+            // level1在(0, 0, 0)，对应角度0（正前方）
             let baseAngle;
-            if (level == 0) {
-                baseAngle = -30 * Math.PI / 180; // 左边30度
-            } else if (level == 1) {
-                baseAngle = 0; // 中间（向下）
-            } else if (level == 2) {
+            const radius = 8;  // 所有模型都在半径为8的圆上
+            
+            if (level === 0) {
                 baseAngle = 30 * Math.PI / 180; // 右边30度
+            } else if (level === 1) {
+                baseAngle = 0; // 角度0（正前方，对应位置(0, 0, 0)）
+            } else if (level === 2) {
+                baseAngle = -30 * Math.PI / 180; // 左边30度
             }
             
             // 应用圆盘旋转
             const angle = baseAngle + this.diskRotation;
             
-            // 在xz平面上，从圆心出发
-            const x = this.diskCenter.x - this.diskRadius * Math.sin(angle);
-            const z = this.diskCenter.z - this.diskRadius * Math.cos(angle);
-            const y = this.diskCenter.y;
+            // 围绕圆盘中心 (0, 0, 8) 排列，所有模型都在半径为8的圆上
+            // level1在角度0位置，对应(0, 0, 0)
+            const diskCenterX = this.diskCenter.x;  // 0
+            const diskCenterY = this.diskCenter.y;  // 0
+            const diskCenterZ = this.diskCenter.z;  // 8
+            const x = diskCenterX + radius * Math.sin(angle);   // 角度 -30° 时 x < 0，+30° 时 x > 0
+            const z = diskCenterZ - radius * Math.cos(angle);   // z = 8 - 8*cos(angle)
+            const y = diskCenterY;  // y = 0
             
-            // 获取模型的原始中心（在缩放和旋转之前保存的）
-            const originalCenter = this.modelCenters[level];
-            if (!originalCenter) continue;
+            // 将模型移动到目标位置
+            // 重要：在 loadModel 时，model.position 被设置为 -center（居中），然后再加上初始位置 (x, y, z)
+            // 但是在 updateModelPositions 中，我们需要重新计算位置，因为 diskRotation 已经改变
+            // 
+            // 模型在 modelGroup 中，modelGroup 在场景中的位置是 (0,0,0)
+            // 所以 model.position 就是模型在世界坐标系中的位置（因为 group 在原点）
+            // 
+            // 但是，在初始化时，model.position 包含了 -center，这意味着模型的中心已经在 (0,0,0)
+            // 然后在 loadModel 中，我们又设置了 model.position.set(x, y, z)，这意味着模型的中心在 (x, y, z)
+            // 
+            // 所以在 updateModelPositions 中，直接设置 model.position = (x, y, z)
+            // 因为模型已经居中（在初始化时设置了 -center），现在直接设置目标位置即可
+            const oldModelPos = { x: model.position.x, y: model.position.y, z: model.position.z };
+            model.position.set(x, y, z);
             
-            // 计算模型应该在世界坐标系中的位置
-            // 模型已经居中（position = -center），现在需要移动到新位置
-            // 新位置 = 目标位置 - 原始中心
-            model.position.x = x - originalCenter.x;
-            model.position.y = y - originalCenter.y;
-            model.position.z = z - originalCenter.z;
+            // 确保 modelGroup 的位置在原点
+            if (modelGroup) {
+                modelGroup.position.set(0, 0, 0);
+                modelGroup.updateMatrixWorld(true);
+            }
+            
+            // 更新模型的矩阵，确保位置变化立即生效
+            model.updateMatrixWorld(true);
+            
+            // 调试：在动画过程中打印位置变化（限制频率避免日志过多）
+            if (this.diskRotationAnimation && this.diskRotationAnimation.isAnimating) {
+                const posChanged = Math.abs(oldModelPos.x - x) > 0.01 || Math.abs(oldModelPos.z - z) > 0.01;
+                if (posChanged) {
+                    console.log(`Level ${level} position updated:`, {
+                        level: level,
+                        diskRotation: (this.diskRotation * 180 / Math.PI).toFixed(1) + '°',
+                        baseAngle: (baseAngle * 180 / Math.PI).toFixed(1) + '°',
+                        finalAngle: (angle * 180 / Math.PI).toFixed(1) + '°',
+                        oldPos: { x: oldModelPos.x.toFixed(2), y: oldModelPos.y.toFixed(2), z: oldModelPos.z.toFixed(2) },
+                        newPos: { x: x.toFixed(2), y: y.toFixed(2), z: z.toFixed(2) },
+                        actualPos: { x: model.position.x.toFixed(2), y: model.position.y.toFixed(2), z: model.position.z.toFixed(2) },
+                        radius: radius.toFixed(2)
+                    });
+                }
+            }
             
             // 更新灯光位置（确保跟随模型移动）
             if (this.modelLights[level] && this.modelLights[level].spotlight) {
                 const spotlight = this.modelLights[level].spotlight;
-                // 计算模型的实际世界位置（考虑原始中心偏移）
+                // 计算模型的实际世界位置
                 const modelWorldX = x;
                 const modelWorldY = y;
                 const modelWorldZ = z;
                 
-                // 更新spotlight位置（在模型上方10单位）
-                spotlight.position.set(modelWorldX, modelWorldY + 10, modelWorldZ);
+                // 更新spotlight位置（在模型上方12单位，抬高20%）
+                spotlight.position.set(modelWorldX, modelWorldY + 12, modelWorldZ);
                 // 更新spotlight目标位置（指向模型中心）
                 spotlight.target.position.set(modelWorldX, modelWorldY, modelWorldZ);
                 // 需要更新spotlight的矩阵
                 spotlight.target.updateMatrixWorld();
             }
+            
+            // 更新调试红球位置（跟随模型位置）
         }
     }
     
@@ -773,15 +809,42 @@ class LevelSelection3D {
                 // 检查是否点击了左箭头按钮
                 if (this.uiInstance && this.uiInstance.leftArrowButton) {
                     const leftBtn = this.uiInstance.leftArrowButton;
+                    console.log('Checking left arrow button:', {
+                        clickX, clickY,
+                        buttonX: leftBtn.x,
+                        buttonY: leftBtn.y,
+                        buttonWidth: leftBtn.width,
+                        buttonHeight: leftBtn.height,
+                        inBounds: clickX >= leftBtn.x && clickX <= leftBtn.x + leftBtn.width &&
+                                  clickY >= leftBtn.y && clickY <= leftBtn.y + leftBtn.height
+                    });
+                    
                     if (clickX >= leftBtn.x && clickX <= leftBtn.x + leftBtn.width &&
                         clickY >= leftBtn.y && clickY <= leftBtn.y + leftBtn.height) {
-                        // 触发左箭头点击
+                        // 触发左箭头点击：同时更新 UI 的 level、文本动画和 3D 模型
+                        console.log('Left arrow clicked!', {
+                            currentUILevel: this.uiInstance.level,
+                            current3DLevel: this.currentLevel,
+                            animationAnimating: this.uiInstance.levelAnimation.isAnimating
+                        });
+                        
                         if (this.uiInstance && !this.uiInstance.levelAnimation.isAnimating) {
                             if (this.uiInstance.level > 0) {
+                                // 更新 UI 的 level
                                 this.uiInstance.level--;
+                                console.log(`UI level changed to ${this.uiInstance.level}`);
+                                
+                                // 更新 UI 的 label 动画
                                 this.uiInstance.updateLevelLabel();
+                                
+                                // 更新 3D 模型的 level（会触发旋转动画）
+                                console.log(`Calling updateLevel(${this.uiInstance.level})`);
                                 this.updateLevel(this.uiInstance.level);
+                            } else {
+                                console.log('Cannot go left: already at level 0');
                             }
+                        } else {
+                            console.log('Cannot go left: animation is animating or no UI instance');
                         }
                         return;
                     }
@@ -790,15 +853,42 @@ class LevelSelection3D {
                 // 检查是否点击了右箭头按钮
                 if (this.uiInstance && this.uiInstance.rightArrowButton) {
                     const rightBtn = this.uiInstance.rightArrowButton;
+                    console.log('Checking right arrow button:', {
+                        clickX, clickY,
+                        buttonX: rightBtn.x,
+                        buttonY: rightBtn.y,
+                        buttonWidth: rightBtn.width,
+                        buttonHeight: rightBtn.height,
+                        inBounds: clickX >= rightBtn.x && clickX <= rightBtn.x + rightBtn.width &&
+                                  clickY >= rightBtn.y && clickY <= rightBtn.y + rightBtn.height
+                    });
+                    
                     if (clickX >= rightBtn.x && clickX <= rightBtn.x + rightBtn.width &&
                         clickY >= rightBtn.y && clickY <= rightBtn.y + rightBtn.height) {
-                        // 触发右箭头点击
+                        // 触发右箭头点击：同时更新 UI 的 level、文本动画和 3D 模型
+                        console.log('Right arrow clicked!', {
+                            currentUILevel: this.uiInstance.level,
+                            current3DLevel: this.currentLevel,
+                            animationAnimating: this.uiInstance.levelAnimation.isAnimating
+                        });
+                        
                         if (this.uiInstance && !this.uiInstance.levelAnimation.isAnimating) {
                             if (this.uiInstance.level < 2) {
+                                // 更新 UI 的 level
                                 this.uiInstance.level++;
+                                console.log(`UI level changed to ${this.uiInstance.level}`);
+                                
+                                // 更新 UI 的 label 动画
                                 this.uiInstance.updateLevelLabel();
+                                
+                                // 更新 3D 模型的 level（会触发旋转动画）
+                                console.log(`Calling updateLevel(${this.uiInstance.level})`);
                                 this.updateLevel(this.uiInstance.level);
+                            } else {
+                                console.log('Cannot go right: already at level 2');
                             }
+                        } else {
+                            console.log('Cannot go right: animation is animating or no UI instance');
                         }
                         return;
                     }
@@ -898,22 +988,30 @@ class LevelSelection3D {
                         setTimeout(() => {
                             this.startScaleAnimation(parseInt(level), 1.0);
                             
-                            // 跳转到对应phase
+                            // 跳转到对应phase并进入关卡模式
                             if (typeof StateManager !== 'undefined') {
                                 if (currentPhase === 1) {
-                                    // Phase 1: Level Selection界面，点击模型跳转到对应关卡
-                                    if (parseInt(level) === 0) {
+                                    // Phase 1: Level Selection界面，点击模型进入关卡
+                                    const clickedLevel = parseInt(level);
+                                    this.enterLevel(clickedLevel);
+                                    
+                                    // 跳转到对应phase
+                                    if (clickedLevel === 0) {
                                         StateManager.setPhase(10); // Tutorial
-                                    } else if (parseInt(level) === 1) {
+                                    } else if (clickedLevel === 1) {
                                         StateManager.setPhase(11); // Level 1
-                                    } else if (parseInt(level) === 2) {
+                                    } else if (clickedLevel === 2) {
                                         StateManager.setPhase(12); // Level 2
                                     }
                                 } else if (currentPhase >= 10 && currentPhase <= 15) {
-                                    // Phase 10-15: 主界面，点击模型跳转到对应关卡
-                                    if (parseInt(level) === 1) {
+                                    // Phase 10-15: 主界面，点击模型进入关卡
+                                    const clickedLevel = parseInt(level);
+                                    this.enterLevel(clickedLevel);
+                                    
+                                    // 跳转到对应关卡
+                                    if (clickedLevel === 1) {
                                         StateManager.setPhase(11);
-                                    } else if (parseInt(level) === 2) {
+                                    } else if (clickedLevel === 2) {
                                         StateManager.setPhase(12);
                                     }
                                 }
@@ -988,10 +1086,321 @@ class LevelSelection3D {
         }
     }
     
+    // 进入关卡模式：隐藏其他模型，聚焦相机，生成迷宫
+    async enterLevel(level) {
+        const THREE = window.THREE;
+        if (!THREE) return;
+        
+        console.log(`Entering level ${level}`);
+        
+        // 保存进入关卡前的相机状态
+        if (!this.inLevelMode) {
+            this.previousCameraPosition = this.camera.position.clone();
+            if (this.controls) {
+                this.previousCameraTarget = this.controls.target.clone();
+            } else {
+                // 如果没有controls，计算lookAt目标
+                const direction = new THREE.Vector3();
+                this.camera.getWorldDirection(direction);
+                this.previousCameraTarget = this.camera.position.clone().add(direction.multiplyScalar(5));
+            }
+        }
+        
+        // 隐藏其他模型
+        for (const levelKey in this.modelGroups) {
+            const modelLevel = parseInt(levelKey);
+            if (modelLevel !== level) {
+                const modelGroup = this.modelGroups[modelLevel];
+                if (modelGroup) {
+                    modelGroup.visible = false;
+                }
+            }
+        }
+        
+        // 显示当前关卡模型
+        const currentModelGroup = this.modelGroups[level];
+        if (currentModelGroup) {
+            currentModelGroup.visible = true;
+            this.currentLevelModel = this.models[level];
+        }
+        
+        // 聚焦相机到当前模型
+        this.focusCameraOnModel(level);
+        
+        // 生成迷宫（清除旧的，重新生成）
+        await this.generateMaze(level);
+        
+        this.inLevelMode = true;
+    }
+    
+    // 聚焦相机到模型
+    focusCameraOnModel(level) {
+        const model = this.models[level];
+        if (!model) return;
+        
+        // 计算模型的边界框（考虑世界变换）
+        model.updateMatrixWorld(true);
+        const box = new THREE.Box3().setFromObject(model);
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+        
+        // 计算相机位置：在模型上方和前方
+        const maxSize = Math.max(size.x, size.y, size.z);
+        const distance = maxSize * 1.5; // 距离模型1.5倍大小
+        
+        // 相机位置：在模型中心上方和前方
+        const cameraPos = new THREE.Vector3(
+            center.x,
+            center.y + maxSize * 0.5,
+            center.z + distance
+        );
+        
+        this.camera.position.copy(cameraPos);
+        
+        // 更新controls的target
+        if (this.controls) {
+            this.controls.target.copy(center);
+            this.controls.update();
+        } else {
+            this.camera.lookAt(center);
+        }
+    }
+    
+    // 生成迷宫：使用递归回溯算法生成连通迷宫，70%空，30%墙
+    async generateMaze(level) {
+        const THREE = window.THREE;
+        if (!THREE) return;
+        
+        // 清除旧的迷宫
+        if (this.mazeBlocks[level]) {
+            this.mazeBlocks[level].forEach(block => {
+                if (block.parent) {
+                    block.parent.remove(block);
+                }
+                // 清理资源
+                if (block.geometry) block.geometry.dispose();
+                if (block.material) {
+                    if (Array.isArray(block.material)) {
+                        block.material.forEach(m => m.dispose());
+                    } else {
+                        block.material.dispose();
+                    }
+                }
+            });
+            this.mazeBlocks[level] = [];
+        }
+        
+        // 获取地图大小
+        let mapWidth, mapDepth;
+        if (level === 0) {
+            mapWidth = 10;
+            mapDepth = 10;
+        } else if (level === 1) {
+            mapWidth = 14;
+            mapDepth = 14;
+        } else if (level === 2) {
+            mapWidth = 18;
+            mapDepth = 18;
+        } else {
+            return;
+        }
+        
+        // 动态导入 MapGenerator
+        const { createBlock } = await import('./MapGenerator.js');
+        
+        // 内部空间大小（排除围墙）
+        const innerWidth = mapWidth - 2;  // x从1到mapWidth-2
+        const innerDepth = mapDepth - 2;  // z从1到mapDepth-2
+        const totalCells = innerWidth * innerDepth;
+        const targetWallCount = Math.floor(totalCells * 0.3);  // 30%墙
+        
+        // 使用递归回溯算法生成连通迷宫
+        const maze = this.generateConnectedMaze(innerWidth, innerDepth, targetWallCount);
+        
+        // 根据生成的迷宫放置障碍物
+        const mazeBlocks = [];
+        const model = this.models[level];
+        if (!model) return;
+        
+        for (let x = 0; x < innerWidth; x++) {
+            for (let z = 0; z < innerDepth; z++) {
+                // maze[x][z] === 1 表示墙，0 表示空
+                if (maze[x][z] === 1) {
+                    // 将内部坐标转换为实际坐标（内部是0-based，实际是1-based）
+                    const actualX = x + 1;
+                    const actualZ = z + 1;
+                    
+                    // 创建一个临时场景来生成block，然后移除并添加到模型
+                    const tempScene = new THREE.Scene();
+                    const block = createBlock(tempScene, actualX, actualZ, 2);
+                    tempScene.remove(block);
+                    
+                    // 将障碍添加到模型组中，这样它会跟随模型移动和缩放
+                    model.add(block);
+                    mazeBlocks.push(block);
+                }
+            }
+        }
+        
+        this.mazeBlocks[level] = mazeBlocks;
+        const wallCount = mazeBlocks.length;
+        const emptyCount = totalCells - wallCount;
+        console.log(`Generated connected maze for level ${level} (${mapWidth}x${mapDepth}): ${wallCount} walls (${(wallCount/totalCells*100).toFixed(1)}%), ${emptyCount} empty (${(emptyCount/totalCells*100).toFixed(1)}%)`);
+    }
+    
+    // 使用递归回溯算法生成连通迷宫
+    // 返回一个二维数组：1表示墙，0表示空（路径）
+    // 保证所有空地都是连通的
+    generateConnectedMaze(width, depth, targetWallCount) {
+        // 初始化：全部设为墙（1）
+        const maze = Array(width).fill(null).map(() => Array(depth).fill(1));
+        const visited = Array(width).fill(null).map(() => Array(depth).fill(false));
+        
+        // 方向：上、右、下、左（相对于(x,z)坐标系）
+        const directions = [
+            { dx: 0, dz: -1 },  // 上（-z）
+            { dx: 1, dz: 0 },   // 右（+x）
+            { dx: 0, dz: 1 },   // 下（+z）
+            { dx: -1, dz: 0 }   // 左（-x）
+        ];
+        
+        // 从随机起点开始生成路径
+        const startX = Math.floor(Math.random() * width);
+        const startZ = Math.floor(Math.random() * depth);
+        
+        // 递归回溯算法生成路径
+        const stack = [[startX, startZ]];
+        let pathCells = 0;
+        
+        // 先将起点设为空地
+        maze[startX][startZ] = 0;
+        visited[startX][startZ] = true;
+        pathCells++;
+        
+        while (stack.length > 0 && pathCells < (width * depth - targetWallCount)) {
+            const [currentX, currentZ] = stack[stack.length - 1];
+            
+            // 获取未访问的相邻单元格
+            const neighbors = [];
+            for (const dir of directions) {
+                const nextX = currentX + dir.dx * 2;  // 跳过中间的一格
+                const nextZ = currentZ + dir.dz * 2;
+                
+                if (nextX >= 0 && nextX < width && 
+                    nextZ >= 0 && nextZ < depth && 
+                    !visited[nextX][nextZ]) {
+                    neighbors.push({
+                        x: nextX,
+                        z: nextZ,
+                        midX: currentX + dir.dx,
+                        midZ: currentZ + dir.dz
+                    });
+                }
+            }
+            
+            if (neighbors.length > 0) {
+                // 随机选择一个邻居
+                const next = neighbors[Math.floor(Math.random() * neighbors.length)];
+                
+                // 打通路径：当前->中间->邻居
+                maze[next.midX][next.midZ] = 0;  // 中间格设为空
+                maze[next.x][next.z] = 0;        // 邻居格设为空
+                visited[next.x][next.z] = true;
+                pathCells++;
+                
+                stack.push([next.x, next.z]);
+            } else {
+                // 没有未访问的邻居，回溯
+                stack.pop();
+            }
+        }
+        
+        // 如果路径不够（还没达到目标空地数），继续从已访问的路径点扩展
+        // 但这次只打通相邻的一格（不跳过）
+        const allPathCells = [];
+        for (let x = 0; x < width; x++) {
+            for (let z = 0; z < depth; z++) {
+                if (maze[x][z] === 0) {
+                    allPathCells.push([x, z]);
+                }
+            }
+        }
+        
+        // 从路径点随机扩展，直到达到目标空地数
+        while (pathCells < (width * depth - targetWallCount) && allPathCells.length > 0) {
+            const randomIndex = Math.floor(Math.random() * allPathCells.length);
+            const [currentX, currentZ] = allPathCells[randomIndex];
+            
+            // 随机选择一个相邻的墙
+            const shuffledDirs = [...directions].sort(() => Math.random() - 0.5);
+            let expanded = false;
+            
+            for (const dir of shuffledDirs) {
+                const nextX = currentX + dir.dx;
+                const nextZ = currentZ + dir.dz;
+                
+                if (nextX >= 0 && nextX < width && 
+                    nextZ >= 0 && nextZ < depth && 
+                    maze[nextX][nextZ] === 1) {  // 如果是墙
+                    maze[nextX][nextZ] = 0;  // 打通
+                    allPathCells.push([nextX, nextZ]);
+                    pathCells++;
+                    expanded = true;
+                    break;
+                }
+            }
+            
+            if (!expanded) {
+                // 这个点无法扩展了，移除
+                allPathCells.splice(randomIndex, 1);
+            }
+        }
+        
+        return maze;
+    }
+    
+    // 退出关卡模式：恢复所有模型显示，恢复相机位置
+    exitLevel() {
+        if (!this.inLevelMode) return;
+        
+        // 显示所有模型
+        for (const levelKey in this.modelGroups) {
+            const modelGroup = this.modelGroups[levelKey];
+            if (modelGroup) {
+                modelGroup.visible = true;
+            }
+        }
+        
+        // 恢复相机位置
+        if (this.previousCameraPosition && this.previousCameraTarget) {
+            this.camera.position.copy(this.previousCameraPosition);
+            if (this.controls) {
+                this.controls.target.copy(this.previousCameraTarget);
+                this.controls.update();
+            } else {
+                this.camera.lookAt(this.previousCameraTarget);
+            }
+        }
+        
+        this.inLevelMode = false;
+        this.currentLevelModel = null;
+    }
+    
     render() {
         if (this.renderer && this.scene && this.camera) {
-            // 更新圆盘旋转动画
-            this.updateDiskRotationAnimation();
+            // 如果不在关卡模式，更新圆盘旋转动画
+            if (!this.inLevelMode) {
+                // 更新圆盘旋转动画（这个函数内部会在动画进行时调用 updateModelPositions）
+                this.updateDiskRotationAnimation();
+                
+                // 即使没有动画，也要确保模型位置是最新的
+                // 这样可以确保在动画结束后或初始加载时位置正确
+                // 注意：updateDiskRotationAnimation 在动画进行时已经调用了 updateModelPositions
+                // 所以这里只需要在没有动画时更新一次即可
+                if (!this.diskRotationAnimation.isAnimating) {
+                    this.updateModelPositions();
+                }
+            }
             
             // 更新光照动画
             this.updateLightAnimations();
@@ -1002,7 +1411,12 @@ class LevelSelection3D {
             // Update critical points (if enabled)
             if (this.criticalPointSystem) {
                 this.criticalPointSystem.updateCriticalPoints();
-}
+            }
+            
+            // 更新 OrbitControls（必须在渲染前调用）
+            if (this.controls) {
+                this.controls.update();
+            }
             
             // 渲染场景
             this.renderer.render(this.scene, this.camera);
@@ -1036,4 +1450,9 @@ class LevelSelection3D {
             });
         });
     }
+}
+
+// 暴露到全局以便其他脚本使用
+if (typeof window !== 'undefined') {
+    window.LevelSelection3D = LevelSelection3D;
 }
