@@ -25,6 +25,10 @@ class LevelSelection3D {
         this.levelLight = null; // 关卡灯（用于照亮关卡）
         this.player = null; // 玩家实例
         this.playerVisualization = null; // player可视化正方体（用于调试）
+        this.playerKeydownHandler = null; // 键盘按下事件处理器
+        this.playerKeyupHandler = null; // 键盘释放事件处理器
+        this.pointerLockClickHandler = null; // PointerLockControls点击锁定处理器
+        this.pointerLockUnlockHandler = null; // PointerLockControls解锁处理器
         this.collisionWorld = null; // 碰撞检测世界（Octree）
         this.playerMovementLocked = false; // 玩家移动是否锁定
         this.cameraAnimationState = null; // 相机动画状态
@@ -1403,13 +1407,66 @@ class LevelSelection3D {
         }
         
         // 设置player初始位置（在世界坐标系中）
-        this.player.camera.position.set(playerWorldX, playerWorldY, playerWorldZ);
-        this.player.collider.start.set(playerWorldX, playerWorldY - PLAYER_HEIGHT/2, playerWorldZ);
-        this.player.collider.end.set(playerWorldX, playerWorldY + PLAYER_HEIGHT/2, playerWorldZ);
+        // Player的collider是一个Capsule，从start到end
+        // 根据Player.js，collider初始化为从y=PLAYER_HEIGHT/2到y=PLAYER_HEIGHT*3/4
+        // 所以collider的中心应该在y=playerWorldY，底部在y=playerWorldY - PLAYER_HEIGHT/2
+        // 顶部在y=playerWorldY + PLAYER_HEIGHT/2
         
-        // player.mesh是一个Group，需要设置其位置
-        // player.mesh包含实际的mesh（player.mesh.children[0]）
-        this.player.mesh.position.set(playerWorldX, playerWorldY, playerWorldZ);
+        // 设置collider位置
+        // 根据Player.js，collider初始化为：
+        // start: (0, PLAYER_HEIGHT/2, 0) = (0, 0.25, 0)
+        // end: (0, PLAYER_HEIGHT - PLAYER_HEIGHT/4, 0) = (0, 0.375, 0)
+        // 所以collider从y=0.25到y=0.375，高度是0.125
+        // 为了让player站在地面上，collider底部应该在y=地面高度+0.25
+        // 但为了简化，我们让collider底部在地面（y=0），顶部在y=PLAYER_HEIGHT*3/4=0.375
+        // 实际上，应该让collider底部在地面，顶部在playerWorldY
+        
+        // 设置collider位置
+        // 根据Player.js，collider初始化为从y=PLAYER_HEIGHT/2到y=PLAYER_HEIGHT*3/4
+        // 但playerWorldY是从上方掉落的位置（y=10），collider应该从地面开始
+        // 需要计算地面的实际世界坐标（模型的地面y值）
+        // 模型中心是modelCenter，地面应该在模型底部
+        // 使用之前已经计算的box
+        const groundWorldY = box.min.y; // 模型的最低y值（地面）
+        // 地板厚度是0.2，地板中心在y=thickness/2=0.1，所以地板上表面在y=0.2（相对于模型坐标系）
+        // 地板上表面的世界坐标
+        const floorSurfaceY = groundWorldY + 0.2;
+        
+        // 保存地板上表面y值，用于后续检查
+        this.floorSurfaceY = floorSurfaceY;
+        
+        // 设置collider大小以匹配红色方块（0.012大小）
+        // 红色方块大小：0.8 * 0.05 * 0.3 = 0.012
+        const PLAYER_VISUAL_SIZE = 0.8 * 0.05 * 0.3; // 0.012
+        const COLLIDER_RADIUS = PLAYER_VISUAL_SIZE / 2; // 0.006 (胶囊体半径是正方体边长的一半)
+        const COLLIDER_HEIGHT = PLAYER_VISUAL_SIZE; // 0.012 (高度等于正方体边长)
+        
+        // 重新创建collider以匹配红色方块的大小
+        // 动态导入Capsule类并创建新的collider
+        try {
+            const capsuleModule = await import("https://unpkg.com/three@0.165.0/examples/jsm/math/Capsule.js");
+            const Capsule = capsuleModule.Capsule;
+            // THREE已经在函数开始时声明了
+            this.player.collider = new Capsule(
+                new THREE.Vector3(playerWorldX, groundWorldY, playerWorldZ),
+                new THREE.Vector3(playerWorldX, groundWorldY + COLLIDER_HEIGHT, playerWorldZ),
+                COLLIDER_RADIUS
+            );
+            console.log('Collider resized to match red cube size:', COLLIDER_RADIUS, 'radius,', COLLIDER_HEIGHT, 'height');
+        } catch (e) {
+            console.warn('Failed to import Capsule, adjusting collider position only:', e);
+            // 如果导入失败，至少调整位置和大小（通过设置start/end）
+            // 但radius无法修改，所以只能调整位置
+            this.player.collider.start.set(playerWorldX, groundWorldY, playerWorldZ);
+            this.player.collider.end.set(playerWorldX, groundWorldY + COLLIDER_HEIGHT, playerWorldZ);
+        }
+        
+        // 设置camera位置（在player头部，即collider顶部）
+        this.player.camera.position.set(playerWorldX, this.player.collider.end.y, playerWorldZ);
+        
+        // player.mesh位置（在collider底部，根据Player.js的逻辑）
+        const center = this.player.collider.start.clone().add(this.player.collider.end).multiplyScalar(0.5);
+        this.player.mesh.position.set(center.x, this.player.collider.start.y, center.z);
         this.player.object.position.set(0, 0, 0); // object应该在(0,0,0)，mesh在object内的相对位置
         
         // 隐藏player的原始mesh（粉色方块），只使用我们创建的可视化方块
@@ -1443,6 +1500,81 @@ class LevelSelection3D {
         // 设置camera初始位置（使用关卡选择时的camera位置）
         // camera会在player落地后动画移动到player后方
         
+        // 添加键盘事件监听器（如果Player.js中的事件监听器没有添加）
+        // 检查函数是否存在
+        if (typeof this.setupPlayerKeyboardControls === 'function') {
+            this.setupPlayerKeyboardControls();
+        } else {
+            console.warn('setupPlayerKeyboardControls is not a function, setting up keyboard controls inline');
+            // 直接内联设置键盘控制
+            if (this.player) {
+                // 移除旧的监听器（如果存在）
+                if (this.playerKeydownHandler) {
+                    document.removeEventListener('keydown', this.playerKeydownHandler);
+                }
+                if (this.playerKeyupHandler) {
+                    document.removeEventListener('keyup', this.playerKeyupHandler);
+                }
+                
+                // 添加键盘事件监听器
+                this.playerKeydownHandler = (event) => {
+                    if (!this.player || this.playerMovementLocked) return;
+                    
+                    switch(event.key.toLowerCase()) {
+                        case 'w':
+                            this.player.movement.w = true;
+                            break;
+                        case 'a':
+                            this.player.movement.a = true;
+                            break;
+                        case 's':
+                            this.player.movement.s = true;
+                            break;
+                        case 'd':
+                            this.player.movement.d = true;
+                            break;
+                        case ' ':
+                            if (!this.player.movement.spaceHold) {
+                                this.player.movement.space = true;
+                                this.player.movement.spaceHold = true;
+                                if (this.player.onGround) {
+                                    this.player.speedY = 0.03;
+                                }
+                            }
+                            break;
+                    }
+                };
+                
+                this.playerKeyupHandler = (event) => {
+                    if (!this.player || this.playerMovementLocked) return;
+                    
+                    switch(event.key.toLowerCase()) {
+                        case 'w':
+                            this.player.movement.w = false;
+                            break;
+                        case 'a':
+                            this.player.movement.a = false;
+                            break;
+                        case 's':
+                            this.player.movement.s = false;
+                            break;
+                        case 'd':
+                            this.player.movement.d = false;
+                            break;
+                        case ' ':
+                            this.player.movement.space = false;
+                            this.player.movement.spaceHold = false;
+                            break;
+                    }
+                };
+                
+                document.addEventListener('keydown', this.playerKeydownHandler);
+                document.addEventListener('keyup', this.playerKeyupHandler);
+                
+                console.log('Player keyboard controls set up inline (WASD + Space)');
+            }
+        }
+        
         console.log(`Player created at position (${playerWorldX.toFixed(2)}, ${playerWorldY.toFixed(2)}, ${playerWorldZ.toFixed(2)})`);
         console.log(`Player mesh visible: ${this.player.mesh.visible}, object visible: ${this.player.object.visible}`);
         console.log(`Player object in scene:`, this.scene.children.includes(this.player.object));
@@ -1452,6 +1584,32 @@ class LevelSelection3D {
         
         // 创建一个明显的player可视化正方体（红色，大尺寸）
         this.createPlayerVisualization(playerWorldX, playerWorldY, playerWorldZ);
+        
+        // 设置PointerLockControls的点击锁定事件（用户点击canvas时锁定）
+        if (this.player && this.player.controls) {
+            // 移除旧的点击事件监听器（如果存在）
+            if (this.pointerLockClickHandler) {
+                this.renderer.domElement.removeEventListener('click', this.pointerLockClickHandler);
+            }
+            
+            // 添加点击事件来锁定PointerLockControls
+            this.pointerLockClickHandler = () => {
+                if (this.player && this.player.controls && !this.player.controls.isLocked) {
+                    this.player.controls.lock();
+                    console.log('PointerLockControls locked via click');
+                }
+            };
+            
+            this.renderer.domElement.addEventListener('click', this.pointerLockClickHandler);
+            
+            // 添加解锁事件监听器
+            if (!this.pointerLockUnlockHandler) {
+                this.pointerLockUnlockHandler = () => {
+                    console.log('PointerLockControls unlocked');
+                };
+                this.player.controls.addEventListener('unlock', this.pointerLockUnlockHandler);
+            }
+        }
     }
     
     // 创建player可视化正方体（用于调试和确保可见性）
@@ -1464,8 +1622,8 @@ class LevelSelection3D {
             this.scene.remove(this.playerVisualization);
         }
         
-        // 创建一个小的红色正方体来代表player（缩小到原来的5%）
-        const size = 0.8 * 0.05; // 缩小到原来的5% (0.04)
+        // 创建一个小的红色正方体来代表player（缩小到原来的5%，然后再缩小到30%）
+        const size = 0.8 * 0.05 * 0.3; // 原始5%再缩小到30% (0.04 * 0.3 = 0.012)
         const geometry = new THREE.BoxGeometry(size, size, size);
         const material = new THREE.MeshStandardMaterial({ 
             color: 0xff0000, // 红色
@@ -1498,6 +1656,76 @@ class LevelSelection3D {
         }
     }
     
+    // 设置player键盘控制（WASD移动）
+    setupPlayerKeyboardControls() {
+        if (!this.player) return;
+        
+        // 移除旧的监听器（如果存在）
+        if (this.playerKeydownHandler) {
+            document.removeEventListener('keydown', this.playerKeydownHandler);
+        }
+        if (this.playerKeyupHandler) {
+            document.removeEventListener('keyup', this.playerKeyupHandler);
+        }
+        
+        // 添加键盘事件监听器
+        this.playerKeydownHandler = (event) => {
+            if (!this.player || this.playerMovementLocked) return;
+            
+            switch(event.key.toLowerCase()) {
+                case 'w':
+                    this.player.movement.w = true;
+                    break;
+                case 'a':
+                    this.player.movement.a = true;
+                    break;
+                case 's':
+                    this.player.movement.s = true;
+                    break;
+                case 'd':
+                    this.player.movement.d = true;
+                    break;
+                case ' ':
+                    if (!this.player.movement.spaceHold) {
+                        this.player.movement.space = true;
+                        this.player.movement.spaceHold = true;
+                        if (this.player.onGround) {
+                            this.player.speedY = 0.03; // PLAYER_JUMP_SPEED
+                        }
+                    }
+                    break;
+            }
+        };
+        
+        this.playerKeyupHandler = (event) => {
+            if (!this.player || this.playerMovementLocked) return;
+            
+            switch(event.key.toLowerCase()) {
+                case 'w':
+                    this.player.movement.w = false;
+                    break;
+                case 'a':
+                    this.player.movement.a = false;
+                    break;
+                case 's':
+                    this.player.movement.s = false;
+                    break;
+                case 'd':
+                    this.player.movement.d = false;
+                    break;
+                case ' ':
+                    this.player.movement.space = false;
+                    this.player.movement.spaceHold = false;
+                    break;
+            }
+        };
+        
+        document.addEventListener('keydown', this.playerKeydownHandler);
+        document.addEventListener('keyup', this.playerKeyupHandler);
+        
+        console.log('Player keyboard controls set up (WASD + Space)');
+    }
+    
     // 更新player（掉落和碰撞检测）
     updatePlayer(deltaTime) {
         if (!this.player || !this.collisionWorld) {
@@ -1511,22 +1739,99 @@ class LevelSelection3D {
         
         const PLAYER_HEIGHT = 0.5;
         const GRAVITY = 9.8; // 重力加速度（m/s²）
+        const PLAYER_VISUAL_SIZE = 0.8 * 0.05 * 0.3;
+        const COLLIDER_HEIGHT = PLAYER_VISUAL_SIZE;
+        
+        // 获取地板上表面y值（如果未设置则使用默认值）
+        const floorSurfaceY = this.floorSurfaceY !== undefined ? this.floorSurfaceY : 0.2;
         
         // 初始化speedY（如果未初始化）
         if (this.player.speedY === undefined) {
             this.player.speedY = 0;
         }
         
+        // 保存player的初始位置（用于重置）
+        if (!this.playerInitialPosition) {
+            const center = this.player.collider.start.clone().add(this.player.collider.end).multiplyScalar(0.5);
+            this.playerInitialPosition = {
+                x: center.x,
+                y: center.y,
+                z: center.z,
+                groundY: this.player.collider.start.y
+            };
+        }
+        
+        // 首先检查y<地板上表面，如果是则固定y=地板上表面并停止重力（在所有更新之前）
+        
+        // 强制检查：无论任何情况，只要y<地板上表面就固定为地板上表面
+        if (this.player.collider.start.y < floorSurfaceY || this.player.collider.end.y < floorSurfaceY) {
+            console.log('Player y<floorSurface detected, fixing to y=floorSurface. Current y:', this.player.collider.start.y, this.player.collider.end.y, 'floorSurfaceY:', floorSurfaceY);
+            this.player.collider.start.y = floorSurfaceY;
+            this.player.collider.end.y = floorSurfaceY + COLLIDER_HEIGHT;
+            this.player.speedY = 0;
+            this.player.onGround = true;
+            
+            const center = this.player.collider.start.clone().add(this.player.collider.end).multiplyScalar(0.5);
+            const halfHeight = PLAYER_HEIGHT / 2;
+            this.player.mesh.position.set(center.x, center.y - halfHeight, center.z);
+            this.player.camera.position.set(center.x, center.y + halfHeight, center.z);
+            this.updatePlayerVisualization(center.x, center.y, center.z);
+            
+            // Player落地，启动camera动画（只启动一次）
+            if (!this.cameraAnimationState || (!this.cameraAnimationState.isAnimating && !this.cameraAnimationState.completed)) {
+                console.log('Player reached y=0, starting camera animation');
+                this.startCameraAnimation();
+            }
+            return; // 如果y<0，直接返回，不执行后续的重力和碰撞检测
+        }
+        
         // 如果移动被锁定，只更新物理（掉落）
         if (this.playerMovementLocked) {
-            // 检查是否在地面上
-            if (!this.player.onGround) {
-                // 应用重力
+            // 检查player是否掉到y<地板上表面，如果是则固定y=地板上表面并停止重力
+            if (this.player.collider.start.y < floorSurfaceY) {
+                // 设置y=地板上表面，停止重力计算
+                const PLAYER_VISUAL_SIZE = 0.8 * 0.05 * 0.3;
+                const COLLIDER_HEIGHT = PLAYER_VISUAL_SIZE;
+                this.player.collider.start.y = floorSurfaceY;
+                this.player.collider.end.y = floorSurfaceY + COLLIDER_HEIGHT;
+                this.player.speedY = 0;
+                this.player.onGround = true;
+                
+                // 更新mesh和camera位置
+                const center = this.player.collider.start.clone().add(this.player.collider.end).multiplyScalar(0.5);
+                const halfHeight = PLAYER_HEIGHT / 2;
+                this.player.mesh.position.set(center.x, center.y - halfHeight, center.z);
+                this.player.camera.position.set(center.x, center.y + halfHeight, center.z);
+                
+                // 同步更新visualization位置
+                this.updatePlayerVisualization(center.x, center.y, center.z);
+                
+                // Player落地，启动camera动画（只启动一次）
+                if (!this.cameraAnimationState || (!this.cameraAnimationState.isAnimating && !this.cameraAnimationState.completed)) {
+                    console.log('Player reached y=0, starting camera animation');
+                    this.startCameraAnimation();
+                }
+            } else if (!this.player.onGround) {
+                // 只有当y>=地板上表面时才应用重力
+                if (this.player.collider.start.y < floorSurfaceY) {
+                    // 如果已经<地板上表面，不应用重力
+                    return;
+                }
                 // 应用重力（重力加速度，单位/秒²）
                 this.player.speedY -= GRAVITY * deltaTime;
                 // 应用速度（位置变化 = 速度 * 时间）
                 this.player.collider.start.y += this.player.speedY * deltaTime;
                 this.player.collider.end.y += this.player.speedY * deltaTime;
+                
+                // 检查应用重力后是否<地板上表面，如果是则固定到地板上表面
+                if (this.player.collider.start.y < floorSurfaceY) {
+                    const PLAYER_VISUAL_SIZE = 0.8 * 0.05 * 0.3;
+                    const COLLIDER_HEIGHT = PLAYER_VISUAL_SIZE;
+                    this.player.collider.start.y = floorSurfaceY;
+                    this.player.collider.end.y = floorSurfaceY + COLLIDER_HEIGHT;
+                    this.player.speedY = 0;
+                    this.player.onGround = true;
+                }
                 
                 // 更新mesh和camera位置
                 const center = this.player.collider.start.clone().add(this.player.collider.end).multiplyScalar(0.5);
@@ -1542,7 +1847,29 @@ class LevelSelection3D {
             const result = this.collisionWorld.capsuleIntersect(this.player.collider);
             this.player.onGround = false;
             
-            if (result) {
+            // 检查y<地板上表面，如果是则固定y=地板上表面并停止重力（优先于碰撞检测）
+            if (this.player.collider.start.y < floorSurfaceY) {
+                const PLAYER_VISUAL_SIZE = 0.8 * 0.05 * 0.3;
+                const COLLIDER_HEIGHT = PLAYER_VISUAL_SIZE;
+                this.player.collider.start.y = floorSurfaceY;
+                this.player.collider.end.y = floorSurfaceY + COLLIDER_HEIGHT;
+                this.player.speedY = 0;
+                this.player.onGround = true;
+                
+                const center = this.player.collider.start.clone().add(this.player.collider.end).multiplyScalar(0.5);
+                const halfHeight = PLAYER_HEIGHT / 2;
+                this.player.mesh.position.set(center.x, center.y - halfHeight, center.z);
+                this.player.camera.position.set(center.x, center.y + halfHeight, center.z);
+                
+                // 同步更新visualization位置
+                this.updatePlayerVisualization(center.x, center.y, center.z);
+                
+                // Player落地，启动camera动画（只启动一次）
+                if (!this.cameraAnimationState || (!this.cameraAnimationState.isAnimating && !this.cameraAnimationState.completed)) {
+                    console.log('Player reached y=0, starting camera animation');
+                    this.startCameraAnimation();
+                }
+            } else if (result) {
                 this.player.onGround = result.normal.y > 0.5;
                 
                 if (result.depth >= 1e-5) {
@@ -1566,17 +1893,42 @@ class LevelSelection3D {
                 
                 // 同步更新visualization位置
                 this.updatePlayerVisualization(center.x, center.y, center.z);
+            } else {
+                // 如果没有碰撞结果，至少更新visualization位置
+                const center = this.player.collider.start.clone().add(this.player.collider.end).multiplyScalar(0.5);
+                this.updatePlayerVisualization(center.x, center.y, center.z);
             }
         } else {
             // 移动未锁定，正常更新player（调用player的update方法来处理移动和物理）
             // player.update()会处理移动输入、跳跃、碰撞等
             if (this.player && this.player.update && this.player.controls) {
-                // 调用player的update方法，这会处理所有移动逻辑
+                // 调用player的update方法，这会处理移动和物理
+                // update方法内部会检查movement.w/a/s/d并调用controls.moveForward/moveRight
                 this.player.update();
+                
+                // 检查y<地板上表面，如果是则固定y=地板上表面并停止重力（在player.update()之后检查）
+                if (this.player.collider.start.y < floorSurfaceY || this.player.collider.end.y < floorSurfaceY) {
+                    console.log('Player y<floorSurface after update(), fixing to y=floorSurface. Current y:', this.player.collider.start.y, this.player.collider.end.y, 'floorSurfaceY:', floorSurfaceY);
+                    const PLAYER_VISUAL_SIZE = 0.8 * 0.05 * 0.3;
+                    const COLLIDER_HEIGHT = PLAYER_VISUAL_SIZE;
+                    this.player.collider.start.y = floorSurfaceY;
+                    this.player.collider.end.y = floorSurfaceY + COLLIDER_HEIGHT;
+                    this.player.speedY = 0;
+                    this.player.onGround = true;
+                    
+                    // 更新mesh和camera位置
+                    const center = this.player.collider.start.clone().add(this.player.collider.end).multiplyScalar(0.5);
+                    const PLAYER_HEIGHT = 0.5;
+                    const halfHeight = PLAYER_HEIGHT / 2;
+                    this.player.mesh.position.set(center.x, center.y - halfHeight, center.z);
+                    this.player.camera.position.set(center.x, center.y + halfHeight, center.z);
+                }
                 
                 // 同步更新visualization位置
                 const center = this.player.collider.start.clone().add(this.player.collider.end).multiplyScalar(0.5);
                 this.updatePlayerVisualization(center.x, center.y, center.z);
+            } else if (this.player && !this.player.controls) {
+                console.warn('Player controls not available, cannot move');
             }
         }
     }
@@ -1596,27 +1948,34 @@ class LevelSelection3D {
         const PLAYER_HEIGHT = 0.5;
         const halfHeight = PLAYER_HEIGHT / 2;
         
-        // 目标位置：直接使用player camera的当前位置（第一人称视角）
-        // player的camera已经在正确的位置了（在player头部）
-        const targetPos = this.player.camera.position.clone();
+        // 获取player可视化方块的位置（这是我们要lookAt的目标）
+        let visualizationPos = playerCenter.clone();
+        if (this.playerVisualization) {
+            visualizationPos = this.playerVisualization.position.clone();
+        }
         
-        // 计算目标lookAt位置（player前方，第一人称视角）
-        // 获取player camera当前的方向
-        let lookDirection = new THREE.Vector3(0, 0, -1); // 默认向前看
-        if (this.player.camera) {
+        // 获取player camera的方向（使用PointerLockControls的方向）
+        let playerDirection = new THREE.Vector3(0, 0, -1); // 默认向前
+        if (this.player && this.player.camera && this.player.controls) {
             try {
-                this.player.camera.getWorldDirection(lookDirection);
-                lookDirection.normalize();
+                // 使用player camera的getWorldDirection获取当前朝向
+                this.player.camera.getWorldDirection(playerDirection);
+                playerDirection.normalize();
             } catch (e) {
-                lookDirection = new THREE.Vector3(0, 0, -1);
+                playerDirection = new THREE.Vector3(0, 0, -1);
             }
         }
         
-        const targetLookAt = new THREE.Vector3(
-            targetPos.x + lookDirection.x * 10, // 看向前方10个单位
-            targetPos.y,
-            targetPos.z + lookDirection.z * 10
+        // 目标位置：红方块上方1的位置
+        const offsetHeight = 1.0;
+        const targetPos = new THREE.Vector3(
+            visualizationPos.x,
+            visualizationPos.y + offsetHeight,
+            visualizationPos.z
         );
+        
+        // lookAt方向：看向player的可视化方块
+        const targetLookAt = visualizationPos.clone();
         
         // 启动动画
         this.cameraAnimationState = {
@@ -1670,17 +2029,127 @@ class LevelSelection3D {
             this.cameraAnimationState.isAnimating = false;
             this.cameraAnimationState.completed = true;
             
-            // 动画结束后，解锁移动
+            // 动画结束后，解锁移动并设置键盘监听器
             this.playerMovementLocked = false;
             
-            // 确保player的camera位置正确（第一人称视角）
-            // camera位置会在player.update()中自动更新，这里只确保初始化正确
-            if (this.player && this.player.camera) {
-                const playerCenter = this.player.collider.start.clone().add(this.player.collider.end).multiplyScalar(0.5);
-                const PLAYER_HEIGHT = 0.5;
-                const halfHeight = PLAYER_HEIGHT / 2;
-                // 初始化camera到player头部位置（player.update()会保持这个关系）
-                this.player.camera.position.set(playerCenter.x, playerCenter.y + halfHeight, playerCenter.z);
+            // 锁定PointerLockControls以启用鼠标视角控制
+            if (this.player && this.player.controls) {
+                try {
+                    this.player.controls.lock();
+                    console.log('PointerLockControls locked, mouse movement enabled');
+                } catch (e) {
+                    console.warn('Failed to lock PointerLockControls:', e);
+                }
+            }
+            
+            // 设置键盘事件监听器（如果还没有设置）
+            // 检查函数是否存在，或者检查监听器是否已经设置
+            if (!this.playerKeydownHandler) {
+                if (typeof this.setupPlayerKeyboardControls === 'function') {
+                    this.setupPlayerKeyboardControls();
+                } else {
+                    // 如果函数不存在且监听器还没有设置，直接内联设置
+                    console.warn('setupPlayerKeyboardControls not found in updateCameraAnimation, setting up inline');
+                    if (this.player) {
+                        // 移除旧的监听器（如果存在）
+                        if (this.playerKeydownHandler) {
+                            document.removeEventListener('keydown', this.playerKeydownHandler);
+                        }
+                        if (this.playerKeyupHandler) {
+                            document.removeEventListener('keyup', this.playerKeyupHandler);
+                        }
+                        
+                        // 添加键盘事件监听器
+                        this.playerKeydownHandler = (event) => {
+                            if (!this.player || this.playerMovementLocked) return;
+                            
+                            switch(event.key.toLowerCase()) {
+                                case 'w':
+                                    this.player.movement.w = true;
+                                    break;
+                                case 'a':
+                                    this.player.movement.a = true;
+                                    break;
+                                case 's':
+                                    this.player.movement.s = true;
+                                    break;
+                                case 'd':
+                                    this.player.movement.d = true;
+                                    break;
+                                case ' ':
+                                    if (!this.player.movement.spaceHold) {
+                                        this.player.movement.space = true;
+                                        this.player.movement.spaceHold = true;
+                                        if (this.player.onGround) {
+                                            this.player.speedY = 0.03;
+                                        }
+                                    }
+                                    break;
+                            }
+                        };
+                        
+                        this.playerKeyupHandler = (event) => {
+                            if (!this.player || this.playerMovementLocked) return;
+                            
+                            switch(event.key.toLowerCase()) {
+                                case 'w':
+                                    this.player.movement.w = false;
+                                    break;
+                                case 'a':
+                                    this.player.movement.a = false;
+                                    break;
+                                case 's':
+                                    this.player.movement.s = false;
+                                    break;
+                                case 'd':
+                                    this.player.movement.d = false;
+                                    break;
+                                case ' ':
+                                    this.player.movement.space = false;
+                                    this.player.movement.spaceHold = false;
+                                    break;
+                            }
+                        };
+                        
+                        document.addEventListener('keydown', this.playerKeydownHandler);
+                        document.addEventListener('keyup', this.playerKeyupHandler);
+                        
+                        console.log('Player keyboard controls set up inline in updateCameraAnimation (WASD + Space)');
+                    }
+                    }
+                }
+            
+            // 动画完成后，camera应该使用player的camera（第一人称视角）
+            // 但为了能看到player方块，我们使用关卡camera，位置在方块后方0.05，上方0.03
+            // 这样可以从近距离看到player方块
+            if (this.player && this.playerVisualization) {
+                const visualizationPos = this.playerVisualization.position.clone();
+                
+                // 获取player camera的方向
+                let playerDirection = new THREE.Vector3(0, 0, -1);
+                if (this.player.camera && this.player.controls) {
+                    try {
+                        this.player.camera.getWorldDirection(playerDirection);
+                        playerDirection.normalize();
+                    } catch (e) {
+                        playerDirection = new THREE.Vector3(0, 0, -1);
+                    }
+                }
+                
+                // 设置camera位置：红方块上方1的位置
+                const offsetHeight = 1.0;
+                this.camera.position.set(
+                    visualizationPos.x,
+                    visualizationPos.y + offsetHeight,
+                    visualizationPos.z
+                );
+                
+                // lookAt红方块
+                this.camera.lookAt(visualizationPos);
+                if (this.controls) {
+                    this.controls.target.copy(visualizationPos);
+                    this.controls.update();
+                }
             }
             
             console.log('Camera animation completed, movement unlocked. Using player camera for first-person view.');
@@ -1940,10 +2409,30 @@ class LevelSelection3D {
             this.player = null;
         }
         
-        // 清除player visualization
+        // 清除player visualization和调试方块
         if (this.playerVisualization) {
             this.scene.remove(this.playerVisualization);
             this.playerVisualization = null;
+        }
+        
+        // 移除键盘事件监听器
+        if (this.playerKeydownHandler) {
+            document.removeEventListener('keydown', this.playerKeydownHandler);
+            this.playerKeydownHandler = null;
+        }
+        if (this.playerKeyupHandler) {
+            document.removeEventListener('keyup', this.playerKeyupHandler);
+            this.playerKeyupHandler = null;
+        }
+        
+        // 移除PointerLockControls事件监听器
+        if (this.pointerLockClickHandler && this.renderer && this.renderer.domElement) {
+            this.renderer.domElement.removeEventListener('click', this.pointerLockClickHandler);
+            this.pointerLockClickHandler = null;
+        }
+        if (this.pointerLockUnlockHandler && this.player && this.player.controls) {
+            this.player.controls.removeEventListener('unlock', this.pointerLockUnlockHandler);
+            this.pointerLockUnlockHandler = null;
         }
         
         // 清除碰撞世界
@@ -2043,14 +2532,33 @@ class LevelSelection3D {
             // 渲染场景
             // 在关卡模式下，根据camera动画状态选择使用哪个camera
             if (this.inLevelMode && this.player) {
-                // 如果camera动画已完成，使用player的camera
+                // 持续更新camera位置以跟随player方块（无论动画是否完成）
+                if (this.playerVisualization) {
+                    const visualizationPos = this.playerVisualization.position.clone();
+                    
+                    // 更新camera位置：红方块上方1的位置
+                    const offsetHeight = 1.0;
+                    this.camera.position.set(
+                        visualizationPos.x,
+                        visualizationPos.y + offsetHeight,
+                        visualizationPos.z
+                    );
+                    
+                    // lookAt红方块
+                    this.camera.lookAt(visualizationPos);
+                    if (this.controls) {
+                        this.controls.target.copy(visualizationPos);
+                        this.controls.update();
+                    }
+                }
+                
+                // 如果camera动画已完成，使用关卡camera（在红方块上方1的位置，lookAt红方块）
                 if (this.cameraAnimationState && this.cameraAnimationState.completed) {
-                    // 动画完成，使用player的camera
-                    this.renderer.render(this.scene, this.player.camera);
+                    // camera位置在render循环中会持续更新以跟随player方块
+                    this.renderer.render(this.scene, this.camera);
                 } else {
                     // 动画进行中或还没开始，使用关卡camera
-                    // 这样可以确保在动画过程中能看到camera的移动
-                    this.renderer.render(this.scene, this.camera);
+            this.renderer.render(this.scene, this.camera);
                 }
             } else {
                 // 不在关卡模式，使用关卡选择camera

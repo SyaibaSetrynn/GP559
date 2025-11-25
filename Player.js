@@ -140,6 +140,17 @@ class Player {
 
             this.collider.start.y += this.speedY;
             this.collider.end.y += this.speedY;
+            
+            // 检查y<0，如果是则固定y=0并停止重力
+            if (this.collider.start.y < 0) {
+                const PLAYER_VISUAL_SIZE = 0.8 * 0.05 * 0.3;
+                const COLLIDER_HEIGHT = PLAYER_VISUAL_SIZE;
+                this.collider.start.y = 0;
+                this.collider.end.y = COLLIDER_HEIGHT;
+                this.speedY = 0;
+                this.onGround = true;
+            }
+            
             const center = this.collider.start.clone().add(this.collider.end).multiplyScalar(0.5);
             const halfHeight = PLAYER_HEIGHT / 2;
             this.mesh.position.set(center.x, center.y - halfHeight, center.z);
@@ -148,7 +159,12 @@ class Player {
             if(this.onGround) 
                 this.movement.spaceHold = false;
             
-            this.speedY -= GRAVITY;
+            // 只有当y>=0时才应用重力
+            if (this.collider.start.y >= 0) {
+                this.speedY -= GRAVITY;
+            } else {
+                this.speedY = 0;
+            }
         }
 
         this.collisions();
