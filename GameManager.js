@@ -1,6 +1,7 @@
 /**
  * Whitewasher Game Manager
  * 管理所有游戏机制的核心类
+ * IMPORTANT: This class is not used.
  */
 
 class GameManager {
