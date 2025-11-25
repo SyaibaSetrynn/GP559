@@ -171,6 +171,7 @@ let startGame = false;
 // to switch between different levels
 let level1 = false;
 let level2 = true;
+let useMapGenerator = true; // Toggle to use MapGenerator instead of pre-built terrain
 
 // set up renderer
 let renderer = new T.WebGLRenderer({preserveDrawingBuffer:true});
@@ -209,40 +210,127 @@ let criticalPointsEnabled = true; // Toggle for critical points
 const agentManager = new AgentManager(scene, collisionWorld);
 
 // loading terrain
-const levelLoader = new O.OBJLoader();
 let levelObj = null;
-if(level1) {
-    levelObj = await levelLoader.loadAsync( './Objects/Terrain1.obj' );
-}
-else if(level2) {
-    levelObj = await levelLoader.loadAsync( './Objects/Terrain2.obj' );
+
+if (useMapGenerator) {
+    // Import MapGenerator functions
+    const { createFloor, createWalls, createBlock } = await import('./mapgenerator.js');
+    
+    // Determine map size based on selected level
+    let mapWidth, mapDepth;
+    if (level1) {
+        mapWidth = 14;
+        mapDepth = 14;
+    } else if (level2) {
+        mapWidth = 18;
+        mapDepth = 18;
+    } else {
+        // Default level (level 0)
+        mapWidth = 10;
+        mapDepth = 10;
+    }
+    
+    // Create the level using MapGenerator
+    levelObj = new T.Group();
+    
+    // Create floor
+    const floor = createFloor(scene, mapWidth, mapDepth, 0.2);
+    scene.remove(floor); // Remove from scene since createFloor adds it automatically
+    levelObj.add(floor);
+    
+    // Create walls
+    const walls = createWalls(scene, mapWidth, mapDepth, 2);
+    walls.forEach(wall => {
+        scene.remove(wall); // Remove from scene since createWalls adds them automatically
+        levelObj.add(wall);
+    });
+    
+    // Generate maze blocks (similar to LevelContent3D.js)
+    const innerWidth = mapWidth - 2;
+    const innerDepth = mapDepth - 2;
+    const totalCells = innerWidth * innerDepth;
+    const targetWallCount = Math.floor(totalCells * 0.3); // Reduced density for better gameplay
+    
+    // Simple maze generation (basic random placement)
+    const mazeBlocks = [];
+    const halfWidth = mapWidth / 2;
+    const halfDepth = mapDepth / 2;
+    
+    for (let i = 0; i < targetWallCount; i++) {
+        const x = Math.floor(Math.random() * innerWidth);
+        const z = Math.floor(Math.random() * innerDepth);
+        
+        // Convert to world coordinates
+        const actualX = -halfWidth + 1 + x + 0.5;
+        const actualZ = -halfDepth + 1 + z + 0.5;
+        
+        const tempScene = new T.Scene();
+        const block = createBlock(tempScene, actualX, actualZ, 2);
+        tempScene.remove(block); // Remove from temp scene
+        
+        levelObj.add(block);
+        mazeBlocks.push(block);
+    }
+    
+    // Add collision detection for all generated objects
+    levelObj.children.forEach(child => {
+        if (child.isMesh) {
+            child.updateWorldMatrix(true, false);
+            collisionWorld.fromGraphNode(child);
+            
+            // Add critical points to terrain meshes
+            if (criticalPointsEnabled) {
+                const CP_COLORS = window.CP_COLORS;
+                const criticalPoints = criticalPointSystem.addCriticalPoints(child, 3, CP_COLORS.WHITE);
+                
+                // Register critical points with agent manager
+                criticalPoints.forEach(cp => {
+                    agentManager.addCriticalPoint(cp.position, cp);
+                });
+            }
+            
+            // Add terrain as obstacles for line of sight
+            agentManager.addObstacles([child]);
+        }
+    });
+    
+} else {
+    // Original OBJ loading code
+    const levelLoader = new O.OBJLoader();
+    if(level1) {
+        levelObj = await levelLoader.loadAsync( './Objects/Terrain1.obj' );
+    }
+    else if(level2) {
+        levelObj = await levelLoader.loadAsync( './Objects/Terrain2.obj' );
+    }
+
+    levelObj.traverse(obs => {
+        obs.updateWorldMatrix(true, false);
+        collisionWorld.fromGraphNode(obs);
+        // just assigning a random color for now
+        if (obs.isMesh) {
+            obs.material = new T.MeshStandardMaterial({
+                color: new T.Color(Math.random(), Math.random(), Math.random())
+            });
+            
+            // Add critical points to terrain meshes
+            if (criticalPointsEnabled) {
+                const CP_COLORS = window.CP_COLORS;
+                const criticalPoints = criticalPointSystem.addCriticalPoints(obs, 3, CP_COLORS.WHITE);
+                
+                // Register critical points with agent manager
+                criticalPoints.forEach(cp => {
+                    // cp is a Three.js mesh with a position
+                    agentManager.addCriticalPoint(cp.position, cp);
+                });
+            }
+            
+            // Add terrain as obstacles for line of sight
+            agentManager.addObstacles([obs]);
+        }
+    });
 }
 
-levelObj.traverse(obs => {
-    obs.updateWorldMatrix(true, false);
-    collisionWorld.fromGraphNode(obs);
-    // just assigning a random color for now
-    if (obs.isMesh) {
-        obs.material = new T.MeshStandardMaterial({
-            color: new T.Color(Math.random(), Math.random(), Math.random())
-        });
-        
-        // Add critical points to terrain meshes
-        if (criticalPointsEnabled) {
-            const CP_COLORS = window.CP_COLORS;
-            const criticalPoints = criticalPointSystem.addCriticalPoints(obs, 3, CP_COLORS.WHITE);
-            
-            // Register critical points with agent manager
-            criticalPoints.forEach(cp => {
-                // cp is a Three.js mesh with a position
-                agentManager.addCriticalPoint(cp.position, cp);
-            });
-        }
-        
-        // Add terrain as obstacles for line of sight
-        agentManager.addObstacles([obs]);
-    }
-});
 scene.add(levelObj);
 
 // create playable player and put in scene
