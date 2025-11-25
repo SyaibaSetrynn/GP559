@@ -864,6 +864,8 @@ class UI {
         
         // 检查phase是否变化
         if (currentPhase !== this.lastPhase) {
+            // 保存旧的phase值（用于退出检测）
+            const oldPhase = this.lastPhase;
             this.lastPhase = currentPhase;
             // phase变化时重置hover状态
             this.playButton.isHovered = false;
@@ -884,6 +886,14 @@ class UI {
                 this.helpButtonFillAnimation.isAnimating = false;
             }
             
+            // 离开phase 10-15时，重置暂停状态并退出关卡模式
+            if (oldPhase >= 10 && oldPhase <= 15 && currentPhase < 10) {
+                // 退出关卡模式：清除迷宫障碍物和重置位置
+                if (this.levelSelection3D) {
+                    this.levelSelection3D.exitLevel();
+                }
+            }
+            
             // 在phase 1或phase 10-15时，根据状态决定是否拦截鼠标事件
             if (currentPhase === 1) {
                 // Phase 1: Level Selection，不拦截鼠标事件（让3D模型可以接收点击）
@@ -896,7 +906,6 @@ class UI {
                 this.canvas.style.pointerEvents = this.isPaused ? 'auto' : 'none';
             } else {
                 this.canvas.style.pointerEvents = 'auto';
-                // 离开phase 10-15时，重置暂停状态
                 if (this.isPaused) {
                     this.isPaused = false;
                     this.pauseOverlay.alpha = 0;
