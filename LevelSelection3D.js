@@ -22,6 +22,13 @@ class LevelSelection3D {
         this.currentLevelModel = null; // 当前进入的关卡模型
         this.previousCameraPosition = null; // 进入关卡前的相机位置
         this.previousCameraTarget = null; // 进入关卡前的相机lookAt目标
+        this.levelLight = null; // 关卡灯（用于照亮关卡）
+        this.player = null; // 玩家实例
+        this.playerVisualization = null; // player可视化正方体（用于调试）
+        this.collisionWorld = null; // 碰撞检测世界（Octree）
+        this.playerMovementLocked = false; // 玩家移动是否锁定
+        this.cameraAnimationState = null; // 相机动画状态
+        this.emptyPositions = {}; // 每个level的空闲位置 { level: [{x, z}, ...] }
         this.scene = null;
         this.camera = null;
         this.renderer = null;
@@ -725,6 +732,17 @@ class LevelSelection3D {
         
         // 鼠标移动事件
         this.threeCanvas.addEventListener('mousemove', (e) => {
+            // 如果已经在关卡模式中，禁用hover
+            if (this.inLevelMode) {
+                // 清除hover状态
+                if (this.hoveredModel !== null) {
+                    const oldHovered = this.hoveredModel;
+                    this.hoveredModel = null;
+                    this.startScaleAnimation(oldHovered, 1.0); // 恢复原大小
+                }
+                return;
+            }
+            
             // 检查当前phase是否在1或10-15之间
             const currentPhase = (typeof StateManager !== 'undefined') ? StateManager.getPhase() : 0;
             if (currentPhase !== 1 && (currentPhase < 10 || currentPhase > 15)) {
@@ -965,6 +983,11 @@ class LevelSelection3D {
             }
             
             // 处理模型点击（phase 1和phase 10-15都支持）
+            // 如果已经在关卡模式中，禁用点击
+            if (this.inLevelMode) {
+                return; // 进入关卡后，不允许点击模型
+            }
+            
             mouse.x = (clickX / this.width) * 2 - 1;
             mouse.y = -(clickY / this.height) * 2 + 1;
             
@@ -1130,6 +1153,15 @@ class LevelSelection3D {
         // 生成迷宫（清除旧的，重新生成）
         await this.generateMaze(level);
         
+        // 添加关卡灯，位置和spotlight相同，用来照亮关卡
+        this.addLevelLight(level);
+        
+        // 创建碰撞检测世界
+        await this.setupCollisionWorld(level);
+        
+        // 创建玩家并放置在空闲位置
+        await this.createPlayer(level);
+        
         this.inLevelMode = true;
     }
     
@@ -1166,7 +1198,497 @@ class LevelSelection3D {
         }
     }
     
-    // 生成迷宫：使用递归回溯算法生成连通迷宫，70%空，30%墙
+    // 添加关卡灯：位置和spotlight相同，用来照亮关卡
+    addLevelLight(level) {
+        const THREE = window.THREE;
+        if (!THREE) return;
+        
+        // 先移除旧的关卡灯（如果存在）
+        if (this.levelLight) {
+            this.scene.remove(this.levelLight);
+            if (this.levelLightTarget) {
+                this.scene.remove(this.levelLightTarget);
+            }
+            this.levelLight = null;
+            this.levelLightTarget = null;
+        }
+        
+        // 获取模型的世界位置（spotlight的位置）
+        const model = this.models[level];
+        if (!model) return;
+        
+        // 计算模型的世界位置（考虑模型组的变换）
+        model.updateMatrixWorld(true);
+        const box = new THREE.Box3().setFromObject(model);
+        const center = box.getCenter(new THREE.Vector3());
+        
+        // 关卡灯位置和spotlight相同：(x, y + 12, z)，其中(x, y, z)是模型中心
+        const lightPosition = new THREE.Vector3(
+            center.x,
+            center.y + 12,
+            center.z
+        );
+        
+        // 创建Spotlight来照亮关卡
+        const spotlight = new THREE.SpotLight(0xffffff, 1.0); // 强度1.0，用来照亮关卡
+        spotlight.position.copy(lightPosition);
+        
+        // 创建目标对象，指向模型中心
+        const target = new THREE.Object3D();
+        target.position.copy(center);
+        spotlight.target = target;
+        
+        // 设置spotlight参数（和模型选择时的spotlight类似，但角度更大以照亮整个关卡）
+        spotlight.angle = Math.PI / 3; // 60度锥角（更大的角度以照亮整个关卡）
+        spotlight.penumbra = 0.5; // 边缘柔和度
+        spotlight.decay = 2; // 衰减
+        spotlight.distance = 50; // 更大的照射距离以覆盖整个关卡
+        
+        // 添加到场景
+        this.scene.add(spotlight);
+        this.scene.add(target);
+        
+        // 保存引用
+        this.levelLight = spotlight;
+        this.levelLightTarget = target;
+        
+        console.log(`Added level light at position (${lightPosition.x.toFixed(2)}, ${lightPosition.y.toFixed(2)}, ${lightPosition.z.toFixed(2)})`);
+    }
+    
+    // 设置碰撞检测世界（Octree）
+    async setupCollisionWorld(level) {
+        const THREE = window.THREE;
+        if (!THREE) return;
+        
+        // 动态导入Octree
+        const { Octree } = await import('https://unpkg.com/three@0.165.0/examples/jsm/math/Octree.js');
+        
+        // 创建新的Octree
+        this.collisionWorld = new Octree();
+        
+        // 获取当前关卡的模型
+        const model = this.models[level];
+        if (!model) return;
+        
+        // 将模型和所有障碍物添加到Octree
+        model.updateMatrixWorld(true);
+        model.traverse((child) => {
+            if (child.isMesh) {
+                child.updateWorldMatrix(true, false);
+                this.collisionWorld.fromGraphNode(child);
+            }
+        });
+        
+        console.log('Collision world set up for level', level);
+    }
+    
+    // 创建玩家并放置在空闲位置
+    async createPlayer(level) {
+        const THREE = window.THREE;
+        if (!THREE) return;
+        
+        // 先清除旧的player
+        if (this.player) {
+            this.scene.remove(this.player.object);
+            this.player = null;
+        }
+        
+        // Player类应该在全局作用域中可用（通过Player.js加载）
+        // 注意：Player.js在模块级别执行了很多代码（为indextestsetrynn.html设计），
+        // 但我们只需要Player类，不需要执行那些模块级代码
+        // Player类会在Player.js模块加载时导出到window.Player
+        
+        // 等待Player.js模块加载完成
+        let PlayerClass = null;
+        let waitCount = 0;
+        const maxWait = 200; // 最多等待10秒 (200 * 50ms)
+        
+        // 检查Player类是否已经可用
+        // 注意：Player.js在模块级别执行了很多代码（为indextestsetrynn.html设计），
+        // 包括appendChild等DOM操作，但我们只需要Player类
+        while ((typeof window.Player === 'undefined' || window.Player === null) && 
+               waitCount < maxWait) {
+            await new Promise(resolve => setTimeout(resolve, 50));
+            waitCount++;
+            // 每20次检查打印一次日志
+            if (waitCount % 20 === 0) {
+                console.log(`Waiting for Player class... (${waitCount * 50}ms)`);
+            }
+        }
+        
+        // 获取Player类（优先使用window.Player）
+        // 注意：不要直接检查 Player 变量，因为它可能在模块作用域中不存在
+        PlayerClass = window.Player || null;
+        
+        if (!PlayerClass) {
+            console.error('Player class not found after waiting. Please ensure Player.js is loaded.');
+            console.error('Current window.Player:', typeof window.Player, window.Player);
+            console.error('Make sure Player.js is loaded before LevelSelection3D.js in the HTML file.');
+            return;
+        }
+        
+        // 验证PlayerClass确实是构造函数
+        if (typeof PlayerClass !== 'function') {
+            console.error('window.Player is not a function:', typeof PlayerClass, PlayerClass);
+            return;
+        }
+        
+        console.log('Player class successfully found and ready to use:', PlayerClass);
+        
+        // 获取空闲位置
+        const emptyPositions = this.emptyPositions[level];
+        if (!emptyPositions || emptyPositions.length === 0) {
+            console.error(`No empty positions available for level ${level}`);
+            return;
+        }
+        
+        // 随机选择一个空闲位置
+        const randomPos = emptyPositions[Math.floor(Math.random() * emptyPositions.length)];
+        
+        // 计算模型的世界位置
+        const model = this.models[level];
+        if (!model) return;
+        
+        // 计算模型的世界变换
+        model.updateMatrixWorld(true);
+        const box = new THREE.Box3().setFromObject(model);
+        const modelCenter = box.getCenter(new THREE.Vector3());
+        
+        // 计算player的实际世界位置
+        // 简化方式：直接在模型坐标系中设置位置，然后应用世界变换
+        const PLAYER_HEIGHT = 0.5;
+        const startY = 10.0; // 初始高度，让player从上方掉落
+        
+        // 获取地图大小
+        let mapWidth, mapDepth;
+        if (level === 0) {
+            mapWidth = 10;
+            mapDepth = 10;
+        } else if (level === 1) {
+            mapWidth = 14;
+            mapDepth = 14;
+        } else if (level === 2) {
+            mapWidth = 18;
+            mapDepth = 18;
+        }
+        
+        // 简化：直接在模型坐标系中设置player位置
+        // randomPos是迷宫网格坐标，需要转换为模型坐标系
+        // 迷宫坐标从(1,1)开始，所以需要偏移
+        const localX = randomPos.x;
+        const localZ = randomPos.z;
+        const localY = startY;
+        
+        // 创建一个局部位置向量
+        const localPos = new THREE.Vector3(localX, localY, localZ);
+        
+        // 应用模型的世界变换矩阵（包括位置、旋转、缩放）
+        localPos.applyMatrix4(model.matrixWorld);
+        
+        const playerWorldX = localPos.x;
+        const playerWorldY = localPos.y;
+        const playerWorldZ = localPos.z;
+        
+        // 创建player（使用Player类）
+        // Player构造函数: (isFirstPerson, renderer, collisionWorld)
+        if (!PlayerClass) {
+            console.error('Player class still not available after all checks');
+            return;
+        }
+        this.player = new PlayerClass(0, this.renderer, this.collisionWorld);
+        
+        // 初始化player的速度
+        if (this.player.speedY === undefined) {
+            this.player.speedY = 0;
+        }
+        
+        // 设置player初始位置（在世界坐标系中）
+        this.player.camera.position.set(playerWorldX, playerWorldY, playerWorldZ);
+        this.player.collider.start.set(playerWorldX, playerWorldY - PLAYER_HEIGHT/2, playerWorldZ);
+        this.player.collider.end.set(playerWorldX, playerWorldY + PLAYER_HEIGHT/2, playerWorldZ);
+        
+        // player.mesh是一个Group，需要设置其位置
+        // player.mesh包含实际的mesh（player.mesh.children[0]）
+        this.player.mesh.position.set(playerWorldX, playerWorldY, playerWorldZ);
+        this.player.object.position.set(0, 0, 0); // object应该在(0,0,0)，mesh在object内的相对位置
+        
+        // 隐藏player的原始mesh（粉色方块），只使用我们创建的可视化方块
+        // 因为Player类创建了一个粉色的mesh，而我们要用红色的可视化方块代替
+        if (this.player && this.player.mesh) {
+            this.player.mesh.visible = false;
+            this.player.mesh.traverse((child) => {
+                if (child.isMesh) {
+                    child.visible = false; // 隐藏原始粉色mesh
+                }
+            });
+        }
+        
+        // object保留可见（包含camera等必要组件）
+        this.player.object.visible = true;
+        
+        // 确保player camera可见（虽然camera不需要visible属性，但确保它存在）
+        this.player.camera.visible = true;
+        
+        // 将player添加到场景
+        if (!this.scene.children.includes(this.player.object)) {
+            this.scene.add(this.player.object);
+        }
+        
+        // 锁定移动
+        this.playerMovementLocked = true;
+        
+        // 初始化player的onGround状态
+        this.player.onGround = false;
+        
+        // 设置camera初始位置（使用关卡选择时的camera位置）
+        // camera会在player落地后动画移动到player后方
+        
+        console.log(`Player created at position (${playerWorldX.toFixed(2)}, ${playerWorldY.toFixed(2)}, ${playerWorldZ.toFixed(2)})`);
+        console.log(`Player mesh visible: ${this.player.mesh.visible}, object visible: ${this.player.object.visible}`);
+        console.log(`Player object in scene:`, this.scene.children.includes(this.player.object));
+        console.log(`Player mesh position:`, this.player.mesh.position);
+        console.log(`Player camera position:`, this.player.camera.position);
+        console.log(`Player mesh children:`, this.player.mesh.children.length);
+        
+        // 创建一个明显的player可视化正方体（红色，大尺寸）
+        this.createPlayerVisualization(playerWorldX, playerWorldY, playerWorldZ);
+    }
+    
+    // 创建player可视化正方体（用于调试和确保可见性）
+    createPlayerVisualization(x, y, z) {
+        const THREE = window.THREE;
+        if (!THREE) return;
+        
+        // 先清除旧的visualization
+        if (this.playerVisualization) {
+            this.scene.remove(this.playerVisualization);
+        }
+        
+        // 创建一个小的红色正方体来代表player（缩小到原来的5%）
+        const size = 0.8 * 0.05; // 缩小到原来的5% (0.04)
+        const geometry = new THREE.BoxGeometry(size, size, size);
+        const material = new THREE.MeshStandardMaterial({ 
+            color: 0xff0000, // 红色
+            emissive: 0x660000, // 更明显的发光
+            metalness: 0.3,
+            roughness: 0.7
+        });
+        
+        const cube = new THREE.Mesh(geometry, material);
+        cube.position.set(x, y, z);
+        cube.name = 'PlayerVisualization';
+        
+        // 添加边缘线框以便更明显
+        const edges = new THREE.EdgesGeometry(geometry);
+        const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff });
+        const wireframe = new THREE.LineSegments(edges, lineMaterial);
+        cube.add(wireframe);
+        
+        // 添加到场景
+        this.scene.add(cube);
+        this.playerVisualization = cube;
+        
+        console.log(`Player visualization cube created at (${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)})`);
+    }
+    
+    // 同步更新player visualization位置
+    updatePlayerVisualization(centerX, centerY, centerZ) {
+        if (this.playerVisualization) {
+            this.playerVisualization.position.set(centerX, centerY, centerZ);
+        }
+    }
+    
+    // 更新player（掉落和碰撞检测）
+    updatePlayer(deltaTime) {
+        if (!this.player || !this.collisionWorld) {
+            return;
+        }
+        
+        // 确保deltaTime有效
+        if (!deltaTime || deltaTime <= 0) {
+            deltaTime = 0.016; // 默认60fps
+        }
+        
+        const PLAYER_HEIGHT = 0.5;
+        const GRAVITY = 9.8; // 重力加速度（m/s²）
+        
+        // 初始化speedY（如果未初始化）
+        if (this.player.speedY === undefined) {
+            this.player.speedY = 0;
+        }
+        
+        // 如果移动被锁定，只更新物理（掉落）
+        if (this.playerMovementLocked) {
+            // 检查是否在地面上
+            if (!this.player.onGround) {
+                // 应用重力
+                // 应用重力（重力加速度，单位/秒²）
+                this.player.speedY -= GRAVITY * deltaTime;
+                // 应用速度（位置变化 = 速度 * 时间）
+                this.player.collider.start.y += this.player.speedY * deltaTime;
+                this.player.collider.end.y += this.player.speedY * deltaTime;
+                
+                // 更新mesh和camera位置
+                const center = this.player.collider.start.clone().add(this.player.collider.end).multiplyScalar(0.5);
+                const halfHeight = PLAYER_HEIGHT / 2;
+                this.player.mesh.position.set(center.x, center.y - halfHeight, center.z);
+                this.player.camera.position.set(center.x, center.y + halfHeight, center.z);
+                
+                // 同步更新visualization位置
+                this.updatePlayerVisualization(center.x, center.y, center.z);
+            }
+            
+            // 碰撞检测
+            const result = this.collisionWorld.capsuleIntersect(this.player.collider);
+            this.player.onGround = false;
+            
+            if (result) {
+                this.player.onGround = result.normal.y > 0.5;
+                
+                if (result.depth >= 1e-5) {
+                    this.player.collider.translate(result.normal.multiplyScalar(result.depth));
+                }
+                
+                if (this.player.onGround) {
+                    this.player.speedY = 0;
+                    
+                    // Player落地，启动camera动画（只启动一次）
+                    if (!this.cameraAnimationState || (!this.cameraAnimationState.isAnimating && !this.cameraAnimationState.completed)) {
+                        console.log('Player landed, starting camera animation');
+                        this.startCameraAnimation();
+                    }
+                }
+                
+                const center = this.player.collider.start.clone().add(this.player.collider.end).multiplyScalar(0.5);
+                const halfHeight = PLAYER_HEIGHT / 2;
+                this.player.mesh.position.set(center.x, this.player.collider.start.y, center.z);
+                this.player.camera.position.set(center.x, this.player.collider.end.y, center.z);
+                
+                // 同步更新visualization位置
+                this.updatePlayerVisualization(center.x, center.y, center.z);
+            }
+        } else {
+            // 移动未锁定，正常更新player（调用player的update方法来处理移动和物理）
+            // player.update()会处理移动输入、跳跃、碰撞等
+            if (this.player && this.player.update && this.player.controls) {
+                // 调用player的update方法，这会处理所有移动逻辑
+                this.player.update();
+                
+                // 同步更新visualization位置
+                const center = this.player.collider.start.clone().add(this.player.collider.end).multiplyScalar(0.5);
+                this.updatePlayerVisualization(center.x, center.y, center.z);
+            }
+        }
+    }
+    
+    // 启动camera动画：从当前位置移动到player的第一人称视角
+    startCameraAnimation() {
+        if (!this.player) return;
+        
+        const THREE = window.THREE;
+        if (!THREE) return;
+        
+        // 保存起始位置和目标位置
+        const startPos = this.camera.position.clone();
+        
+        // 获取player的实际位置（使用collider的中心）
+        const playerCenter = this.player.collider.start.clone().add(this.player.collider.end).multiplyScalar(0.5);
+        const PLAYER_HEIGHT = 0.5;
+        const halfHeight = PLAYER_HEIGHT / 2;
+        
+        // 目标位置：直接使用player camera的当前位置（第一人称视角）
+        // player的camera已经在正确的位置了（在player头部）
+        const targetPos = this.player.camera.position.clone();
+        
+        // 计算目标lookAt位置（player前方，第一人称视角）
+        // 获取player camera当前的方向
+        let lookDirection = new THREE.Vector3(0, 0, -1); // 默认向前看
+        if (this.player.camera) {
+            try {
+                this.player.camera.getWorldDirection(lookDirection);
+                lookDirection.normalize();
+            } catch (e) {
+                lookDirection = new THREE.Vector3(0, 0, -1);
+            }
+        }
+        
+        const targetLookAt = new THREE.Vector3(
+            targetPos.x + lookDirection.x * 10, // 看向前方10个单位
+            targetPos.y,
+            targetPos.z + lookDirection.z * 10
+        );
+        
+        // 启动动画
+        this.cameraAnimationState = {
+            isAnimating: true,
+            completed: false,
+            startTime: Date.now(),
+            duration: 600, // 0.6秒
+            startPos: startPos,
+            targetPos: targetPos,
+            startLookAt: this.controls ? this.controls.target.clone() : startPos.clone().add(new THREE.Vector3(0, 0, -5)),
+            targetLookAt: targetLookAt
+        };
+        
+        console.log('Camera animation started from', startPos, 'to', targetPos, 'looking at', targetLookAt);
+    }
+    
+    // 更新camera动画
+    updateCameraAnimation() {
+        if (!this.cameraAnimationState || !this.cameraAnimationState.isAnimating) return;
+        
+        const elapsed = Date.now() - this.cameraAnimationState.startTime;
+        const progress = Math.min(elapsed / this.cameraAnimationState.duration, 1);
+        
+        // 使用easeInOut缓动
+        const easedProgress = progress < 0.5 
+            ? 2 * progress * progress 
+            : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+        
+        // 插值位置
+        const startPos = this.cameraAnimationState.startPos;
+        const targetPos = this.cameraAnimationState.targetPos;
+        const currentPos = startPos.clone().lerp(targetPos, easedProgress);
+        this.camera.position.copy(currentPos);
+        
+        // 插值lookAt目标
+        if (this.controls) {
+            const startLookAt = this.cameraAnimationState.startLookAt;
+            const targetLookAt = this.cameraAnimationState.targetLookAt;
+            const currentLookAt = startLookAt.clone().lerp(targetLookAt, easedProgress);
+            this.controls.target.copy(currentLookAt);
+            this.controls.update();
+        } else {
+            const startLookAt = this.cameraAnimationState.startLookAt;
+            const targetLookAt = this.cameraAnimationState.targetLookAt;
+            const currentLookAt = startLookAt.clone().lerp(targetLookAt, easedProgress);
+            this.camera.lookAt(currentLookAt);
+        }
+        
+        // 动画结束
+        if (progress >= 1) {
+            this.cameraAnimationState.isAnimating = false;
+            this.cameraAnimationState.completed = true;
+            
+            // 动画结束后，解锁移动
+            this.playerMovementLocked = false;
+            
+            // 确保player的camera位置正确（第一人称视角）
+            // camera位置会在player.update()中自动更新，这里只确保初始化正确
+            if (this.player && this.player.camera) {
+                const playerCenter = this.player.collider.start.clone().add(this.player.collider.end).multiplyScalar(0.5);
+                const PLAYER_HEIGHT = 0.5;
+                const halfHeight = PLAYER_HEIGHT / 2;
+                // 初始化camera到player头部位置（player.update()会保持这个关系）
+                this.player.camera.position.set(playerCenter.x, playerCenter.y + halfHeight, playerCenter.z);
+            }
+            
+            console.log('Camera animation completed, movement unlocked. Using player camera for first-person view.');
+            console.log('Player position:', this.player ? this.player.camera.position : 'null');
+        }
+    }
+    
+    // 生成迷宫：使用递归回溯算法生成连通迷宫，50%空，50%墙
     async generateMaze(level) {
         const THREE = window.THREE;
         if (!THREE) return;
@@ -1212,7 +1734,7 @@ class LevelSelection3D {
         const innerWidth = mapWidth - 2;  // x从1到mapWidth-2
         const innerDepth = mapDepth - 2;  // z从1到mapDepth-2
         const totalCells = innerWidth * innerDepth;
-        const targetWallCount = Math.floor(totalCells * 0.3);  // 30%墙
+        const targetWallCount = Math.floor(totalCells * 0.5);  // 50%墙
         
         // 使用递归回溯算法生成连通迷宫
         const maze = this.generateConnectedMaze(innerWidth, innerDepth, targetWallCount);
@@ -1245,7 +1767,22 @@ class LevelSelection3D {
         this.mazeBlocks[level] = mazeBlocks;
         const wallCount = mazeBlocks.length;
         const emptyCount = totalCells - wallCount;
+        
+        // 保存空闲位置（用于放置player）
+        const emptyPositions = [];
+        for (let x = 0; x < innerWidth; x++) {
+            for (let z = 0; z < innerDepth; z++) {
+                if (maze[x][z] === 0) {
+                    const actualX = x + 1;
+                    const actualZ = z + 1;
+                    emptyPositions.push({ x: actualX, z: actualZ });
+                }
+            }
+        }
+        this.emptyPositions[level] = emptyPositions;
+        
         console.log(`Generated connected maze for level ${level} (${mapWidth}x${mapDepth}): ${wallCount} walls (${(wallCount/totalCells*100).toFixed(1)}%), ${emptyCount} empty (${(emptyCount/totalCells*100).toFixed(1)}%)`);
+        console.log(`Saved ${emptyPositions.length} empty positions for player placement`);
     }
     
     // 使用递归回溯算法生成连通迷宫
@@ -1359,9 +1896,69 @@ class LevelSelection3D {
         return maze;
     }
     
-    // 退出关卡模式：恢复所有模型显示，恢复相机位置
+    // 退出关卡模式：恢复所有模型显示，恢复相机位置，清除迷宫障碍物
     exitLevel() {
-        if (!this.inLevelMode) return;
+        // 清除所有关卡的迷宫障碍物（无论是否在关卡模式中，都清除以确保重置）
+        for (const levelKey in this.mazeBlocks) {
+            const level = parseInt(levelKey);
+            const blocks = this.mazeBlocks[level];
+            if (blocks && blocks.length > 0) {
+                blocks.forEach(block => {
+                    // 从模型组中移除障碍物
+                    if (block.parent) {
+                        block.parent.remove(block);
+                    }
+                    // 清理资源
+                    if (block.geometry) block.geometry.dispose();
+                    if (block.material) {
+                        if (Array.isArray(block.material)) {
+                            block.material.forEach(m => m.dispose());
+                        } else {
+                            block.material.dispose();
+                        }
+                    }
+                });
+                // 清空数组
+                this.mazeBlocks[level] = [];
+            }
+        }
+        
+        // 清除关卡灯
+        if (this.levelLight) {
+            this.scene.remove(this.levelLight);
+            if (this.levelLightTarget) {
+                this.scene.remove(this.levelLightTarget);
+            }
+            this.levelLight = null;
+            this.levelLightTarget = null;
+            console.log('Removed level light');
+        }
+        
+        // 清除player
+        if (this.player) {
+            this.scene.remove(this.player.object);
+            this.player = null;
+        }
+        
+        // 清除player visualization
+        if (this.playerVisualization) {
+            this.scene.remove(this.playerVisualization);
+            this.playerVisualization = null;
+        }
+        
+        // 清除碰撞世界
+        this.collisionWorld = null;
+        
+        // 重置动画状态
+        this.cameraAnimationState = null;
+        this.playerMovementLocked = false;
+        this.lastUpdateTime = null;
+        
+        // 如果不在关卡模式中，直接返回（避免重复操作）
+        if (!this.inLevelMode) {
+            console.log('Exited level mode (was not in level mode), cleared all maze blocks');
+            return;
+        }
         
         // 显示所有模型
         for (const levelKey in this.modelGroups) {
@@ -1371,19 +1968,24 @@ class LevelSelection3D {
             }
         }
         
-        // 恢复相机位置
-        if (this.previousCameraPosition && this.previousCameraTarget) {
-            this.camera.position.copy(this.previousCameraPosition);
+        // 重置相机位置到初始状态（而不是恢复到进入关卡前的位置）
+        // 这样可以确保退出后再进入时相机位置正确
+        this.camera.position.set(0, 4, -4); // 初始相机位置
             if (this.controls) {
-                this.controls.target.copy(this.previousCameraTarget);
+            this.controls.target.set(0, 1.5, 0); // 初始目标位置
                 this.controls.update();
             } else {
-                this.camera.lookAt(this.previousCameraTarget);
-            }
+            this.camera.lookAt(0, 1.5, 0);
         }
+        
+        // 清除保存的相机位置，以便下次进入时重新保存
+        this.previousCameraPosition = null;
+        this.previousCameraTarget = null;
         
         this.inLevelMode = false;
         this.currentLevelModel = null;
+        
+        console.log('Exited level mode, cleared all maze blocks and reset camera position');
     }
     
     render() {
@@ -1407,6 +2009,25 @@ class LevelSelection3D {
             
             // 更新scale动画
             this.updateScaleAnimations();
+            
+            // 在关卡模式下，更新player和camera动画
+            if (this.inLevelMode) {
+                // 计算deltaTime（使用时间戳）
+                const currentTime = Date.now();
+                if (!this.lastUpdateTime) {
+                    this.lastUpdateTime = currentTime;
+                }
+                const deltaTime = (currentTime - this.lastUpdateTime) / 1000; // 转换为秒
+                this.lastUpdateTime = currentTime;
+                
+                // 更新player（掉落和碰撞）
+                this.updatePlayer(deltaTime);
+                
+                // 更新camera动画
+                this.updateCameraAnimation();
+            } else {
+                this.lastUpdateTime = null;
+            }
 
             // Update critical points (if enabled)
             if (this.criticalPointSystem) {
@@ -1414,12 +2035,27 @@ class LevelSelection3D {
             }
             
             // 更新 OrbitControls（必须在渲染前调用）
-            if (this.controls) {
+            // 在关卡模式下且camera动画进行中时，不使用OrbitControls
+            if (this.controls && (!this.inLevelMode || !this.cameraAnimationState || !this.cameraAnimationState.isAnimating)) {
                 this.controls.update();
             }
             
             // 渲染场景
-            this.renderer.render(this.scene, this.camera);
+            // 在关卡模式下，根据camera动画状态选择使用哪个camera
+            if (this.inLevelMode && this.player) {
+                // 如果camera动画已完成，使用player的camera
+                if (this.cameraAnimationState && this.cameraAnimationState.completed) {
+                    // 动画完成，使用player的camera
+                    this.renderer.render(this.scene, this.player.camera);
+                } else {
+                    // 动画进行中或还没开始，使用关卡camera
+                    // 这样可以确保在动画过程中能看到camera的移动
+                    this.renderer.render(this.scene, this.camera);
+                }
+            } else {
+                // 不在关卡模式，使用关卡选择camera
+                this.renderer.render(this.scene, this.camera);
+            }
         }
     }
     
