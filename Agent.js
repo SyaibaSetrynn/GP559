@@ -25,10 +25,15 @@ class Agent {
      * @param {*} renderer 
      * @param {*} collisionWorld
      */
-    constructor(renderer, collisionWorld) {
+    constructor(renderer, collisionWorld, agentId = 0, agentColor = 0xff0000) {
 
         this.movement = {w: false, a: false, s: false, d: false, space: false, spaceHold: false};
         this.speedY = 0;
+        
+        // Agent identification and color
+        this.agentId = agentId;
+        this.agentColor = agentColor;
+        
         this.mesh = this.createObject();
         this.object = new T.Group();
         this.camera = new T.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -48,6 +53,11 @@ class Agent {
         this.targetPosition = new T.Vector3(0, 0, 0);
         this.isMovingToTarget = false;
         this.movementSpeed = AGENT_SPEED;
+        
+        // Line of sight properties
+        this.losLines = []; // Store line objects for visual rendering
+        this.claimedCriticalPoints = new Set(); // Critical points this agent has claimed
+        this.raycaster = new T.Raycaster(); // For line of sight calculations
     }
 
     /**
@@ -57,21 +67,25 @@ class Agent {
     createObject() {
         let characterGrp = new T.Group();
         const dummyGeo = new T.BoxGeometry(AGENT_HEIGHT, AGENT_HEIGHT, AGENT_HEIGHT);
-        // Different color for agent - blue instead of pink, with transparency
+        // Use the agent's assigned color with transparency
         const dummyMat = new T.MeshStandardMaterial({
-            color: "rgb(123, 123, 255)",
+            color: this.agentColor,
             transparent: true,
             opacity: 0.7
         });
         const dummyMesh = new T.Mesh(dummyGeo, dummyMat);
+        // Position the cube so its bottom is at y=0 relative to the group
+        // This way, when characterGrp is positioned at collider.start.y (bottom),
+        // the cube's center will be at characterGrp.position.y + AGENT_HEIGHT/2
+        dummyMesh.position.y = AGENT_HEIGHT / 2;
         characterGrp.add(dummyMesh);
 
         // Add a critical point at the exact center of the cube
         if (window.CriticalPointSystem && window.CP_COLORS) {
-            // Create a small sphere for the critical point at center (0, 0, 0) relative to the agent
+            // Create a small sphere for the critical point using the agent's color
             const cpGeometry = new T.SphereGeometry(0.08, 16, 16);
             const cpMaterial = new T.MeshBasicMaterial({
-                color: window.CP_COLORS.WHITE,
+                color: this.agentColor,
                 transparent: true,
                 opacity: 1.0,
                 depthTest: false,  // Makes it render on top of other objects
@@ -79,10 +93,10 @@ class Agent {
             });
             const criticalPoint = new T.Mesh(cpGeometry, cpMaterial);
             
-            // Add glow effect that's also visible through the body
+            // Add glow effect that's also visible through the body using agent's color
             const glowGeometry = new T.SphereGeometry(0.15, 16, 16);
             const glowMaterial = new T.MeshBasicMaterial({
-                color: window.CP_COLORS.WHITE,
+                color: this.agentColor,
                 transparent: true,
                 opacity: 0.5,
                 side: T.DoubleSide,
@@ -92,8 +106,8 @@ class Agent {
             const glow = new T.Mesh(glowGeometry, glowMaterial);
             criticalPoint.add(glow);
             
-            // Position at exact center of the cube (0, 0, 0) relative to characterGrp
-            criticalPoint.position.set(0, 0, 0);
+            // Position at exact center of the cube (same Y as the cube center)
+            criticalPoint.position.set(0, AGENT_HEIGHT / 2, 0);
             
             characterGrp.add(criticalPoint);
         }
@@ -285,6 +299,153 @@ class Agent {
         
         const newMeshPos = new T.Vector3(position.x, position.y - AGENT_HEIGHT, position.z);
         this.mesh.position.copy(newMeshPos);
+    }
+
+    /**
+     * Get the agent's head position (center of the cube where the critical point is)
+     * @returns {T.Vector3} Head position
+     */
+    getHeadPosition() {
+        // Now the cube is positioned so its bottom is at characterGrp origin
+        // and the critical point is at (0, AGENT_HEIGHT/2, 0) relative to characterGrp
+        // So the world position of the critical point is:
+        const centerPos = this.mesh.position.clone();
+        centerPos.y += AGENT_HEIGHT / 2;
+        
+        return centerPos;
+    }
+
+    /**
+     * Check line of sight to a critical point
+     * @param {T.Vector3} criticalPointPosition - Position of the critical point
+     * @param {Array} obstacles - Array of Three.js objects to check for intersections
+     * @returns {boolean} True if the critical point is in line of sight
+     */
+    hasLineOfSight(criticalPointPosition, obstacles = []) {
+        const headPosition = this.getHeadPosition();
+        const direction = criticalPointPosition.clone().sub(headPosition).normalize();
+        const distance = headPosition.distanceTo(criticalPointPosition);
+
+        // Debug: temporarily disable obstacles to test if that's the issue
+        if (obstacles.length === 0) {
+            console.log(`Agent ${this.agentId}: No obstacles, clear LOS to CP at distance ${distance.toFixed(2)}`);
+            return true;
+        }
+
+        this.raycaster.set(headPosition, direction);
+        this.raycaster.far = distance;
+
+        const intersections = this.raycaster.intersectObjects(obstacles, true);
+        
+        // Filter out intersections that are very close to the start or end points
+        // to avoid self-intersection issues
+        const validIntersections = intersections.filter(intersection => {
+            const distFromStart = intersection.distance;
+            const distFromEnd = distance - intersection.distance;
+            return distFromStart > 0.01 && distFromEnd > 0.01;
+        });
+
+        const hasLOS = validIntersections.length === 0;
+        if (!hasLOS) {
+            console.log(`Agent ${this.agentId}: LOS blocked by ${validIntersections.length} obstacles`);
+        }
+
+        return hasLOS;
+    }
+
+    /**
+     * Create a visual line from head to critical point
+     * @param {T.Vector3} criticalPointPosition - Position of the critical point
+     * @param {T.Scene} scene - Three.js scene to add the line to
+     * @returns {T.Line} The created line object
+     */
+    createLOSLine(criticalPointPosition, scene) {
+        const headPosition = this.getHeadPosition();
+        
+        const geometry = new T.BufferGeometry().setFromPoints([
+            headPosition,
+            criticalPointPosition
+        ]);
+        
+        const material = new T.LineBasicMaterial({
+            color: this.agentColor,
+            transparent: true,
+            opacity: 0.8,
+            linewidth: 2
+        });
+        
+        const line = new T.Line(geometry, material);
+        scene.add(line);
+        this.losLines.push(line);
+        
+        return line;
+    }
+
+    /**
+     * Remove all LOS lines for this agent
+     * @param {T.Scene} scene - Three.js scene to remove lines from
+     */
+    clearLOSLines(scene) {
+        this.losLines.forEach(line => {
+            scene.remove(line);
+            line.geometry.dispose();
+            line.material.dispose();
+        });
+        this.losLines = [];
+    }
+
+    /**
+     * Update line of sight and claim critical points
+     * @param {Array} criticalPoints - Array of critical point objects with position and mesh properties
+     * @param {Array} obstacles - Array of obstacle objects for collision detection
+     * @param {T.Scene} scene - Three.js scene for line rendering
+     * @param {Set} globalClaimedPoints - Set of globally claimed critical points to avoid conflicts
+     */
+    updateLineOfSight(criticalPoints, obstacles, scene, globalClaimedPoints) {
+        // Clear existing lines
+        this.clearLOSLines(scene);
+        
+        // Check each critical point
+        criticalPoints.forEach((cp, index) => {
+            // Skip if already claimed by another agent
+            if (globalClaimedPoints.has(index) && !this.claimedCriticalPoints.has(index)) {
+                return;
+            }
+            
+            // Check line of sight
+            if (this.hasLineOfSight(cp.position, obstacles)) {
+                // Create visual line
+                this.createLOSLine(cp.position, scene);
+                
+                // Claim the critical point
+                if (!this.claimedCriticalPoints.has(index)) {
+                    this.claimedCriticalPoints.add(index);
+                    globalClaimedPoints.add(index);
+                }
+                
+                // Color the critical point with agent's color
+                if (cp.mesh && cp.mesh.material) {
+                    cp.mesh.material.color.setHex(this.agentColor);
+                    
+                    // Also color the glow if it exists
+                    if (cp.mesh.children && cp.mesh.children.length > 0) {
+                        cp.mesh.children.forEach(child => {
+                            if (child.material) {
+                                child.material.color.setHex(this.agentColor);
+                            }
+                        });
+                    }
+                }
+            }
+        });
+    }
+
+    /**
+     * Get the number of critical points claimed by this agent
+     * @returns {number} Number of claimed critical points
+     */
+    getScore() {
+        return this.claimedCriticalPoints.size;
     }
 }
 

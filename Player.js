@@ -6,6 +6,7 @@ import { Octree } from "https://unpkg.com/three@0.165.0/examples/jsm/math/Octree
 import { OctreeHelper } from "https://unpkg.com/three@0.165.0/examples/jsm/helpers/OctreeHelper.js";
 import { Capsule } from "https://unpkg.com/three@0.165.0/examples/jsm/math/Capsule.js";
 import Agent from "./Agent.js";
+import AgentManager from "./AgentManager.js";
 
 /**
  * Some references: https://www.youtube.com/watch?v=oqKzxPMLWxo
@@ -203,6 +204,9 @@ const collisionWorld = new Octree();
 const criticalPointSystem = new window.CriticalPointSystem(scene);
 let criticalPointsEnabled = true; // Toggle for critical points
 
+// Initialize Agent Manager
+const agentManager = new AgentManager(scene, collisionWorld);
+
 // loading terrain
 const levelLoader = new O.OBJLoader();
 let levelObj = null;
@@ -225,8 +229,17 @@ levelObj.traverse(obs => {
         // Add critical points to terrain meshes
         if (criticalPointsEnabled) {
             const CP_COLORS = window.CP_COLORS;
-            criticalPointSystem.addCriticalPoints(obs, 3, CP_COLORS.WHITE);
+            const criticalPoints = criticalPointSystem.addCriticalPoints(obs, 3, CP_COLORS.WHITE);
+            
+            // Register critical points with agent manager
+            criticalPoints.forEach(cp => {
+                // cp is a Three.js mesh with a position
+                agentManager.addCriticalPoint(cp.position, cp);
+            });
         }
+        
+        // Add terrain as obstacles for line of sight
+        agentManager.addObstacles([obs]);
     }
 });
 scene.add(levelObj);
@@ -235,12 +248,20 @@ scene.add(levelObj);
 let player1 = new Player(0, renderer, collisionWorld);
 scene.add(player1.object);
 
-// create an agent (NPC) and put in scene
-let agent1 = new Agent(renderer, collisionWorld);
-agent1.setPosition(new T.Vector3(5, 1, 5)); // Start at position (5, 1, 5)
-scene.add(agent1.object);
+// Create multiple agents using the agent manager
+const agent1 = agentManager.createAgent(new T.Vector3(5, 1, 5));   // Red agent
+const agent2 = agentManager.createAgent(new T.Vector3(-5, 1, -5)); // Green agent
+const agent3 = agentManager.createAgent(new T.Vector3(8, 1, -3));  // Blue agent
 
-// Agent stays still - no target set
+// Agents should remain stationary - no targets set
+// agent1.setTarget(new T.Vector3(-2, 1, 3));
+// agent2.setTarget(new T.Vector3(3, 1, -2));
+// agent3.setTarget(new T.Vector3(-6, 1, 4));
+
+// Initialize score display
+setTimeout(() => {
+    updateScoreDisplay();
+}, 100);
 
 // Function to toggle critical points on/off
 function toggleCriticalPoints(enabled) {
@@ -365,7 +386,9 @@ function animate(timestamp) {
     let delta = (timestamp - previousTime) / 1000;
 
     player1.update();
-    agent1.update(); // Update the agent
+    
+    // Update all agents and their line of sight
+    agentManager.update();
     
     // Update critical points animation
     if (criticalPointSystem) {
@@ -374,6 +397,56 @@ function animate(timestamp) {
 
     renderer.render(scene, player1.camera);
     previousTime = timestamp;
+    // Update scores display more frequently
+    if (Math.floor(timestamp / 500) !== Math.floor(previousTime / 500)) {
+        updateScoreDisplay();
+    }
+
     window.requestAnimationFrame(animate);
 }
+
+// Add keyboard controls for debugging
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'p' || event.key === 'P') {
+        // Print current scores
+        const scores = agentManager.getScores();
+        console.log('Current Scores:');
+        scores.forEach(s => {
+            console.log(`Agent ${s.agentId} (Color: #${s.color.toString(16)}): ${s.score} points`);
+        });
+    }
+    if (event.key === 'l' || event.key === 'L') {
+        // Toggle LOS UI visibility
+        const losUI = document.getElementById('losUI');
+        if (losUI) {
+            losUI.style.display = losUI.style.display === 'none' ? 'block' : 'none';
+        }
+    }
+});
+
+// Function to update score display
+function updateScoreDisplay() {
+    const scoreDiv = document.getElementById('agentScores');
+    if (scoreDiv && agentManager) {
+        const scores = agentManager.getScores();
+        if (scores && scores.length > 0) {
+            scoreDiv.innerHTML = scores.map(s => 
+                `<div style="color: #${s.color.toString(16).padStart(6, '0')};">Agent ${s.agentId}: ${s.score} points</div>`
+            ).join('');
+        } else {
+            scoreDiv.innerHTML = '<div>No agents found</div>';
+        }
+    }
+}
+
+// Show LOS UI when game starts
+document.body.addEventListener('click', () => {
+    setTimeout(() => {
+        const losUI = document.getElementById('losUI');
+        if (losUI) {
+            losUI.style.display = 'block';
+        }
+    }, 1000);
+});
+
 window.requestAnimationFrame(animate);
