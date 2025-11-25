@@ -1,143 +1,169 @@
-/*jshint esversion: 6 */
-// @ts-check
-
-// @ts-ignore - URL import is handled by importmap in HTML
-import * as T from "https://unpkg.com/three@0.161.0/build/three.module.js";
-
-// 颜色定义
-const FLOOR_COLOR = 0x888888; // 地板颜色（灰色）
-const MAZE_COLOR = 0x4a4a4a;  // 迷宫颜色（深灰色）
-
-// Critical Point System integration
-let criticalPointSystem = null;
-let criticalPointsEnabled = true;
+// MapGenerator.js - 地图生成器，用于创建地板和围墙
 
 /**
- * Initialize the critical point system
- * @param {*} cpSystem - The critical point system instance
+ * 创建地板
+ * @param {THREE.Scene} scene - Three.js 场景
+ * @param {number} width - 地板宽度
+ * @param {number} depth - 地板深度
+ * @param {number} thickness - 地板厚度
+ * @returns {THREE.Mesh} 地板网格对象
  */
-export function initializeCriticalPoints(cpSystem) {
-  criticalPointSystem = cpSystem;
+export function createFloor(scene, width, depth, thickness) {
+    const THREE = window.THREE;
+    if (!THREE) {
+        throw new Error('THREE is not defined');
+    }
+    
+    // 创建地板几何体（PlaneGeometry，然后旋转和缩放）
+    const floorGeometry = new THREE.PlaneGeometry(width, depth);
+    
+    // 旋转90度使其水平（PlaneGeometry默认是垂直的）
+    floorGeometry.rotateX(-Math.PI / 2);
+    
+    // 创建材质
+    const floorMaterial = new THREE.MeshStandardMaterial({
+        color: 0x808080, // 灰色
+        roughness: 0.8,
+        metalness: 0.2
+    });
+    
+    // 创建网格
+    const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+    
+    // 设置位置：地板上表面在 y=0
+    // 由于地板厚度为 thickness，中心应该在 y = -thickness/2
+    floor.position.set(0, -thickness / 2, 0);
+    
+    // 接收阴影
+    floor.receiveShadow = true;
+    
+    // 添加到场景
+    scene.add(floor);
+    
+    return floor;
 }
 
 /**
- * Toggle critical points on/off
- * @param {boolean} enabled - Whether to enable critical points
+ * 创建围墙
+ * @param {THREE.Scene} scene - Three.js 场景
+ * @param {number} width - 地图宽度
+ * @param {number} depth - 地图深度
+ * @param {number} height - 围墙高度
+ * @returns {Array<THREE.Mesh>} 围墙网格对象数组
  */
-export function toggleCriticalPoints(enabled) {
-  criticalPointsEnabled = enabled;
+export function createWalls(scene, width, depth, height) {
+    const THREE = window.THREE;
+    if (!THREE) {
+        throw new Error('THREE is not defined');
+    }
+    
+    const walls = [];
+    const wallThickness = 0.3; // 围墙厚度（增加到0.3，之前是0.1太细了）
+    const wallMaterial = new THREE.MeshStandardMaterial({
+        color: 0x666666, // 深灰色
+        roughness: 0.7,
+        metalness: 0.1
+    });
+    
+    // 计算围墙位置（地图边界）
+    const halfWidth = width / 2;
+    const halfDepth = depth / 2;
+    
+    // 创建四面墙
+    // 前墙（z = -halfDepth）
+    const frontWall = new THREE.Mesh(
+        new THREE.BoxGeometry(width, height, wallThickness),
+        wallMaterial
+    );
+    frontWall.position.set(0, height / 2, -halfDepth);
+    frontWall.castShadow = true;
+    frontWall.receiveShadow = true;
+    scene.add(frontWall);
+    walls.push(frontWall);
+    
+    // 后墙（z = halfDepth）
+    const backWall = new THREE.Mesh(
+        new THREE.BoxGeometry(width, height, wallThickness),
+        wallMaterial
+    );
+    backWall.position.set(0, height / 2, halfDepth);
+    backWall.castShadow = true;
+    backWall.receiveShadow = true;
+    scene.add(backWall);
+    walls.push(backWall);
+    
+    // 左墙（x = -halfWidth）
+    const leftWall = new THREE.Mesh(
+        new THREE.BoxGeometry(wallThickness, height, depth),
+        wallMaterial
+    );
+    leftWall.position.set(-halfWidth, height / 2, 0);
+    leftWall.castShadow = true;
+    leftWall.receiveShadow = true;
+    scene.add(leftWall);
+    walls.push(leftWall);
+    
+    // 右墙（x = halfWidth）
+    const rightWall = new THREE.Mesh(
+        new THREE.BoxGeometry(wallThickness, height, depth),
+        wallMaterial
+    );
+    rightWall.position.set(halfWidth, height / 2, 0);
+    rightWall.castShadow = true;
+    rightWall.receiveShadow = true;
+    scene.add(rightWall);
+    walls.push(rightWall);
+    
+    return walls;
 }
 
 /**
- * 生成巨大的地板
- * @param {T.Scene} scene - Three.js场景对象
- * @param {number} width - 地板宽度（x方向）
- * @param {number} depth - 地板深度（z方向）
- * @param {number} [thickness=0.2] - 地板厚度（默认0.2）
- * @returns {T.Mesh} 返回创建的地板网格对象
+ * 创建迷宫障碍物方块
+ * @param {THREE.Scene} scene - Three.js 场景
+ * @param {number} x - X坐标（网格位置）
+ * @param {number} z - Z坐标（网格位置）
+ * @param {number} height - 方块高度
+ * @returns {THREE.Mesh} 方块网格对象
  */
-export function createFloor(scene, width, depth, thickness = 0.2) {
-  // 创建地板几何体
-  const floorGeometry = new T.BoxGeometry(width, thickness, depth);
-  
-  // 创建地板材质（使用地板颜色）
-  const floorMaterial = new T.MeshStandardMaterial({ 
-    color: FLOOR_COLOR,
-    roughness: 0.8,
-    metalness: 0.2
-  });
-  
-  // 创建地板网格
-  const floorMesh = new T.Mesh(floorGeometry, floorMaterial);
-  
-  // 设置地板位置：
-  // - 围栏底部在 y=0，地板顶部应该在 y=0 或更高（覆盖围栏底部）
-  // - 地板顶部在 y=0，所以地板中心在 y=thickness/2
-  // - 地板中心应该在围墙区域中心：((width-1)/2, thickness/2, (depth-1)/2)
-  floorMesh.position.set((width - 1) / 2, thickness / 2, (depth - 1) / 2);
-  
-  // 将地板添加到场景
-  scene.add(floorMesh);
-  
-  return floorMesh;
+export function createBlock(scene, x, z, height) {
+    const THREE = window.THREE;
+    if (!THREE) {
+        throw new Error('THREE is not defined');
+    }
+    
+    // 方块大小为 1x1xheight
+    const blockSize = 1;
+    const blockGeometry = new THREE.BoxGeometry(blockSize, height, blockSize);
+    
+    // 创建材质
+    const blockMaterial = new THREE.MeshStandardMaterial({
+        color: 0x555555, // 深灰色
+        roughness: 0.7,
+        metalness: 0.1
+    });
+    
+    // 创建网格
+    const block = new THREE.Mesh(blockGeometry, blockMaterial);
+    
+    // 设置位置
+    // 地图坐标系统：地图中心在(0, 0, 0)，模型会被居中到原点
+    // x 和 z 是网格坐标（从1开始，因为0是围墙）
+    // 由于模型会被居中，我们需要将网格坐标转换为相对于模型中心的坐标
+    // 假设地图是 mapWidth x mapDepth，中心在 (0,0,0)
+    // 网格坐标 (1,1) 在世界坐标中是 (-mapWidth/2 + 0.5, -mapDepth/2 + 0.5)
+    // 但由于模型会被居中，这些坐标会相对于模型中心
+    // 为了简化，我们假设传入的 x 和 z 已经是相对于模型中心的世界坐标
+    // 实际上，由于模型会通过偏移来居中，我们直接使用传入的坐标即可
+    // 方块应该在 y=height/2 的位置（底部在地面上）
+    block.position.set(x - 0.5, height / 2, z - 0.5);
+    
+    // 投射和接收阴影
+    block.castShadow = true;
+    block.receiveShadow = true;
+    
+    // 添加到场景
+    scene.add(block);
+    
+    return block;
 }
 
-/**
- * 生成一个1*1*高度2的方块
- * @param {T.Scene} scene - Three.js场景对象
- * @param {number} x - 方块的x坐标
- * @param {number} z - 方块的z坐标
- * @param {number} [height=2] - 方块高度（默认2）
- * @returns {T.Mesh} 返回创建的方块网格对象
- */
-export function createBlock(scene, x, z, height = 2) {
-  // 创建方块几何体：1*1*height
-  const blockGeometry = new T.BoxGeometry(1, height, 1);
-  
-  // 创建方块材质（使用迷宫颜色）
-  const blockMaterial = new T.MeshStandardMaterial({ 
-    color: MAZE_COLOR,
-    roughness: 0.7,
-    metalness: 0.3
-  });
-  
-  // 创建方块网格
-  const blockMesh = new T.Mesh(blockGeometry, blockMaterial);
-  
-  // 设置方块位置：y=0表示方块底部在y=0，所以方块中心在y=height/2
-  blockMesh.position.set(x, height / 2, z);
-  
-  // 将方块添加到场景
-  scene.add(blockMesh);
-  
-  // Add critical points to the block
-  if (criticalPointSystem && criticalPointsEnabled && window.CP_COLORS) {
-    criticalPointSystem.addCriticalPoints(blockMesh, 2, window.CP_COLORS.WHITE);
-  }
-  
-  return blockMesh;
-}
-
-/**
- * 生成围墙
- * @param {T.Scene} scene - Three.js场景对象
- * @param {number} width - 围墙宽度（x方向网格数）
- * @param {number} depth - 围墙深度（z方向网格数）
- * @param {number} [wallHeight=2] - 围墙高度（默认2）
- * @returns {Array<T.Mesh>} 返回创建的围墙方块数组
- */
-export function createWalls(scene, width, depth, wallHeight = 2) {
-  const walls = [];
-  
-  // 围墙使用1*1的方块，高度为wallHeight
-  // 围墙围住的区域是从(0, 0)到(width-1, depth-1)
-  
-  // 西墙：x=0, z从0到depth-1
-  for (let z = 0; z < depth; z++) {
-    const wallBlock = createBlock(scene, 0, z, wallHeight);
-    walls.push(wallBlock);
-  }
-  
-  // 东墙：x=width-1, z从0到depth-1
-  for (let z = 0; z < depth; z++) {
-    const wallBlock = createBlock(scene, width - 1, z, wallHeight);
-    walls.push(wallBlock);
-  }
-  
-  // 北墙：z=0, x从1到width-2（避免与东西墙重复）
-  for (let x = 1; x < width - 1; x++) {
-    const wallBlock = createBlock(scene, x, 0, wallHeight);
-    walls.push(wallBlock);
-  }
-  
-  // 南墙：z=depth-1, x从1到width-2（避免与东西墙重复）
-  for (let x = 1; x < width - 1; x++) {
-    const wallBlock = createBlock(scene, x, depth - 1, wallHeight);
-    walls.push(wallBlock);
-  }
-  
-  return walls;
-}
-
-// 导出颜色常量供外部使用
-export { FLOOR_COLOR, MAZE_COLOR };

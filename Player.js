@@ -100,8 +100,6 @@ class Player {
      * updates position of the player, needs to be called in animate()
      */
     update() {
-        // console.log("update");
-        console.log("collider start: " + this.collider.start.x + " " + this.collider.start.y + " " + this.collider.start.z);
         // // update player position
         let moved = false;
 
@@ -135,37 +133,12 @@ class Player {
         }
 
 
-        // // update jump
-        if(this.movement.spaceHold || !this.onGround) {
-
-            this.collider.start.y += this.speedY;
-            this.collider.end.y += this.speedY;
-            
-            // 检查y<0，如果是则固定y=0并停止重力
-            if (this.collider.start.y < 0) {
-                const PLAYER_VISUAL_SIZE = 0.8 * 0.05 * 0.3;
-                const COLLIDER_HEIGHT = PLAYER_VISUAL_SIZE;
-                this.collider.start.y = 0;
-                this.collider.end.y = COLLIDER_HEIGHT;
-                this.speedY = 0;
-                this.onGround = true;
-            }
-            
-            const center = this.collider.start.clone().add(this.collider.end).multiplyScalar(0.5);
-            const halfHeight = PLAYER_HEIGHT / 2;
-            this.mesh.position.set(center.x, center.y - halfHeight, center.z);
-            this.camera.position.set(center.x, center.y + halfHeight, center.z);
-
-            if(this.onGround) 
-                this.movement.spaceHold = false;
-            
-            // 只有当y>=0时才应用重力
-            if (this.collider.start.y >= 0) {
-                this.speedY -= GRAVITY;
-            } else {
-                this.speedY = 0;
-            }
-        }
+        // // update jump - 重力已禁用
+        // 不应用重力，player 保持在初始高度
+        // 如果需要跳跃，可以手动处理，但默认不使用重力系统
+        
+        // 确保 player 保持在固定高度（如果需要的话）
+        // 这里不应用重力，所以不需要更新 y 坐标
 
         this.collisions();
 

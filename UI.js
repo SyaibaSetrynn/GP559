@@ -203,6 +203,7 @@ class UI {
         };
         
         this.isPaused = false;  // 暂停状态
+        this.enteringTutorialLevel = false;  // 标记是否正在进入 tutorial level
         this.pauseOverlay = {
             alpha: 0,  // 黑幕透明度
             isAnimating: false,
@@ -501,6 +502,12 @@ class UI {
             return;
         }
         
+        // 处理 tutorial 按钮（Phase 1 的 tutorialButtonPhase1）
+        if (button === this.tutorialButtonPhase1 && currentPhase === 1) {
+            // 设置标记，表示要进入 tutorial level (level 0)
+            this.enteringTutorialLevel = true;
+        }
+        
         // 处理左右箭头按钮的level变化（只在phase=1时）
         if (currentPhase === 1) {
             // 动画期间禁止点击
@@ -614,6 +621,9 @@ class UI {
         
         this.tutorialButton.isClicked = true;
         this.tutorialButtonHoverFontSize = this.tutorialButton.clickFontSize;
+        
+        // 设置标记，表示要进入 tutorial level (level 0)
+        this.enteringTutorialLevel = true;
         
         // 恢复字体大小并切换phase
         setTimeout(() => {
@@ -916,12 +926,28 @@ class UI {
                 }
             }
             
-            // 进入phase1或phase10-15时，重置level为1并初始化3D场景
+            // 进入phase1或phase10-15时，重置level并初始化3D场景
             if (currentPhase === 1 || (currentPhase >= 10 && currentPhase <= 15)) {
-                this.level = 1;
-                // 重置动画状态
-                this.levelAnimation.newLevel = 1;
-                this.levelAnimation.oldLevel = 1;
+                // 检查是否是从 tutorial 按钮进入的
+                if (this.enteringTutorialLevel && currentPhase === 10) {
+                    this.level = 0;  // Tutorial level
+                    this.enteringTutorialLevel = false;  // 重置标记
+                    this.levelAnimation.newLevel = 0;
+                    this.levelAnimation.oldLevel = 0;
+                } else if (currentPhase === 1) {
+                    // Phase 1: Level Selection界面，默认level为1
+                    this.level = 1;
+                    this.levelAnimation.newLevel = 1;
+                    this.levelAnimation.oldLevel = 1;
+                } else {
+                    // Phase 10-15: 主界面，如果不是 tutorial，保持之前的level或设为1
+                    if (this.level === undefined || this.level === null) {
+                        this.level = 1;
+                    }
+                    this.levelAnimation.newLevel = this.level;
+                    this.levelAnimation.oldLevel = this.level;
+                }
+                
                 // 更新label文本（不触发动画）
                 if (this.level === 0) {
                     this.levelLabel.text = 'Tutorial';
@@ -942,6 +968,16 @@ class UI {
                 // 更新3D场景的level
                 if (this.levelSelection3D) {
                     this.levelSelection3D.updateLevel(this.level);
+                    
+                    // 确保 UI 实例被传递给 LevelContent3D（用于暂停功能）
+                    if (this.levelSelection3D.levelContent && !this.levelSelection3D.levelContent.uiInstance) {
+                        this.levelSelection3D.levelContent.setUIInstance(this);
+                    }
+                    
+                    // 如果进入 tutorial level (level 0)，直接进入关卡
+                    if (this.level === 0 && currentPhase === 10) {
+                        this.levelSelection3D.enterLevel(0);
+                    }
                 }
             } else {
                 // 离开phase1时，可以清理3D场景（可选）
