@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<link rel="stylesheet" href="./style.css" />
+	</head>
+
+	<body>
+		<div id="div1"></div>
+		<div id="menuOverlay">
+			<div id="startText">Click to Start</div>
+		</div>
+		
+	<script type="importmap">
+		{
+			"imports": {
+				"three": "https://unpkg.com/three@0.161.0/build/three.module.js",
+				"three/addons/": "https://unpkg.com/three@0.161.0/examples/jsm/"
+			}
+		}
+	</script>
+
+	<script type="module">
+		import * as THREE from 'three';
+		import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+		import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
+		import { CriticalPointSystem, CP_COLORS } from './critical-point-system.js';
+		
+		// Expose Three.js and related systems to global scope
+		window.THREE = THREE;
+		window.OBJLoader = OBJLoader;
+		window.MTLLoader = MTLLoader;
+		window.CriticalPointSystem = CriticalPointSystem;
+		window.CP_COLORS = CP_COLORS;
+		
+		console.log('Three.js, loaders, and Critical Point System loaded successfully');
+	</script>
+
+	<script src="mapgenerator.js" type="module" defer></script>
+	</body>
+</html>

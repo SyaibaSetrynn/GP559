@@ -5,6 +5,7 @@ import * as P from "https://unpkg.com/three@0.161.0/examples/jsm/controls/Pointe
 import { Octree } from "https://unpkg.com/three@0.165.0/examples/jsm/math/Octree.js";
 import { OctreeHelper } from "https://unpkg.com/three@0.165.0/examples/jsm/helpers/OctreeHelper.js";
 import { Capsule } from "https://unpkg.com/three@0.165.0/examples/jsm/math/Capsule.js";
+import Agent from "./Agent.js";
 
 /**
  * Some references: https://www.youtube.com/watch?v=oqKzxPMLWxo
@@ -234,6 +235,13 @@ scene.add(levelObj);
 let player1 = new Player(0, renderer, collisionWorld);
 scene.add(player1.object);
 
+// create an agent (NPC) and put in scene
+let agent1 = new Agent(renderer, collisionWorld);
+agent1.setPosition(new T.Vector3(5, 1, 5)); // Start at position (5, 1, 5)
+scene.add(agent1.object);
+
+// Agent stays still - no target set
+
 // Function to toggle critical points on/off
 function toggleCriticalPoints(enabled) {
     criticalPointsEnabled = enabled;
@@ -357,6 +365,7 @@ function animate(timestamp) {
     let delta = (timestamp - previousTime) / 1000;
 
     player1.update();
+    agent1.update(); // Update the agent
     
     // Update critical points animation
     if (criticalPointSystem) {
