@@ -127,13 +127,16 @@ class Player {
 
         const raycaster = new T.Raycaster(startPoint, direction);
         const hits = raycaster.intersectObjects(objectsInScene, true);
+        console.log("==================================================================== " + objectsInScene);
 
         let endPoint;
+        console.log("==================================================================== " + hits.length);
         if (hits.length > 0) {
+            console.log("here? ============================================================================================");
             endPoint = hits[0].point;
         }
         else {
-            endPoint = startPoint.clone().add(direction.clone().multiplyScalar(100));
+            endPoint = startPoint.clone().add(direction.clone().multiplyScalar(20));
         }
         
         const distance = startPoint.distanceTo(endPoint);
@@ -271,16 +274,12 @@ renderer.domElement.id = "canvas";
 // set up scene
 let scene = new T.Scene();
 
-// // perspective camera for debugging
-// let perspCam = new T.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-// perspCam.position.set(20, 5, 0);
-// let controls = new OrbitControls(perspCam, renderer.domElement);
-// controls.target.set(0, 5, 0);
-// controls.update();
-
-// let ocontrols = new OrbitControls(player2.camera, renderer.domElement);
-// ocontrols.target.set(0, 5, 0);
-// ocontrols.update();
+// perspective camera for debugging
+let perspCam = new T.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+perspCam.position.set(20, 5, 0);
+let controls = new OrbitControls(perspCam, renderer.domElement);
+controls.target.set(0, 5, 0);
+controls.update();
 
 // add an ambient light
 scene.add(new T.AmbientLight("white"));
@@ -300,6 +299,7 @@ const agentManager = new AgentManager(scene, collisionWorld);
 
 // loading terrain
 let levelObj = null;
+let objectsInScene = [];
 
 if (useMapGenerator) {
     // Import MapGenerator functions
@@ -380,6 +380,7 @@ if (useMapGenerator) {
             
             // Add terrain as obstacles for line of sight
             agentManager.addObstacles([child]);
+            objectsInScene.push(child);
         }
     });
     
@@ -577,7 +578,7 @@ function animate(timestamp) {
         previousTime = timestamp;
     let delta = (timestamp - previousTime) / 1000;
 
-    player1.update(levelObj);
+    player1.update(objectsInScene);
     
     // Update all agents and their line of sight
     agentManager.update();
