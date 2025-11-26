@@ -127,12 +127,10 @@ class Player {
 
         const raycaster = new T.Raycaster(startPoint, direction);
         const hits = raycaster.intersectObjects(objectsInScene, true);
-        console.log("==================================================================== " + objectsInScene);
 
         let endPoint;
-        console.log("==================================================================== " + hits.length);
+        
         if (hits.length > 0) {
-            console.log("here? ============================================================================================");
             endPoint = hits[0].point;
         }
         else {
