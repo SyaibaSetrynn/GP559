@@ -170,7 +170,7 @@ let startGame = false;
 
 // to switch between different levels
 let level1 = false;
-let level2 = true;
+let level2 = false;
 let useMapGenerator = true; // Toggle to use MapGenerator instead of pre-built terrain
 
 // set up renderer
@@ -216,19 +216,9 @@ if (useMapGenerator) {
     // Import MapGenerator functions
     const { createFloor, createWalls, createBlock } = await import('./mapgenerator.js');
     
-    // Determine map size based on selected level
-    let mapWidth, mapDepth;
-    if (level1) {
-        mapWidth = 14;
-        mapDepth = 14;
-    } else if (level2) {
-        mapWidth = 18;
-        mapDepth = 18;
-    } else {
-        // Default level (level 0)
-        mapWidth = 10;
-        mapDepth = 10;
-    }
+    // Always use the smallest level (10x10)
+    const mapWidth = 10;
+    const mapDepth = 10;
     
     // Create the level using MapGenerator
     levelObj = new T.Group();
