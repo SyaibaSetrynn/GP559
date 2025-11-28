@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Agent Test</title>
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; background: #000; }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-family: Arial, sans-serif;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="div1"></div>
+
+
+    <script type="module">
+        import * as T from "https://unpkg.com/three@0.161.0/build/three.module.js";
+        import {OrbitControls} from "https://unpkg.com/three@0.161.0/examples/jsm/controls/OrbitControls.js";
+
+        let scene, camera, renderer, controls;
+        let agents = [];
+
+        function createAgent(x, z, color) {
+            const agentGroup = new T.Group();
+            
+            // Agent body (cube)
+            const geometry = new T.BoxGeometry(0.5, 0.5, 0.5);
+            const material = new T.MeshStandardMaterial({
+                color: color,
+                transparent: true,
+                opacity: 0.8
+            });
+            const cube = new T.Mesh(geometry, material);
+            cube.position.y = 0.25; // Half height above ground
+            agentGroup.add(cube);
+            
+            // Agent position
+            agentGroup.position.set(x, 0, z);
+            
+            return agentGroup;
+        }
+
+        function init() {
+            console.log("Initializing agent test...");
+            
+            // Create renderer
+            renderer = new T.WebGLRenderer();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.getElementById("div1").appendChild(renderer.domElement);
+            
+            // Create scene
+            scene = new T.Scene();
+            scene.background = new T.Color(0x87CEEB); // Sky blue
+            
+            // Create camera
+            camera = new T.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(8, 6, 8);
+            
+            // Create controls
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.target.set(0, 1, 0);
+            controls.update();
+            
+            // Add lighting
+            scene.add(new T.AmbientLight(0xffffff, 0.6));
+            const dirLight = new T.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(10, 10, 5);
+            scene.add(dirLight);
+            
+            // Add floor
+            const floorGeo = new T.PlaneGeometry(20, 20);
+            const floorMat = new T.MeshStandardMaterial({color: 0x228B22}); // Green
+            const floor = new T.Mesh(floorGeo, floorMat);
+            floor.rotation.x = -Math.PI / 2;
+            scene.add(floor);
+            
+            // Add some walls for environment
+            const wallGeo = new T.BoxGeometry(1, 2, 1);
+            const wallMat = new T.MeshStandardMaterial({color: 0x8B4513}); // Brown
+            
+            // Create some walls
+            const wallPositions = [
+                [3, 1, 0], [-3, 1, 0], [0, 1, 3], [0, 1, -3],
+                [2, 1, 2], [-2, 1, -2], [2, 1, -2], [-2, 1, 2]
+            ];
+            
+            wallPositions.forEach(pos => {
+                const wall = new T.Mesh(wallGeo, wallMat);
+                wall.position.set(pos[0], pos[1], pos[2]);
+                scene.add(wall);
+            });
+            
+            // Create 3 agents
+            const agent1 = createAgent(1, 1, 0xff0000); // Red
+            const agent2 = createAgent(-1, -1, 0x00ff00); // Green  
+            const agent3 = createAgent(1, -1, 0x0000ff); // Blue
+            
+            scene.add(agent1);
+            scene.add(agent2);
+            scene.add(agent3);
+            
+            agents.push(agent1, agent2, agent3);
+            
+            console.log("Scene created with 3 agents");
+            
+            animate();
+        }
+        
+        function animate() {
+            controls.update();
+            
+            // Simple agent animation - make them rotate slowly
+            agents.forEach((agent, index) => {
+                agent.rotation.y += 0.01 * (index + 1);
+            });
+            
+            renderer.render(scene, camera);
+            requestAnimationFrame(animate);
+        }
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        
+        // Start when page loads
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

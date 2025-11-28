@@ -1,4 +1,3 @@
-
 import * as T from "https://unpkg.com/three@0.161.0/build/three.module.js";
 import {OrbitControls} from "https://unpkg.com/three@0.161.0/examples/jsm/controls/OrbitControls.js";
 import * as O from "https://unpkg.com/three@0.161.0/examples/jsm/loaders/OBJLoader.js";
@@ -349,16 +348,41 @@ if (useMapGenerator) {
         mazeBlocks.push(block);
     }
     
+    // Store map layout information for agent pathfinding
+    const mapLayout = {
+        width: mapWidth,
+        depth: mapDepth,
+        innerWidth: innerWidth,
+        innerDepth: innerDepth,
+        walls: walls.map(wall => ({
+            position: wall.position.clone(),
+            type: 'boundary'
+        })),
+        blocks: mazeBlocks.map(block => ({
+            position: block.position.clone(),
+            type: 'maze'
+        })),
+        floor: floor ? {
+            position: floor.position.clone(),
+            type: 'floor'
+        } : null
+    };
+    
+    // Make map layout globally accessible for agents
+    window.mapLayout = mapLayout;
+    
     // Add collision detection for all generated objects
     levelObj.children.forEach(child => {
         if (child.isMesh) {
             child.updateWorldMatrix(true, false);
             collisionWorld.fromGraphNode(child);
             
-            // Add critical points to terrain meshes
-            if (criticalPointsEnabled) {
+            // Add critical points only to walls and blocks (not floor)
+            if (criticalPointsEnabled && child !== floor) {
                 const CP_COLORS = window.CP_COLORS;
-                const criticalPoints = criticalPointSystem.addCriticalPoints(child, 3, CP_COLORS.WHITE);
+                // Use fewer critical points on blocks to reduce chance of top placement
+                const pointCount = mazeBlocks.includes(child) ? 2 : 3;
+                const criticalPoints = criticalPointSystem.addCriticalPoints(child, pointCount, CP_COLORS.WHITE);
                 
                 // Register critical points with agent manager
                 criticalPoints.forEach(cp => {
@@ -631,3 +655,105 @@ document.body.addEventListener('click', () => {
 });
 
 window.requestAnimationFrame(animate);
+
+// Pathfinding utilities for agents (globally accessible)
+window.MapPathfinding = {
+    
+    /**
+     * Check if a position is walkable (not blocked by walls or maze blocks)
+     * @param {number} x - World X coordinate
+     * @param {number} z - World Z coordinate
+     * @returns {boolean} - True if walkable
+     */
+    isWalkable: function(x, z) {
+        const layout = window.mapLayout;
+        if (!layout) return false;
+        
+        // Check boundary walls
+        const halfWidth = layout.width / 2;
+        const halfDepth = layout.depth / 2;
+        if (x <= -halfWidth || x >= halfWidth || z <= -halfDepth || z >= halfDepth) {
+            return false;
+        }
+        
+        // Check maze blocks (blocks are 1x1 centered on their position)
+        for (const block of layout.blocks) {
+            const blockX = block.position.x;
+            const blockZ = block.position.z;
+            if (Math.abs(x - blockX) < 0.5 && Math.abs(z - blockZ) < 0.5) {
+                return false;
+            }
+        }
+        
+        return true;
+    },
+    
+    /**
+     * Get valid movement directions from a position
+     * @param {number} x - Current world X coordinate
+     * @param {number} z - Current world Z coordinate
+     * @param {number} stepSize - Step size for movement (default 0.5)
+     * @returns {Array} - Array of valid direction vectors
+     */
+    getValidDirections: function(x, z, stepSize = 0.5) {
+        const directions = [
+            {x: stepSize, z: 0, name: 'east'},
+            {x: -stepSize, z: 0, name: 'west'},
+            {x: 0, z: stepSize, name: 'north'},
+            {x: 0, z: -stepSize, name: 'south'},
+            {x: stepSize, z: stepSize, name: 'northeast'},
+            {x: -stepSize, z: stepSize, name: 'northwest'},
+            {x: stepSize, z: -stepSize, name: 'southeast'},
+            {x: -stepSize, z: -stepSize, name: 'southwest'}
+        ];
+        
+        return directions.filter(dir => 
+            this.isWalkable(x + dir.x, z + dir.z)
+        );
+    },
+    
+    /**
+     * Simple pathfinding - find next step towards target
+     * @param {object} from - {x, z} starting position
+     * @param {object} to - {x, z} target position
+     * @returns {object|null} - Next step direction or null if blocked
+     */
+    getNextStep: function(from, to) {
+        const dx = to.x - from.x;
+        const dz = to.z - from.z;
+        const distance = Math.sqrt(dx * dx + dz * dz);
+        
+        if (distance < 0.1) return null; // Already at target
+        
+        // Normalize direction
+        const stepSize = 0.3;
+        const dirX = (dx / distance) * stepSize;
+        const dirZ = (dz / distance) * stepSize;
+        
+        // Check if direct path is walkable
+        const nextX = from.x + dirX;
+        const nextZ = from.z + dirZ;
+        
+        if (this.isWalkable(nextX, nextZ)) {
+            return {x: dirX, z: dirZ};
+        }
+        
+        // If direct path blocked, try alternative directions
+        const validDirs = this.getValidDirections(from.x, from.z, stepSize);
+        if (validDirs.length === 0) return null;
+        
+        // Choose direction closest to target
+        let bestDir = null;
+        let bestDot = -2;
+        
+        for (const dir of validDirs) {
+            const dot = (dir.x * dx + dir.z * dz) / distance;
+            if (dot > bestDot) {
+                bestDot = dot;
+                bestDir = dir;
+            }
+        }
+        
+        return bestDir;
+    }
+};

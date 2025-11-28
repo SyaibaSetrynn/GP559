@@ -150,31 +150,53 @@ class Agent {
      * updates position of the agent, needs to be called in animate()
      */
     update() {
-        console.log("Agent collider start: " + this.collider.start.x + " " + this.collider.start.y + " " + this.collider.start.z);
+        // console.log("Agent collider start: " + this.collider.start.x + " " + this.collider.start.y + " " + this.collider.start.z);
         
-        // AI movement towards target
+        // AI movement towards target using pathfinding
         if (this.isMovingToTarget) {
             const currentPos = new T.Vector3(this.camera.position.x, this.camera.position.y, this.camera.position.z);
-            const direction = this.targetPosition.clone().sub(currentPos);
-            direction.y = 0; // Only move in XZ plane
+            const distance = currentPos.distanceTo(this.targetPosition);
             
-            const distance = direction.length();
-            if (distance > 0.1) { // Still moving towards target
-                direction.normalize();
-                
-                // Simple movement logic - move towards target
-                const forward = new T.Vector3(0, 0, -1);
-                const right = new T.Vector3(1, 0, 0);
-                
-                // Calculate movement components
-                const forwardMovement = direction.dot(forward);
-                const rightMovement = direction.dot(right);
-                
-                // Set movement flags based on direction
-                this.movement.w = forwardMovement > 0.1;
-                this.movement.s = forwardMovement < -0.1;
-                this.movement.d = rightMovement > 0.1;
-                this.movement.a = rightMovement < -0.1;
+            if (distance > 0.2) { // Still moving towards target
+                // Use the pathfinding system if available
+                if (window.MapPathfinding) {
+                    const from = { x: currentPos.x, z: currentPos.z };
+                    const to = { x: this.targetPosition.x, z: this.targetPosition.z };
+                    
+                    const nextStep = window.MapPathfinding.getNextStep(from, to);
+                    
+                    if (nextStep) {
+                        // Convert pathfinding direction to movement flags
+                        const stepThreshold = 0.1;
+                        
+                        this.movement.w = nextStep.z > stepThreshold;   // Moving north (positive Z)
+                        this.movement.s = nextStep.z < -stepThreshold;  // Moving south (negative Z)
+                        this.movement.d = nextStep.x > stepThreshold;   // Moving east (positive X)
+                        this.movement.a = nextStep.x < -stepThreshold;  // Moving west (negative X)
+                    } else {
+                        // No valid path found, stop moving
+                        this.stop();
+                    }
+                } else {
+                    // Fallback to simple direct movement if pathfinding not available
+                    const direction = this.targetPosition.clone().sub(currentPos);
+                    direction.y = 0; // Only move in XZ plane
+                    direction.normalize();
+                    
+                    // Simple movement logic - move towards target
+                    const forward = new T.Vector3(0, 0, -1);
+                    const right = new T.Vector3(1, 0, 0);
+                    
+                    // Calculate movement components
+                    const forwardMovement = direction.dot(forward);
+                    const rightMovement = direction.dot(right);
+                    
+                    // Set movement flags based on direction
+                    this.movement.w = forwardMovement > 0.1;
+                    this.movement.s = forwardMovement < -0.1;
+                    this.movement.d = rightMovement > 0.1;
+                    this.movement.a = rightMovement < -0.1;
+                }
             } else {
                 // Reached target
                 this.isMovingToTarget = false;
@@ -441,7 +463,134 @@ class Agent {
     }
 
     /**
-     * Get the number of critical points claimed by this agent
+     * Check if the agent can move to a specific world position
+     * @param {number} x - World X coordinate
+     * @param {number} z - World Z coordinate
+     * @returns {boolean} True if the position is walkable
+     */
+    canMoveTo(x, z) {
+        return window.MapPathfinding ? window.MapPathfinding.isWalkable(x, z) : true;
+    }
+
+    /**
+     * Get all valid directions the agent can move from its current position
+     * @returns {Array} Array of valid movement directions
+     */
+    getValidMoveDirections() {
+        if (!window.MapPathfinding) return [];
+        
+        const currentPos = this.getPosition();
+        return window.MapPathfinding.getValidDirections(currentPos.x, currentPos.z);
+    }
+
+    /**
+     * Find a random walkable position within the map boundaries
+     * @returns {T.Vector3|null} Random walkable position or null if none found
+     */
+    findRandomWalkablePosition() {
+        if (!window.mapLayout) return null;
+        
+        const layout = window.mapLayout;
+        const halfWidth = layout.width / 2;
+        const halfDepth = layout.depth / 2;
+        
+        // Try up to 50 times to find a valid position
+        for (let attempts = 0; attempts < 50; attempts++) {
+            const x = (Math.random() - 0.5) * (layout.width - 2); // Stay inside walls
+            const z = (Math.random() - 0.5) * (layout.depth - 2);
+            
+            if (this.canMoveTo(x, z)) {
+                return new T.Vector3(x, 1, z); // Y=1 for agent height
+            }
+        }
+        
+        return null;
+    }
+
+    /**
+     * Set a random target within the walkable area
+     */
+    setRandomTarget() {
+        const randomPos = this.findRandomWalkablePosition();
+        if (randomPos) {
+            this.setTarget(randomPos);
+            console.log(`Agent ${this.agentId}: New random target at (${randomPos.x.toFixed(2)}, ${randomPos.z.toFixed(2)})`);
+        }
+    }
+
+    /**
+     * Check if the direct path to target is clear
+     * @returns {boolean} True if direct path is walkable
+     */
+    isDirectPathClear() {
+        if (!window.MapPathfinding || !this.isMovingToTarget) return false;
+        
+        const currentPos = this.getPosition();
+        const from = { x: currentPos.x, z: currentPos.z };
+        const to = { x: this.targetPosition.x, z: this.targetPosition.z };
+        
+        // Check several points along the path
+        const steps = 10;
+        for (let i = 1; i <= steps; i++) {
+            const t = i / steps;
+            const checkX = from.x + (to.x - from.x) * t;
+            const checkZ = from.z + (to.z - from.z) * t;
+            
+            if (!window.MapPathfinding.isWalkable(checkX, checkZ)) {
+                return false;
+            }
+        }
+        
+        return true;
+    }
+
+    /**
+     * Find the nearest critical point that this agent can see
+     * @param {Array} criticalPoints - Array of critical point objects
+     * @param {Array} obstacles - Array of obstacle objects for LOS checking
+     * @returns {Object|null} Nearest visible critical point or null
+     */
+    findNearestVisibleCriticalPoint(criticalPoints, obstacles) {
+        const currentPos = this.getHeadPosition();
+        let nearestCP = null;
+        let nearestDistance = Infinity;
+        
+        criticalPoints.forEach((cp, index) => {
+            // Skip if already claimed by this or another agent
+            if (this.claimedCriticalPoints.has(index)) return;
+            
+            const distance = currentPos.distanceTo(cp.position);
+            if (distance < nearestDistance && this.hasLineOfSight(cp.position, obstacles)) {
+                nearestDistance = distance;
+                nearestCP = { ...cp, index };
+            }
+        });
+        
+        return nearestCP;
+    }
+
+    /**
+     * Set target to move toward the nearest unclaimed critical point
+     * @param {Array} criticalPoints - Array of critical point objects
+     * @param {Array} obstacles - Array of obstacle objects for LOS checking
+     */
+    seekNearestCriticalPoint(criticalPoints, obstacles) {
+        const nearestCP = this.findNearestVisibleCriticalPoint(criticalPoints, obstacles);
+        
+        if (nearestCP) {
+            // Move to a position near the critical point
+            const targetPos = nearestCP.position.clone();
+            targetPos.y = 1; // Set appropriate Y level for agent
+            this.setTarget(targetPos);
+            console.log(`Agent ${this.agentId}: Seeking critical point at (${targetPos.x.toFixed(2)}, ${targetPos.z.toFixed(2)})`);
+        } else {
+            // No visible critical points, move randomly
+            this.setRandomTarget();
+        }
+    }
+
+    /**
+     * Get the agent's score (number of claimed critical points)
      * @returns {number} Number of claimed critical points
      */
     getScore() {

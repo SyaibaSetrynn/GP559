@@ -5,7 +5,7 @@
  * CPs are fixed-size, glowing circles that can be placed randomly on object surfaces.
  */
 
-import * as THREE from 'three';
+import * as THREE from "https://unpkg.com/three@0.161.0/build/three.module.js";
 
 export class CriticalPointSystem {
     constructor(scene) {
