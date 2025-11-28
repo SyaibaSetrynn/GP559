@@ -37,13 +37,19 @@ class Player {
         this.camera = new T.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         this.camera.position.set(0, PLAYER_HEIGHT, 0);
         this.collider = new Capsule(new T.Vector3(0, PLAYER_HEIGHT/2, 0), new T.Vector3(0, PLAYER_HEIGHT - PLAYER_HEIGHT/4, 0), PLAYER_HEIGHT/2);
-        console.log("collider start: " + this.collider.start.x + " " + this.collider.start.y + " " + this.collider.start.z);
-        console.log("radius: " + PLAYER_RADIUS);
+        let gunObjs = this.createGun();
+        this.gun = gunObjs[0];
+        this.gunTip = gunObjs[1];
         this.object.add(this.mesh);
         this.object.add(this.camera);
+        this.camera.add(this.gun);
         this.onGround = false;
         this.worldCollide = collisionWorld;
 
+        this.laserFire = false;
+        this.laser = this.initLaser();
+        this.gunTip.add(this.laser);
+        this.laser.position.set(0,0,0);
         this.controls = null;
         if(isFirstPerson == 0)
             this.controls = new P.PointerLockControls(this.camera, renderer.domElement);
@@ -65,13 +71,92 @@ class Player {
 
         return characterGrp;
     }
+    
+    createGun() {
+        let gunGrp = new T.Group();
+        const gunBarrelGeo = new T.CylinderGeometry(0.02, 0.02, 0.2, 16);
+        const gunBarrelMat = new T.MeshStandardMaterial({color: "rgb(0, 18, 110)"});
+        const gunBarrelMesh = new T.Mesh(gunBarrelGeo, gunBarrelMat);
+        gunBarrelMesh.rotateX(Math.PI/2);
+
+        const gunBarrel2Geo = new T.CylinderGeometry(0.025, 0.025, 0.12, 16);
+        const gunBarrel2Mat = new T.MeshStandardMaterial({color: "rgb(25, 29, 50)"});
+        const gunBarrel2Mesh = new T.Mesh(gunBarrel2Geo, gunBarrel2Mat);
+        gunBarrel2Mesh.rotateX(Math.PI/2);
+        gunBarrel2Mesh.position.set(0, 0, -0.05);
+
+        const gunHandleGeo = new T.CylinderGeometry(0.015, 0.022, 0.1, 16);
+        const gunHandleMesh = new T.Mesh(gunHandleGeo, gunBarrelMat);
+        gunHandleMesh.position.set(0, -0.05, -0.1);
+        gunHandleMesh.rotateX(Math.PI / 8);
+
+        const gunTrigger1Geo = new T.TorusGeometry(0.015, 0.005, 16, 50);
+        const gunTrigger1Mesh = new T.Mesh(gunTrigger1Geo, gunBarrelMat);
+        gunTrigger1Mesh.position.set(0, -0.033, -0.063);
+        gunTrigger1Mesh.rotateY(Math.PI / 2);
+
+        gunGrp.add(gunBarrelMesh);
+        gunGrp.add(gunBarrel2Mesh);
+        gunGrp.add(gunHandleMesh);
+        gunGrp.add(gunTrigger1Mesh);
+        gunGrp.rotateY(- Math.PI / 1.1);
+        gunGrp.rotateX(- Math.PI / 23);
+        gunGrp.position.set(0.2, -0.1, -0.3);
+
+        let gunTip = new T.Group();
+        gunTip.position.set(0, 0, 0.1);
+        gunGrp.add(gunTip);
+        return [gunGrp, gunTip];
+    }
+
+    initLaser() {
+        const laserGeo = new T.CylinderGeometry(0.01, 0.01, 1, 16);
+        const laserMat = new T.MeshStandardMaterial({color: "rgb(255, 255, 255)"});
+        const laserMesh = new T.Mesh(laserGeo, laserMat);
+        laserMesh.visible = false;
+        return laserMesh;
+    }
+
+    updateLaser(objectsInScene) {
+
+        const direction = new T.Vector3();
+        const startPoint = new T.Vector3();
+
+        this.gunTip.getWorldPosition(startPoint);
+        this.camera.getWorldDirection(direction);
+
+        const raycaster = new T.Raycaster(startPoint, direction);
+        const hits = raycaster.intersectObjects(objectsInScene, true);
+
+        let endPoint;
+        
+        if (hits.length > 0) {
+            endPoint = hits[0].point;
+        }
+        else {
+            endPoint = startPoint.clone().add(direction.clone().multiplyScalar(20));
+        }
+        
+        const distance = startPoint.distanceTo(endPoint);
+        this.laser.scale.set(1, distance, 1);
+
+        const midpoint = startPoint.clone().add(direction.clone().multiplyScalar(distance / 2));
+
+        this.laser.position.copy(this.gunTip.worldToLocal(midpoint));
+
+        const up = new T.Vector3(0, 1, 0);
+        const quat = new T.Quaternion().setFromUnitVectors(up, direction.clone().normalize());
+        const parentQuatInverse = this.gunTip.getWorldQuaternion(new T.Quaternion()).invert();
+        this.laser.quaternion.copy(quat.premultiply(parentQuatInverse));
+
+        this.laser.visible = true;
+    }
 
     /**
      * updates position of the player, needs to be called in animate()
      */
-    update() {
-        // console.log("update");
-        console.log("collider start: " + this.collider.start.x + " " + this.collider.start.y + " " + this.collider.start.z);
+    update(objectsInScene) {
+
         // // update player position
         let moved = false;
 
@@ -104,22 +189,27 @@ class Player {
             this.collider.end.z = this.camera.position.z;      
         }
 
+        if(this.laserFire) {
+            this.updateLaser(objectsInScene);
+        }
+        else
+            this.laser.visible = false;
 
         // // update jump
-        if(this.movement.spaceHold || !this.onGround) {
+        // if(this.movement.spaceHold || !this.onGround) {
 
-            this.collider.start.y += this.speedY;
-            this.collider.end.y += this.speedY;
-            const center = this.collider.start.clone().add(this.collider.end).multiplyScalar(0.5);
-            const halfHeight = PLAYER_HEIGHT / 2;
-            this.mesh.position.set(center.x, center.y - halfHeight, center.z);
-            this.camera.position.set(center.x, center.y + halfHeight, center.z);
+        //     this.collider.start.y += this.speedY;
+        //     this.collider.end.y += this.speedY;
+        //     const center = this.collider.start.clone().add(this.collider.end).multiplyScalar(0.5);
+        //     const halfHeight = PLAYER_HEIGHT / 2;
+        //     this.mesh.position.set(center.x, center.y - halfHeight, center.z);
+        //     this.camera.position.set(center.x, center.y + halfHeight, center.z);
 
-            if(this.onGround) 
-                this.movement.spaceHold = false;
+        //     if(this.onGround) 
+        //         this.movement.spaceHold = false;
             
-            this.speedY -= GRAVITY;
-        }
+        //     this.speedY -= GRAVITY;
+        // }
 
         this.collisions();
 
@@ -182,16 +272,12 @@ renderer.domElement.id = "canvas";
 // set up scene
 let scene = new T.Scene();
 
-// // perspective camera for debugging
-// let perspCam = new T.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-// perspCam.position.set(20, 5, 0);
-// let controls = new OrbitControls(perspCam, renderer.domElement);
-// controls.target.set(0, 5, 0);
-// controls.update();
-
-// let ocontrols = new OrbitControls(player2.camera, renderer.domElement);
-// ocontrols.target.set(0, 5, 0);
-// ocontrols.update();
+// perspective camera for debugging
+let perspCam = new T.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+perspCam.position.set(20, 5, 0);
+let controls = new OrbitControls(perspCam, renderer.domElement);
+controls.target.set(0, 5, 0);
+controls.update();
 
 // add an ambient light
 scene.add(new T.AmbientLight("white"));
@@ -211,6 +297,7 @@ const agentManager = new AgentManager(scene, collisionWorld);
 
 // loading terrain
 let levelObj = null;
+let objectsInScene = [];
 
 if (useMapGenerator) {
     // Import MapGenerator functions
@@ -281,6 +368,7 @@ if (useMapGenerator) {
             
             // Add terrain as obstacles for line of sight
             agentManager.addObstacles([child]);
+            objectsInScene.push(child);
         }
     });
     
@@ -385,13 +473,13 @@ document.addEventListener('keydown', function (event) {
             case 'D':
                 player1.movement.d = true;
                 break;
-            case ' ':
-                if(player1.movement.spaceHold)
-                    break;
-                player1.movement.space = true;
-                player1.movement.spaceHold = true;
-                player1.speedY = PLAYER_JUMP_SPEED;
-                break;
+            // case ' ':
+            //     if(player1.movement.spaceHold)
+            //         break;
+            //     player1.movement.space = true;
+            //     player1.movement.spaceHold = true;
+            //     player1.speedY = PLAYER_JUMP_SPEED;
+            //     break;
         }        
     }
 
@@ -416,9 +504,9 @@ document.addEventListener('keyup', function (event) {
             case 'D':
                 player1.movement.d = false;
                 break;
-            case ' ':
-                player1.movement.space = false;
-                break;
+            // case ' ':
+            //     player1.movement.space = false;
+            //     break;
         }
     }
 
@@ -448,6 +536,20 @@ player1.controls.addEventListener('unlock', () => {
     startGame = false;
 });
 
+// laser firing controls
+document.addEventListener('mousedown', (event) => {
+    if(event.button === 0) {
+        player1.laserFire = true;
+    }
+});
+
+document.addEventListener('mouseup', (event) => {
+    if(event.button === 0) {
+        player1.laserFire = false;
+        player1.laser.visible = false;
+    }
+});
+
 // // some helpers, leaving in for now so I don't have to type it again
 // const helper = new OctreeHelper( collisionWorld );
 // scene.add( helper );
@@ -464,7 +566,7 @@ function animate(timestamp) {
         previousTime = timestamp;
     let delta = (timestamp - previousTime) / 1000;
 
-    player1.update();
+    player1.update(objectsInScene);
     
     // Update all agents and their line of sight
     agentManager.update();

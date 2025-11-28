@@ -74,8 +74,8 @@ class LevelSelection3D {
         const aspect = this.width / this.height;
         this.camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 1000);
         // 相机位置
-        this.camera.position.set(0, 2, -8); // y=3（下移1单位：从4改为3）
-        this.camera.lookAt(0, -0.5, 0); // 相机看向(0, 0.5, 0)，y=0.5（下移1单位：从1.5改为0.5）
+        this.camera.position.set(0, 5, -8); // y=3（下移1单位：从4改为3）
+        this.camera.lookAt(0, 0.5,2); // 相机看向(0, 0.5, 0)，y=0.5（下移1单位：从1.5改为0.5）
         
         // 初始化圆盘中心 - 圆心是(0, 0, 8)，三个模型都在半径为8的圆上
         // level1在(0, 0, 0)，在圆上的角度0位置
@@ -238,7 +238,7 @@ class LevelSelection3D {
             console.log(`Generating map for level ${level}: ${mapWidth}x${mapDepth}`);
             
             // 动态导入 MapGenerator
-            const { createFloor, createWalls } = await import('./MapGenerator.js');
+            const { createFloor, createWalls } = await import('./mapgenerator.js');
             
             // 创建一个临时场景用于生成地图（不添加到主场景）
             const tempScene = new THREE.Scene();
@@ -1305,7 +1305,7 @@ class LevelSelection3D {
         
         // 重置相机位置到初始状态（而不是恢复到进入关卡前的位置）
         // 这样可以确保退出后再进入时相机位置正确
-        this.camera.position.set(0, 2, -8); // 初始相机位置（下移1单位）
+        this.camera.position.set(0, 2, -3); // 初始相机位置（下移1单位）
             if (this.controls) {
             this.controls.target.set(0, -0.5, 0); // 初始目标位置（下移1单位）
                 this.controls.update();

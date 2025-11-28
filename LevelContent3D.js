@@ -195,11 +195,12 @@ class LevelContent3D {
         }
         
         // 动态导入 MapGenerator
-        const { createBlock } = await import('./MapGenerator.js');
+        const { createBlock } = await import('./mapgenerator.js');
         
-        // 内部空间大小（排除围墙）
-        const innerWidth = mapWidth - 2;
-        const innerDepth = mapDepth - 2;
+        // 内部空间大小（正好是 mapWidth x mapDepth，因为墙现在在边界外侧）
+        // 方块应该覆盖从 -halfWidth 到 +halfWidth 的整个内部空间
+        const innerWidth = mapWidth;
+        const innerDepth = mapDepth;
         const totalCells = innerWidth * innerDepth;
         const targetWallCount = Math.floor(totalCells * 0.5);
         
@@ -211,19 +212,20 @@ class LevelContent3D {
         const model = this.models[level];
         if (!model) return;
         
+        const halfWidth = mapWidth / 2;
+        const halfDepth = mapDepth / 2;
+        
         for (let x = 0; x < innerWidth; x++) {
             for (let z = 0; z < innerDepth; z++) {
                 if (maze[x][z] === 1) {
                     // 计算方块位置（相对于地图中心）
-                    // 地图中心在 (0,0,0)，地图大小是 mapWidth x mapDepth
-                    // 内部网格从 (0,0) 到 (innerWidth-1, innerDepth-1)
-                    // 实际世界坐标应该是：
-                    // x: -mapWidth/2 + 1 + x + 0.5（因为网格从1开始，且方块中心在格子中心）
-                    // z: -mapDepth/2 + 1 + z + 0.5
-                    const halfWidth = mapWidth / 2;
-                    const halfDepth = mapDepth / 2;
-                    const actualX = -halfWidth + 1 + x + 0.5;
-                    const actualZ = -halfDepth + 1 + z + 0.5;
+                    // 地图中心在 (0,0,0)，内部空间从 [-halfWidth, halfWidth] x [-halfDepth, halfDepth]
+                    // 网格索引 x 从 0 到 innerWidth-1，对应世界坐标从 -halfWidth 到 halfWidth-1
+                    // 方块中心应该在每个格子的中心，并向 xz 正方向偏移 0.5 单位，所以：
+                    // actualX = -halfWidth + x + 0.5 + 0.5 = -halfWidth + x + 1.0
+                    // actualZ = -halfDepth + z + 0.5 + 0.5 = -halfDepth + z + 1.0
+                    const actualX = -halfWidth + x + 1.0;
+                    const actualZ = -halfDepth + z + 1.0;
                     
                     const tempScene = new THREE.Scene();
                     const block = createBlock(tempScene, actualX, actualZ, 2);
@@ -241,14 +243,12 @@ class LevelContent3D {
         
         // 保存空闲位置（使用与方块相同的坐标系统）
         const emptyPositions = [];
-        const halfWidth = mapWidth / 2;
-        const halfDepth = mapDepth / 2;
         for (let x = 0; x < innerWidth; x++) {
             for (let z = 0; z < innerDepth; z++) {
                 if (maze[x][z] === 0) {
-                    // 使用与方块相同的坐标计算方式
-                    const actualX = -halfWidth + 1 + x + 0.5;
-                    const actualZ = -halfDepth + 1 + z + 0.5;
+                    // 使用与方块相同的坐标计算方式（也向 xz 正方向偏移 0.5 单位）
+                    const actualX = -halfWidth + x + 1.0;
+                    const actualZ = -halfDepth + z + 1.0;
                     emptyPositions.push({ x: actualX, z: actualZ });
                 }
             }
@@ -258,8 +258,9 @@ class LevelContent3D {
         console.log(`LevelContent3D: Generated maze for level ${level} (${mapWidth}x${mapDepth}): ${wallCount} walls, ${emptyCount} empty`);
     }
     
-    // 使用递归回溯算法生成连通迷宫
+    // 使用递归回溯算法生成完全连通的迷宫
     generateConnectedMaze(width, depth, targetWallCount) {
+        // 先使用递归回溯算法生成一个完全连通的迷宫（所有单元格都可达）
         const maze = Array(width).fill(null).map(() => Array(depth).fill(1));
         const visited = Array(width).fill(null).map(() => Array(depth).fill(false));
         
@@ -280,7 +281,9 @@ class LevelContent3D {
         visited[startX][startZ] = true;
         pathCells++;
         
-        while (stack.length > 0 && pathCells < (width * depth - targetWallCount)) {
+        // 第一阶段：使用递归回溯算法生成完全连通的迷宫
+        // 跳两格（跳过中间墙）确保路径是连通的
+        while (stack.length > 0) {
             const [currentX, currentZ] = stack[stack.length - 1];
             
             const neighbors = [];
@@ -312,6 +315,8 @@ class LevelContent3D {
             }
         }
         
+        // 第二阶段：如果路径单元格数少于目标，在已有连通路径上随机扩展
+        // 但只扩展与现有路径相邻的单元格，确保保持连通性
         const allPathCells = [];
         for (let x = 0; x < width; x++) {
             for (let z = 0; z < depth; z++) {
@@ -321,34 +326,188 @@ class LevelContent3D {
             }
         }
         
-        while (pathCells < (width * depth - targetWallCount) && allPathCells.length > 0) {
-            const randomIndex = Math.floor(Math.random() * allPathCells.length);
-            const [currentX, currentZ] = allPathCells[randomIndex];
+        // 收集所有可扩展的墙壁位置（必须与至少一个路径单元格相邻）
+        const expandableWalls = [];
+        for (let x = 0; x < width; x++) {
+            for (let z = 0; z < depth; z++) {
+                if (maze[x][z] === 1) {
+                    // 检查是否与至少一个路径单元格相邻
+                    let hasPathNeighbor = false;
+                    for (const dir of directions) {
+                        const neighborX = x + dir.dx;
+                        const neighborZ = z + dir.dz;
+                        if (neighborX >= 0 && neighborX < width && 
+                            neighborZ >= 0 && neighborZ < depth && 
+                            maze[neighborX][neighborZ] === 0) {
+                            hasPathNeighbor = true;
+                            break;
+                        }
+                    }
+                    if (hasPathNeighbor) {
+                        expandableWalls.push([x, z]);
+                    }
+                }
+            }
+        }
+        
+        // 随机扩展墙壁，直到达到目标路径数量
+        while (pathCells < (width * depth - targetWallCount) && expandableWalls.length > 0) {
+            const randomIndex = Math.floor(Math.random() * expandableWalls.length);
+            const [wallX, wallZ] = expandableWalls[randomIndex];
             
-            const shuffledDirs = [...directions].sort(() => Math.random() - 0.5);
-            let expanded = false;
+            maze[wallX][wallZ] = 0;
+            allPathCells.push([wallX, wallZ]);
+            pathCells++;
             
-            for (const dir of shuffledDirs) {
+            // 从可扩展列表中移除这个位置
+            expandableWalls.splice(randomIndex, 1);
+            
+            // 检查这个新路径单元格的邻居，如果它们是墙壁，添加到可扩展列表
+            for (const dir of directions) {
+                const neighborX = wallX + dir.dx;
+                const neighborZ = wallZ + dir.dz;
+                if (neighborX >= 0 && neighborX < width && 
+                    neighborZ >= 0 && neighborZ < depth && 
+                    maze[neighborX][neighborZ] === 1) {
+                    // 检查这个墙壁是否已经在可扩展列表中
+                    const alreadyInList = expandableWalls.some(
+                        ([x, z]) => x === neighborX && z === neighborZ
+                    );
+                    if (!alreadyInList) {
+                        expandableWalls.push([neighborX, neighborZ]);
+                    }
+                }
+            }
+        }
+        
+        // 第三阶段：验证连通性（使用 BFS）
+        this.verifyMazeConnectivity(maze, width, depth);
+        
+        return maze;
+    }
+    
+    // 验证迷宫连通性，如果发现不连通的区域，将它们连接起来
+    verifyMazeConnectivity(maze, width, depth) {
+        const visited = Array(width).fill(null).map(() => Array(depth).fill(false));
+        const directions = [
+            { dx: 0, dz: -1 },
+            { dx: 1, dz: 0 },
+            { dx: 0, dz: 1 },
+            { dx: -1, dz: 0 }
+        ];
+        
+        // 找到所有路径单元格
+        const pathCells = [];
+        for (let x = 0; x < width; x++) {
+            for (let z = 0; z < depth; z++) {
+                if (maze[x][z] === 0) {
+                    pathCells.push([x, z]);
+                }
+            }
+        }
+        
+        if (pathCells.length === 0) return;
+        
+        // 使用 BFS 从第一个路径单元格开始标记所有连通的单元格
+        const queue = [[pathCells[0][0], pathCells[0][1]]];
+        visited[pathCells[0][0]][pathCells[0][1]] = true;
+        let connectedCount = 1;
+        
+        while (queue.length > 0) {
+            const [currentX, currentZ] = queue.shift();
+            
+            for (const dir of directions) {
                 const nextX = currentX + dir.dx;
                 const nextZ = currentZ + dir.dz;
                 
                 if (nextX >= 0 && nextX < width && 
                     nextZ >= 0 && nextZ < depth && 
-                    maze[nextX][nextZ] === 1) {
-                    maze[nextX][nextZ] = 0;
-                    allPathCells.push([nextX, nextZ]);
-                    pathCells++;
-                    expanded = true;
-                    break;
+                    maze[nextX][nextZ] === 0 && 
+                    !visited[nextX][nextZ]) {
+                    visited[nextX][nextZ] = true;
+                    connectedCount++;
+                    queue.push([nextX, nextZ]);
                 }
-            }
-            
-            if (!expanded) {
-                allPathCells.splice(randomIndex, 1);
             }
         }
         
-        return maze;
+        // 如果存在不连通的区域，找到最近的路径单元格并连接它们
+        if (connectedCount < pathCells.length) {
+            console.warn(`Maze has ${pathCells.length - connectedCount} disconnected cells, connecting them...`);
+            
+            // 找到未访问的路径单元格
+            const disconnectedCells = [];
+            for (let x = 0; x < width; x++) {
+                for (let z = 0; z < depth; z++) {
+                    if (maze[x][z] === 0 && !visited[x][z]) {
+                        disconnectedCells.push([x, z]);
+                    }
+                }
+            }
+            
+            // 为每个不连通的区域找到最近的连通区域并连接
+            for (const [disX, disZ] of disconnectedCells) {
+                // 使用 BFS 找到最近的连通路径单元格
+                const distQueue = [[disX, disZ, []]]; // 每个元素：[x, z, path]
+                const distVisited = Array(width).fill(null).map(() => Array(depth).fill(false));
+                distVisited[disX][disZ] = true;
+                
+                let foundPath = false;
+                while (distQueue.length > 0 && !foundPath) {
+                    const [currX, currZ, path] = distQueue.shift();
+                    
+                    for (const dir of directions) {
+                        const nextX = currX + dir.dx;
+                        const nextZ = currZ + dir.dz;
+                        
+                        if (nextX >= 0 && nextX < width && 
+                            nextZ >= 0 && nextZ < depth) {
+                            if (maze[nextX][nextZ] === 0 && visited[nextX][nextZ]) {
+                                // 找到连通的路径，沿着路径创建连接
+                                const connectionPath = [[disX, disZ], ...path, [nextX, nextZ]];
+                                for (const [px, pz] of connectionPath) {
+                                    maze[px][pz] = 0;
+                                    visited[px][pz] = true;
+                                }
+                                foundPath = true;
+                                break;
+                            } else if (!distVisited[nextX][nextZ]) {
+                                distVisited[nextX][nextZ] = true;
+                                distQueue.push([nextX, nextZ, [...path, [currX, currZ]]]);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // 再次验证连通性
+            const finalVisited = Array(width).fill(null).map(() => Array(depth).fill(false));
+            const finalQueue = [[pathCells[0][0], pathCells[0][1]]];
+            finalVisited[pathCells[0][0]][pathCells[0][1]] = true;
+            let finalConnectedCount = 1;
+            
+            while (finalQueue.length > 0) {
+                const [currentX, currentZ] = finalQueue.shift();
+                for (const dir of directions) {
+                    const nextX = currentX + dir.dx;
+                    const nextZ = currentZ + dir.dz;
+                    if (nextX >= 0 && nextX < width && 
+                        nextZ >= 0 && nextZ < depth && 
+                        maze[nextX][nextZ] === 0 && 
+                        !finalVisited[nextX][nextZ]) {
+                        finalVisited[nextX][nextZ] = true;
+                        finalConnectedCount++;
+                        finalQueue.push([nextX, nextZ]);
+                    }
+                }
+            }
+            
+            if (finalConnectedCount < pathCells.length) {
+                console.error(`Maze still has ${pathCells.length - finalConnectedCount} disconnected cells after connection attempt!`);
+            } else {
+                console.log(`Maze is fully connected with ${finalConnectedCount} path cells.`);
+            }
+        }
     }
     
     // 添加关卡灯
