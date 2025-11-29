@@ -6,52 +6,67 @@
 class DQNGameBridge {
     constructor(gameManager) {
         this.gameManager = gameManager;
-        this.trainingManager = null;
-        this.isTrainingActive = false;
+        this.agents = null; // Will hold trained DQN agents
+        this.processor = new GameStateProcessor(); // For state processing
+        this.isEpisodeRunning = false;
+        this.autoEpisodes = false;
         
-        // Training controls
-        this.trainingControls = this.createTrainingControls();
+        // Action mapping (same as DQN training)
+        this.actionNames = {
+            0: "strafe_left",
+            1: "strafe_right", 
+            2: "move_forward",
+            3: "move_backward",
+            4: "stay"
+        };
+        
+        // Connect event listeners to existing buttons
+        this.attachEventListeners();
         
         // Connect to your existing game state
         this.setupGameStateInterface();
+        
+        console.log('DQNGameBridge initialized with gameManager:', gameManager);
     }
 
-    createTrainingControls() {
-        // Create a simple UI for controlling DQN training
-        const controlsDiv = document.createElement('div');
-        controlsDiv.id = 'dqn-controls';
-        controlsDiv.style.cssText = `
-            position: fixed;
-            top: 10px;
-            right: 10px;
-            background: rgba(0,0,0,0.8);
-            color: white;
-            padding: 15px;
-            border-radius: 8px;
-            z-index: 1000;
-            font-family: Arial, sans-serif;
-            min-width: 200px;
-        `;
+    attachEventListeners() {
+        // Wait for DOM to be ready and attach to existing buttons
+        const attachListeners = () => {
+            const loadBtn = document.getElementById('load-models');
+            const startBtn = document.getElementById('start-episode');
+            const resetBtn = document.getElementById('reset-episode');
+            const autoBtn = document.getElementById('toggle-auto');
+            
+            if (startBtn && resetBtn && autoBtn) {
+                startBtn.addEventListener('click', () => {
+                    console.log('Start episode button clicked');
+                    this.startEpisode();
+                });
+                resetBtn.addEventListener('click', () => {
+                    console.log('Reset episode button clicked');
+                    this.resetEpisode();
+                });
+                autoBtn.addEventListener('click', () => {
+                    console.log('Toggle auto episodes button clicked');
+                    this.toggleAutoEpisodes();
+                });
+                
+                console.log('DQN button event listeners attached successfully');
+                
+                // Initialize agents directly (no loading needed)
+                this.initializeAgents();
+            } else {
+                console.log('DQN buttons not found, retrying in 500ms...');
+                setTimeout(attachListeners, 500);
+            }
+        };
         
-        controlsDiv.innerHTML = `
-            <h3>DQN Training</h3>
-            <button id="start-training">Start Training</button>
-            <button id="stop-training" disabled>Stop Training</button>
-            <button id="save-models">Save Models</button>
-            <button id="load-models">Load Models</button>
-            <div id="training-status">Ready</div>
-            <div id="training-metrics"></div>
-        `;
-        
-        document.body.appendChild(controlsDiv);
-        
-        // Add event listeners
-        document.getElementById('start-training').addEventListener('click', () => this.startTraining());
-        document.getElementById('stop-training').addEventListener('click', () => this.stopTraining());
-        document.getElementById('save-models').addEventListener('click', () => this.saveModels());
-        document.getElementById('load-models').addEventListener('click', () => this.loadModels());
-        
-        return controlsDiv;
+        // Try immediately or wait for DOM
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', attachListeners);
+        } else {
+            attachListeners();
+        }
     }
 
     setupGameStateInterface() {
@@ -85,41 +100,47 @@ class DQNGameBridge {
         }
     }
 
-    // These methods should be implemented to interface with your specific game
+    // Interface with your AgentManager
     getAgentPosition(agentId) {
         // Return the position of the specified agent
-        // Example: return [x, y, z]
-        if (this.gameManager.agents && this.gameManager.agents[agentId]) {
+        if (this.gameManager && this.gameManager.agents && this.gameManager.agents[agentId]) {
             const agent = this.gameManager.agents[agentId];
-            return [agent.position.x, agent.position.y, agent.position.z];
+            const pos = agent.getPosition ? agent.getPosition() : agent.position;
+            if (pos) {
+                return [pos.x || 0, pos.y || 1, pos.z || 0];
+            }
         }
         return [0, 1, 0]; // Default position
     }
 
     getCriticalPointsState() {
-        // Return array of critical point states
-        // Example format for each critical point:
-        // { position: [x, y, z], color: agentId or null, available: boolean }
+        // Return array of critical point states using your critical point system
+        const criticalPoints = [];
         
-        if (this.gameManager.criticalPoints) {
-            return this.gameManager.criticalPoints.map(cp => ({
-                position: [cp.position.x, cp.position.y, cp.position.z],
-                color: cp.controllingAgent, // null if unclaimed
-                available: cp.isAvailable
-            }));
+        if (window.globalCPSystem && window.globalCPSystem.criticalPoints) {
+            for (let cp of window.globalCPSystem.criticalPoints) {
+                criticalPoints.push({
+                    position: [cp.position.x, cp.position.y, cp.position.z],
+                    color: cp.currentAgent, // null if unclaimed
+                    available: cp.isAvailable !== false // Default to available
+                });
+            }
         }
-        return [];
+        
+        return criticalPoints;
     }
 
     getAgentOwnedPoints() {
         // Return object with agent IDs as keys and number of owned points as values
-        // Example: { 0: 2, 1: 3, 2: 1 }
         const owned = {};
-        if (this.gameManager.agents) {
-            this.gameManager.agents.forEach((agent, id) => {
-                owned[id] = agent.ownedPoints || 0;
+        
+        if (this.gameManager && this.gameManager.getScores) {
+            const scores = this.gameManager.getScores();
+            scores.forEach(scoreData => {
+                owned[scoreData.agentId] = scoreData.score || 0;
             });
         }
+        
         return owned;
     }
 
@@ -176,124 +197,205 @@ class DQNGameBridge {
     }
 
     executeAction(agentId, action) {
-        // Execute the specified action for the agent
-        // Map DQN actions to your game's movement system
-        
-        if (!this.gameManager.agents || !this.gameManager.agents[agentId]) return;
+        // Execute the specified action for the agent using your Agent system
+        if (!this.gameManager || !this.gameManager.agents || !this.gameManager.agents[agentId]) {
+            console.warn(`Agent ${agentId} not found`);
+            return;
+        }
         
         const agent = this.gameManager.agents[agentId];
-        const moveSpeed = 0.1; // Adjust based on your game
+        const moveSpeed = 0.05; // Adjust based on your game
+        
+        // Get current position
+        const currentPos = agent.getPosition ? agent.getPosition() : agent.position;
+        if (!currentPos) return;
+        
+        let newX = currentPos.x;
+        let newZ = currentPos.z;
         
         switch (action) {
             case 'strafe_left':
-                // Move agent left relative to current orientation
-                agent.position.x -= moveSpeed;
+                newX -= moveSpeed;
                 break;
             case 'strafe_right':
-                // Move agent right relative to current orientation
-                agent.position.x += moveSpeed;
+                newX += moveSpeed;
                 break;
             case 'move_forward':
-                // Move agent forward relative to current orientation
-                agent.position.z -= moveSpeed;
+                newZ -= moveSpeed;
                 break;
             case 'move_backward':
-                // Move agent backward relative to current orientation
-                agent.position.z += moveSpeed;
+                newZ += moveSpeed;
                 break;
             case 'stay':
                 // Agent doesn't move
-                break;
+                return;
         }
         
-        // Update agent in your game system
-        if (this.gameManager.updateAgent) {
-            this.gameManager.updateAgent(agentId);
+        // Set new position using agent's method
+        if (agent.setPosition) {
+            agent.setPosition(new THREE.Vector3(newX, currentPos.y, newZ));
+        } else if (agent.position) {
+            agent.position.set(newX, currentPos.y, newZ);
         }
     }
 
     resetGameForTraining() {
-        // Reset the game state for a new training episode
-        if (this.gameManager.resetGame) {
-            this.gameManager.resetGame();
-        }
-        
-        // Set agent positions to starting locations
+        // Reset agent positions to starting locations
         const startPositions = [
-            [3.5, 1, 3.5],   // Agent 1: top-right
-            [-3.5, 1, 3.5],  // Agent 2: top-left  
-            [3.5, 1, -3.5]   // Agent 3: bottom-right
+            [3.5, 1, 3.5],   // Agent 0: top-right
+            [-3.5, 1, 3.5],  // Agent 1: top-left  
+            [3.5, 1, -3.5]   // Agent 2: bottom-right
         ];
         
-        if (this.gameManager.agents) {
+        if (this.gameManager && this.gameManager.agents) {
             this.gameManager.agents.forEach((agent, id) => {
-                if (startPositions[id]) {
-                    agent.position.x = startPositions[id][0];
-                    agent.position.y = startPositions[id][1];
-                    agent.position.z = startPositions[id][2];
+                if (startPositions[id] && agent.setPosition) {
+                    agent.setPosition(new THREE.Vector3(
+                        startPositions[id][0], 
+                        startPositions[id][1], 
+                        startPositions[id][2]
+                    ));
                 }
             });
         }
+        
+        // Reset critical point system if available
+        if (window.globalCPSystem && window.globalCPSystem.resetAllPoints) {
+            window.globalCPSystem.resetAllPoints();
+        }
     }
 
-    async startTraining() {
-        if (this.isTrainingActive) return;
+    async startEpisode() {
+        if (!this.agents || this.agents.length === 0) {
+            this.updateStatus('No trained agents loaded. Load models first.');
+            return;
+        }
         
-        this.updateStatus('Initializing training...');
+        if (this.isEpisodeRunning) {
+            this.updateStatus('Episode already running');
+            return;
+        }
+        
+        console.log('Starting DQN episode...');
+        this.isEpisodeRunning = true;
+        document.getElementById('start-episode').disabled = true;
         
         try {
-            // Initialize training manager if not already done
-            if (!this.trainingManager) {
-                this.trainingManager = new TrainingManager(this.gameManager, {
-                    numAgents: 3,
-                    savePrefix: 'game_dqn_agent'
-                });
-            }
+            // Reset game state
+            this.resetGameForTraining();
+            this.updateStatus('Episode running...');
             
-            this.isTrainingActive = true;
-            document.getElementById('start-training').disabled = true;
-            document.getElementById('stop-training').disabled = false;
-            
-            this.updateStatus('Training in progress...');
-            
-            // Start training
-            await this.trainingManager.train({
-                numEpisodes: 2000,
-                saveInterval: 200,
-                evalInterval: 100
-            });
+            // Run episode with trained agents
+            await this.runInferenceEpisode();
             
         } catch (error) {
-            console.error('Training error:', error);
-            this.updateStatus(`Error: ${error.message}`);
+            console.error('Episode error:', error);
+            this.updateStatus(`Episode error: ${error.message}`);
         } finally {
-            this.stopTraining();
+            this.isEpisodeRunning = false;
+            document.getElementById('start-episode').disabled = false;
         }
     }
 
-    stopTraining() {
-        if (this.trainingManager) {
-            this.trainingManager.stopTraining();
+    async runInferenceEpisode() {
+        const maxSteps = 1000;
+        let step = 0;
+        
+        while (step < maxSteps && this.isEpisodeRunning) {
+            // Get current game state for each agent
+            const gameState = this.getCurrentGameState();
+            
+            // Each agent selects action using trained policy (no exploration)
+            for (let agentId = 0; agentId < this.agents.length; agentId++) {
+                const state = this.processor.processState({
+                    ...gameState,
+                    agent_position: this.getAgentPosition(agentId)
+                });
+                
+                // Use trained agent to select action (training=false for no exploration)
+                const action = this.agents[agentId].selectAction(state, false);
+                
+                // Execute the action
+                this.executeAction(agentId, this.actionNames[action]);
+            }
+            
+            // Update metrics
+            this.updateEpisodeMetrics(step, gameState);
+            
+            // Small delay to make it visible
+            await new Promise(resolve => setTimeout(resolve, 100));
+            step++;
         }
         
-        this.isTrainingActive = false;
-        document.getElementById('start-training').disabled = false;
-        document.getElementById('stop-training').disabled = true;
-        
-        this.updateStatus('Training stopped');
+        this.updateStatus(`Episode completed after ${step} steps`);
     }
 
-    async saveModels() {
-        if (this.trainingManager) {
-            await this.trainingManager.saveModels('manual_save');
-            this.updateStatus('Models saved');
+    resetEpisode() {
+        console.log('Resetting episode...');
+        this.isEpisodeRunning = false;
+        this.resetGameForTraining();
+        this.updateStatus(this.agents ? 'Episode reset - ready to start' : 'No weights loaded');
+        document.getElementById('start-episode').disabled = false;
+    }
+
+    toggleAutoEpisodes() {
+        this.autoEpisodes = !this.autoEpisodes;
+        const button = document.getElementById('toggle-auto');
+        button.textContent = `Auto Episodes: ${this.autoEpisodes ? 'ON' : 'OFF'}`;
+        
+        if (this.autoEpisodes) {
+            this.runAutoEpisodes();
         }
     }
 
-    async loadModels() {
-        if (this.trainingManager) {
-            // This would need to be implemented to load specific saved models
-            this.updateStatus('Load functionality needs to be implemented');
+    async runAutoEpisodes() {
+        while (this.autoEpisodes) {
+            if (!this.isEpisodeRunning && this.agents) {
+                await this.startEpisode();
+                // Wait a bit before starting next episode
+                await new Promise(resolve => setTimeout(resolve, 2000));
+            } else {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+        }
+    }
+
+    async initializeAgents() {
+        this.updateStatus('Initializing DQN agents...');
+        
+        try {
+            // Check if TensorFlow is available
+            if (typeof tf === 'undefined') {
+                throw new Error('TensorFlow.js not loaded');
+            }
+            
+            const stateDim = this.processor.computeStateDim();
+            console.log('Creating agents with state dimension:', stateDim);
+            
+            // Create 3 agents for inference (no training)
+            this.agents = [];
+            for (let i = 0; i < 3; i++) {
+                const agent = new DQNAgent({ 
+                    stateDim: stateDim,
+                    actionDim: 5,
+                    epsilonStart: 0.0, // No exploration for inference
+                    epsilonEnd: 0.0
+                });
+                this.agents.push(agent);
+            }
+            
+            this.updateStatus('DQN agents initialized successfully');
+            
+            // Enable episode controls
+            document.getElementById('start-episode').disabled = false;
+            document.getElementById('reset-episode').disabled = false;
+            document.getElementById('toggle-auto').disabled = false;
+            
+            console.log('DQN agents ready for inference');
+            
+        } catch (error) {
+            console.error('Failed to initialize agents:', error);
+            this.updateStatus(`Failed to initialize agents: ${error.message}`);
         }
     }
 
@@ -316,13 +418,45 @@ class DQNGameBridge {
         }
     }
 
-    dispose() {
-        if (this.trainingManager) {
-            this.trainingManager.dispose();
+    getCurrentGameState() {
+        // Get current game state for DQN processing
+        return {
+            agent_position: [0, 1, 0], // Will be overridden per agent
+            critical_points: this.getCriticalPointsState(),
+            agent_owned_points: this.getAgentOwnedPoints(),
+            time_remaining: 1.0, // Could be made dynamic
+            navigation_grid: new Array(15 * 15).fill(0), // Simple grid for now
+            nearest_unclaimed_distance: 0.5,
+            nearest_enemy_distance: 0.7,
+            map_size: 10
+        };
+    }
+
+    updateEpisodeMetrics(step, gameState) {
+        const metrics = document.getElementById('training-metrics');
+        if (metrics) {
+            const scores = this.getAgentOwnedPoints();
+            const totalPoints = gameState.critical_points ? gameState.critical_points.length : 0;
+            
+            metrics.innerHTML = `
+                <div>Step: ${step}</div>
+                <div>Agent Scores:</div>
+                <div>  Red: ${scores[0] || 0}/${totalPoints}</div>
+                <div>  Green: ${scores[1] || 0}/${totalPoints}</div>
+                <div>  Blue: ${scores[2] || 0}/${totalPoints}</div>
+            `;
         }
+    }
+
+    dispose() {
+        this.autoEpisodes = false;
+        this.isEpisodeRunning = false;
         
-        if (this.trainingControls && this.trainingControls.parentNode) {
-            this.trainingControls.parentNode.removeChild(this.trainingControls);
+        if (this.agents) {
+            for (const agent of this.agents) {
+                agent.dispose();
+            }
+            this.agents = null;
         }
     }
 }

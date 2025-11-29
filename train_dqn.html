@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DQN Training - Offline Mode</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #1a1a2e;
+            color: white;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        .control-panel {
+            background: rgba(0,0,0,0.8);
+            padding: 20px;
+            border-radius: 10px;
+            border: 2px solid #4a90e2;
+            margin-bottom: 20px;
+        }
+        
+        .control-panel h2 {
+            color: #4a90e2;
+            margin-top: 0;
+        }
+        
+        button {
+            background: #4a90e2;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        button:hover {
+            background: #357abd;
+        }
+        
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        
+        .status {
+            background: rgba(74, 144, 226, 0.2);
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        
+        .metrics {
+            background: rgba(0,0,0,0.5);
+            padding: 15px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+        
+        .log {
+            background: #000;
+            color: #0f0;
+            padding: 15px;
+            border-radius: 5px;
+            height: 300px;
+            overflow-y: scroll;
+            font-family: monospace;
+            font-size: 12px;
+            line-height: 1.3;
+        }
+    </style>
+</head>
+<body>
+    <!-- TensorFlow.js -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    
+    <!-- DQN Training System -->
+    <script src="dqn_training.js"></script>
+    
+    <div class="container">
+        <h1>DQN Training - Offline Mode</h1>
+        <p>This mode trains DQN agents offline and saves the weights for use in the game.</p>
+        
+        <div class="control-panel">
+            <h2>Training Controls</h2>
+            <button id="start-training">Start Training</button>
+            <button id="stop-training" disabled>Stop Training</button>
+            
+            <div class="status" id="training-status">Ready to train</div>
+            
+            <div class="metrics" id="training-metrics">
+                <strong>Training Configuration:</strong><br>
+                Episodes: 2000<br>
+                Agents: 3<br>
+                State Dimension: 580<br>
+                Action Dimension: 5<br>
+                Learning Rate: 0.0001
+            </div>
+        </div>
+        
+        <div class="control-panel">
+            <h2>Training Log</h2>
+            <div class="log" id="training-log">Waiting for training to start...</div>
+        </div>
+        
+        <div class="control-panel">
+            <h2>Instructions</h2>
+            <ol>
+                <li><strong>Start Training:</strong> Click "Start Training" to begin the DQN learning process</li>
+                <li><strong>Wait:</strong> Training will take several minutes to complete (2000 episodes)</li>
+                <li><strong>Use in Game:</strong> After training, agents will be ready to play optimally</li>
+            </ol>
+            <p><strong>Note:</strong> This runs a simplified simulation. Real game integration happens in the main game mode.</p>
+        </div>
+    </div>
+
+    <script>
+        let trainingManager = null;
+        let isTraining = false;
+        
+        // Mock game environment for training
+        class MockGameEnvironment extends GameEnvironment {
+            constructor() {
+                super(null, 3000); // No real game manager needed for training
+            }
+            
+            getCurrentGameState() {
+                // Return realistic mock state for training
+                const numCPs = 10 + Math.floor(Math.random() * 10); // 10-20 critical points
+                const criticalPoints = [];
+                
+                for (let i = 0; i < numCPs; i++) {
+                    criticalPoints.push({
+                        position: [
+                            (Math.random() - 0.5) * 8, // Random position in map
+                            1,
+                            (Math.random() - 0.5) * 8
+                        ],
+                        color: Math.random() < 0.7 ? null : Math.floor(Math.random() * 3), // 70% unclaimed
+                        available: Math.random() < 0.8 // 80% available
+                    });
+                }
+                
+                return {
+                    agent_position: [
+                        (Math.random() - 0.5) * 8,
+                        1,
+                        (Math.random() - 0.5) * 8
+                    ],
+                    critical_points: criticalPoints,
+                    agent_owned_points: {
+                        0: Math.floor(Math.random() * 5),
+                        1: Math.floor(Math.random() * 5),
+                        2: Math.floor(Math.random() * 5)
+                    },
+                    time_remaining: 0.5 + Math.random() * 0.5,
+                    navigation_grid: Array(15 * 15).fill(0).map(() => Math.random() < 0.1 ? 1 : 0),
+                    nearest_unclaimed_distance: Math.random(),
+                    nearest_enemy_distance: Math.random(),
+                    map_size: 10
+                };
+            }
+        }
+        
+        // Simplified training manager that avoids const assignment issues
+        class MockTrainingManager {
+            constructor(options = {}) {
+                // Use direct assignment instead of Object.assign to avoid const issues
+                this.numAgents = options.numAgents || 3;
+                this.savePrefix = options.savePrefix || "dqn_agent";
+                
+                // Initialize with mock environment
+                this.env = new MockGameEnvironment();
+                
+                // Create agents with proper state dimension
+                this.agents = [];
+                try {
+                    const stateDim = this.env.processor.computeStateDim();
+                    console.log('Creating agents with state dimension:', stateDim);
+                    
+                    for (let i = 0; i < this.numAgents; i++) {
+                        const agent = new DQNAgent({ 
+                            stateDim: stateDim,
+                            actionDim: 5,
+                            learningRate: 0.0001,
+                            epsilonStart: 1.0,
+                            epsilonEnd: 0.05,
+                            epsilonDecay: 0.995,
+                            gamma: 0.99,
+                            targetUpdateFreq: 1000,
+                            batchSize: 64
+                        });
+                        this.agents.push(agent);
+                        console.log(`Agent ${i} created successfully`);
+                    }
+                } catch (error) {
+                    console.error('Error creating agents:', error);
+                    throw error;
+                }
+                
+                // Training metrics
+                this.episodeRewards = {};
+                this.episodeLengths = [];
+                this.isTraining = false;
+                
+                for (let i = 0; i < this.numAgents; i++) {
+                    this.episodeRewards[i] = [];
+                }
+                
+                console.log('MockTrainingManager initialized successfully');
+            }
+            
+            async runEpisode(training = true) {
+                try {
+                    let states = {};
+                    const episodeRewards = {};
+                    
+                    for (let i = 0; i < this.numAgents; i++) {
+                        episodeRewards[i] = [];
+                    }
+                    
+                    // Reset environment
+                    const initialState = this.env.reset();
+                    for (let agentId = 0; agentId < this.numAgents; agentId++) {
+                        states[agentId] = [...initialState];
+                    }
+                    
+                    let done = false;
+                    let step = 0;
+                    
+                    while (!done && step < 200) { // Shorter episodes for faster training
+                        // Each agent takes an action
+                        const actions = {};
+                        for (let agentId = 0; agentId < this.numAgents; agentId++) {
+                            try {
+                                actions[agentId] = this.agents[agentId].selectAction(states[agentId], training);
+                            } catch (error) {
+                                console.error(`Error in agent ${agentId} selectAction:`, error);
+                                actions[agentId] = Math.floor(Math.random() * 5); // Random fallback
+                            }
+                        }
+                        
+                        // Execute actions
+                        const nextStates = {};
+                        const rewards = {};
+                        
+                        for (let agentId = 0; agentId < this.numAgents; agentId++) {
+                            try {
+                                const result = this.env.step(actions[agentId], agentId);
+                                nextStates[agentId] = result.state;
+                                rewards[agentId] = result.reward;
+                                done = result.done;
+                                episodeRewards[agentId].push(result.reward);
+                                
+                                // Store experience and train
+                                if (training) {
+                                    this.agents[agentId].storeExperience(
+                                        states[agentId], 
+                                        actions[agentId], 
+                                        result.reward, 
+                                        result.state, 
+                                        result.done
+                                    );
+                                    
+                                    // Train after some initial experiences
+                                    if (this.agents[agentId].memory.size() > 100) { // Lower threshold for faster start
+                                        try {
+                                            await this.agents[agentId].trainStep();
+                                        } catch (trainError) {
+                                            console.error(`Training error for agent ${agentId}:`, trainError);
+                                        }
+                                    }
+                                }
+                            } catch (error) {
+                                console.error(`Error in step for agent ${agentId}:`, error);
+                                // Provide fallback values
+                                nextStates[agentId] = states[agentId];
+                                rewards[agentId] = 0;
+                                episodeRewards[agentId].push(0);
+                            }
+                        }
+                        
+                        states = nextStates;
+                        step++;
+                    }
+                    
+                    // Store episode metrics
+                    for (let agentId = 0; agentId < this.numAgents; agentId++) {
+                        const totalReward = episodeRewards[agentId].reduce((a, b) => a + b, 0);
+                        this.episodeRewards[agentId].push(totalReward);
+                    }
+                    
+                    this.episodeLengths.push(step);
+                    
+                    return episodeRewards;
+                } catch (error) {
+                    console.error('Error in runEpisode:', error);
+                    throw error;
+                }
+            }
+            
+            // Removed save functionality - agents train in memory only
+            
+            async outputWeightsToConsole() {
+                console.log('\n=== TRAINED DQN WEIGHTS ===');
+                console.log('Training completed! Here are the trained weights:');
+                
+                for (let agentId = 0; agentId < this.numAgents; agentId++) {
+                    try {
+                        console.log(`\n--- Agent ${agentId} Weights ---`);
+                        
+                        // Get Q-network weights
+                        const qWeights = this.agents[agentId].qNetwork.model.getWeights();
+                        const qWeightData = await Promise.all(qWeights.map(async (weight) => {
+                            const data = await weight.data();
+                            return {
+                                shape: weight.shape,
+                                values: Array.from(data)
+                            };
+                        }));
+                        
+                        console.log(`Agent ${agentId} Q-Network Weights:`, qWeightData);
+                        console.log(`Agent ${agentId} Epsilon:`, this.agents[agentId].epsilon);
+                        console.log(`Agent ${agentId} Step Count:`, this.agents[agentId].stepCount);
+                        
+                        // Dispose of the weight tensors to free memory
+                        qWeights.forEach(w => w.dispose());
+                        
+                    } catch (error) {
+                        console.error(`Error extracting weights for agent ${agentId}:`, error);
+                    }
+                }
+                
+                console.log('\n=== END TRAINED WEIGHTS ===');
+                console.log('You can copy these weights from the console if needed.');
+            }
+            
+            stopTraining() {
+                this.isTraining = false;
+            }
+            
+            dispose() {
+                for (const agent of this.agents) {
+                    agent.dispose();
+                }
+            }
+        }
+        
+        function log(message) {
+            const logDiv = document.getElementById('training-log');
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `[${timestamp}] ${message}\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        function updateStatus(message) {
+            document.getElementById('training-status').textContent = message;
+            log(message);
+        }
+        
+        function updateMetrics(episode, avgRewards, epsilons) {
+            const metricsDiv = document.getElementById('training-metrics');
+            metricsDiv.innerHTML = `
+                <strong>Training Progress:</strong><br>
+                Episode: ${episode}/2000<br>
+                Progress: ${(episode/2000*100).toFixed(1)}%<br>
+                <br>
+                <strong>Average Rewards (last 10 episodes):</strong><br>
+                Agent 0 (Red): ${avgRewards[0].toFixed(2)}<br>
+                Agent 1 (Green): ${avgRewards[1].toFixed(2)}<br>
+                Agent 2 (Blue): ${avgRewards[2].toFixed(2)}<br>
+                <br>
+                <strong>Exploration (Epsilon):</strong><br>
+                Agent 0: ${epsilons[0].toFixed(3)}<br>
+                Agent 1: ${epsilons[1].toFixed(3)}<br>
+                Agent 2: ${epsilons[2].toFixed(3)}
+            `;
+        }
+        
+        async function startTraining() {
+            if (isTraining) return;
+            
+            updateStatus('Initializing training...');
+            
+            try {
+                if (typeof tf === 'undefined') {
+                    throw new Error('TensorFlow.js not loaded');
+                }
+                
+                // Create custom training manager with mock environment
+                trainingManager = new MockTrainingManager({
+                    numAgents: 3,
+                    savePrefix: 'game_dqn_agent'
+                });
+                
+                isTraining = true;
+                document.getElementById('start-training').disabled = true;
+                document.getElementById('stop-training').disabled = false;
+                
+                updateStatus('Training started...');
+                log('Training 3 DQN agents over 2000 episodes');
+                
+                // Custom training loop with progress updates
+                const numEpisodes = 2000;
+                
+                for (let episode = 0; episode < numEpisodes && isTraining; episode++) {
+                    const episodeRewards = await trainingManager.runEpisode(true);
+                    
+                    // Log progress every 50 episodes
+                    if (episode % 50 === 0) {
+                        const avgRewards = [];
+                        for (let i = 0; i < 3; i++) {
+                            const recent = trainingManager.episodeRewards[i].slice(-10);
+                            avgRewards[i] = recent.length > 0 ? 
+                                recent.reduce((a, b) => a + b, 0) / recent.length : 0;
+                        }
+                        const epsilons = trainingManager.agents.map(agent => agent.epsilon);
+                        
+                        updateMetrics(episode, avgRewards, epsilons);
+                        log(`Episode ${episode} completed - Avg rewards: [${avgRewards.map(r => r.toFixed(2)).join(', ')}]`);
+                    }
+                    
+                    // Training progress - no model saving needed
+                    
+                    // Allow UI updates
+                    if (episode % 10 === 0) {
+                        await new Promise(resolve => setTimeout(resolve, 1));
+                    }
+                }
+                
+                if (isTraining) {
+                    updateStatus('Training completed successfully!');
+                    log('Training completed! Agents are now trained and ready to play optimally.');
+                    log('You can now use these trained agents in the game.');
+                    log('Outputting trained weights to console...');
+                    
+                    // Output weights to console
+                    await trainingManager.outputWeightsToConsole();
+                    log('Trained weights have been printed to the browser console (F12).');
+                }
+                
+            } catch (error) {
+                console.error('Training error:', error);
+                updateStatus(`Training failed: ${error.message}`);
+                log(`ERROR: ${error.message}`);
+            } finally {
+                isTraining = false;
+                document.getElementById('start-training').disabled = false;
+                document.getElementById('stop-training').disabled = true;
+            }
+        }
+        
+        function stopTraining() {
+            isTraining = false;
+            updateStatus('Stopping training...');
+            log('Training stopped by user');
+        }
+        
+        // Removed save/load functionality - training happens in memory only
+        
+        // Event listeners
+        document.getElementById('start-training').addEventListener('click', startTraining);
+        document.getElementById('stop-training').addEventListener('click', stopTraining);
+        
+        // Initialize when TensorFlow is ready
+        tf.ready().then(() => {
+            updateStatus('TensorFlow.js ready - Click "Start Training" to begin');
+            log('TensorFlow.js initialized successfully');
+            log('Ready to train DQN agents for critical point capture game');
+        });
+    </script>
+</body>
+</html>

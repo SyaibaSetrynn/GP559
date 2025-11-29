@@ -354,30 +354,7 @@ class DQNAgent {
         return lossValue[0];
     }
 
-    async save(name) {
-        await this.qNetwork.model.save(`localstorage://${name}_q_network`);
-        await this.targetNetwork.model.save(`localstorage://${name}_target_network`);
-        
-        const checkpoint = {
-            epsilon: this.epsilon,
-            stepCount: this.stepCount,
-            lossHistory: this.lossHistory
-        };
-        
-        localStorage.setItem(`${name}_state`, JSON.stringify(checkpoint));
-    }
-
-    async load(name) {
-        this.qNetwork.model = await tf.loadLayersModel(`localstorage://${name}_q_network`);
-        this.targetNetwork.model = await tf.loadLayersModel(`localstorage://${name}_target_network`);
-        
-        const checkpoint = JSON.parse(localStorage.getItem(`${name}_state`));
-        if (checkpoint) {
-            this.epsilon = checkpoint.epsilon;
-            this.stepCount = checkpoint.stepCount;
-            this.lossHistory = checkpoint.lossHistory;
-        }
-    }
+    // Removed save/load functionality - agents train in memory only
 
     dispose() {
         this.qNetwork.dispose();
@@ -634,22 +611,22 @@ class TrainingManager {
                 await this.evaluate(5);
             }
             
-            // Save models
-            if (episode % config.saveInterval === 0 && episode > 0) {
-                await this.saveModels(episode);
-            }
+            // Training progress - no model saving needed
             
             // Allow UI updates
             await new Promise(resolve => setTimeout(resolve, 1));
         }
         
         console.log("Training completed!");
-        await this.saveModels("final");
+        
+        // Output trained weights to console
+        await this.outputWeightsToConsole();
+        
         this.isTraining = false;
     }
 
     async runEpisode(training = true) {
-        const states = {};
+        let states = {};
         const episodeRewards = {};
         
         for (let i = 0; i < this.numAgents; i++) {
@@ -743,24 +720,51 @@ class TrainingManager {
         console.log("--- End Evaluation ---\n");
     }
 
-    async saveModels(episodeId) {
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    // Removed save functionality - agents train in memory only
+    
+    async outputWeightsToConsole() {
+        console.log('\n=== TRAINED DQN WEIGHTS ===');
+        console.log('Training completed! Here are the trained weights:');
         
         for (let agentId = 0; agentId < this.numAgents; agentId++) {
-            const name = `${this.savePrefix}_${agentId}_episode_${episodeId}_${timestamp}`;
-            await this.agents[agentId].save(name);
+            try {
+                console.log(`\n--- Agent ${agentId} Weights ---`);
+                
+                // Get Q-network weights
+                const qWeights = this.agents[agentId].qNetwork.model.getWeights();
+                const qWeightData = await Promise.all(qWeights.map(async (weight) => {
+                    const data = await weight.data();
+                    return {
+                        shape: weight.shape,
+                        values: Array.from(data)
+                    };
+                }));
+                
+                console.log(`Agent ${agentId} Q-Network Weights:`, qWeightData);
+                console.log(`Agent ${agentId} Epsilon:`, this.agents[agentId].epsilon);
+                console.log(`Agent ${agentId} Step Count:`, this.agents[agentId].stepCount);
+                
+                // Also log training metrics for this agent
+                const recentRewards = this.episodeRewards[agentId].slice(-10);
+                const avgReward = recentRewards.length > 0 ? 
+                    recentRewards.reduce((a, b) => a + b, 0) / recentRewards.length : 0;
+                console.log(`Agent ${agentId} Average Reward (last 10 episodes):`, avgReward.toFixed(3));
+                
+                // Dispose of the weight tensors to free memory
+                qWeights.forEach(w => w.dispose());
+                
+            } catch (error) {
+                console.error(`Error extracting weights for agent ${agentId}:`, error);
+            }
         }
         
-        // Save training metrics
-        const metrics = {
-            episodeRewards: this.episodeRewards,
-            episodeLengths: this.episodeLengths,
-            timestamp: timestamp
-        };
+        console.log('\n=== TRAINING STATISTICS ===');
+        console.log('Total episodes completed:', this.episodeLengths.length);
+        console.log('Average episode length:', 
+            this.episodeLengths.reduce((a, b) => a + b, 0) / this.episodeLengths.length);
         
-        localStorage.setItem(`metrics_${episodeId}_${timestamp}`, JSON.stringify(metrics));
-        
-        console.log(`Models and metrics saved for episode ${episodeId}`);
+        console.log('\n=== END TRAINED WEIGHTS ===');
+        console.log('You can copy these weights from the console if needed.');
     }
 
     stopTraining() {

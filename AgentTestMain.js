@@ -691,6 +691,9 @@ async function generateScene() {
 
     // Expose critical point system globally for agents/players
     window.globalCPSystem = criticalPointSystem;
+    
+    // Expose agentManager globally for DQN integration
+    window.gameManager = agentManager;
 
     window.requestAnimationFrame(animate);
 }
