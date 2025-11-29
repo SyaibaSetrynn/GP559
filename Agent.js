@@ -439,10 +439,23 @@ class Agent {
                 // Create visual line
                 this.createLOSLine(cp.position, scene);
                 
-                // Claim the critical point
+
+                
+                // Claim the critical point using centralized system
                 if (!this.claimedCriticalPoints.has(index)) {
                     this.claimedCriticalPoints.add(index);
                     globalClaimedPoints.add(index);
+                    
+                    // Also capture in the centralized CP system if available and ready
+                    if (window.globalCPSystem && window.cpsFullyLoaded && cp.mesh && cp.mesh.userData.cpId !== undefined) {
+                        try {
+                            // First claim (draw line), then capture (take ownership) 
+                            window.globalCPSystem.claimCriticalPoint(cp.mesh.userData.cpId, this.agentColor, `Agent${this.agentId}`);
+                            window.globalCPSystem.captureCriticalPoint(cp.mesh.userData.cpId, this.agentColor, `Agent${this.agentId}`);
+                        } catch (error) {
+                            // Silent error handling
+                        }
+                    }
                 }
                 
                 // Color the critical point with agent's color
@@ -594,6 +607,17 @@ class Agent {
      * @returns {number} Number of claimed critical points
      */
     getScore() {
+        // Use centralized CP system if available and fully initialized
+        if (window.globalCPSystem && typeof window.globalCPSystem.getCriticalPointsByOwner === 'function') {
+            try {
+                const ownedCPs = window.globalCPSystem.getCriticalPointsByOwner(this.agentColor);
+                return ownedCPs ? ownedCPs.length : 0;
+            } catch (error) {
+                // Silent fallback to local system
+            }
+        }
+        
+        // Fallback to local system
         return this.claimedCriticalPoints.size;
     }
 }

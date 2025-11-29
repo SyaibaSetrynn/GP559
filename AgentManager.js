@@ -4,13 +4,16 @@ import Agent from './Agent.js';
  * AgentManager - Manages multiple agents and their line of sight interactions
  */
 class AgentManager {
-    constructor(scene, collisionWorld) {
+    constructor(scene, collisionWorld, criticalPointSystem = null) {
         this.scene = scene;
         this.collisionWorld = collisionWorld;
+        this.criticalPointSystem = criticalPointSystem;
         this.agents = [];
         this.criticalPoints = [];
         this.obstacles = [];
         this.globalClaimedPoints = new Set(); // Track which critical points are claimed
+        
+
         
         // Predefined agent colors
         this.agentColors = [
@@ -43,7 +46,6 @@ class AgentManager {
         this.scene.add(agent.object);
         this.agents.push(agent);
         
-        console.log(`Created agent ${agentId} with color ${agentColor.toString(16)}`);
         return agent;
     }
 
@@ -58,7 +60,7 @@ class AgentManager {
             mesh: mesh,
             originalColor: mesh.material.color.getHex()
         });
-        console.log(`Added critical point ${this.criticalPoints.length - 1} at position:`, position);
+
     }
 
     /**
@@ -76,6 +78,17 @@ class AgentManager {
         // Clear all existing lines first
         this.agents.forEach(agent => {
             agent.clearLOSLines(this.scene);
+            
+            // Release claims in the new registry system
+            if (this.criticalPointSystem) {
+                agent.claimedCriticalPoints.forEach(pointIndex => {
+                    const cp = this.criticalPoints[pointIndex];
+                    if (cp && cp.mesh && cp.mesh.userData.cpId !== undefined) {
+                        this.criticalPointSystem.releaseCriticalPoint(cp.mesh.userData.cpId, `Agent${agent.agentId}`);
+                    }
+                });
+            }
+            
             agent.claimedCriticalPoints.clear(); // Clear claimed points for fresh calculation
         });
         
@@ -83,7 +96,7 @@ class AgentManager {
         this.globalClaimedPoints.clear();
         
         // Debug logging
-        console.log(`Checking LOS for ${this.criticalPoints.length} critical points with ${this.agents.length} agents`);
+
         
         // For each critical point, find which agents can see it and resolve conflicts
         this.criticalPoints.forEach((cp, pointIndex) => {
@@ -98,7 +111,7 @@ class AgentManager {
             
             // Debug logging for each critical point
             if (agentsWithLOS.length > 0) {
-                console.log(`CP ${pointIndex}: ${agentsWithLOS.length} agents can see it`);
+
             }
             
             // If multiple agents can see it, only the first one gets to claim it
@@ -113,21 +126,34 @@ class AgentManager {
                 // Create visual line for the claiming agent
                 claimingAgent.createLOSLine(cp.position, this.scene);
                 
-                // Color the critical point with the claiming agent's color
-                if (cp.mesh && cp.mesh.material) {
-                    cp.mesh.material.color.setHex(claimingAgent.agentColor);
+                // Update the new CP registry system
+                if (this.criticalPointSystem && cp.mesh && cp.mesh.userData.cpId !== undefined) {
+                    const cpId = cp.mesh.userData.cpId;
                     
-                    // Also color the glow if it exists
-                    if (cp.mesh.children && cp.mesh.children.length > 0) {
-                        cp.mesh.children.forEach(child => {
-                            if (child.material) {
-                                child.material.color.setHex(claimingAgent.agentColor);
-                            }
-                        });
+                    // Claim the CP in the registry (line drawn to it)
+                    const claimSuccess = this.criticalPointSystem.claimCriticalPoint(cpId, claimingAgent.agentColor, `Agent${claimingAgent.agentId}`);
+                    
+                    // Capture the CP (change ownership/color)
+                    const captureSuccess = this.criticalPointSystem.captureCriticalPoint(cpId, claimingAgent.agentColor, `Agent${claimingAgent.agentId}`);
+                    
+
+                } else {
+                    // Fallback to old color system if registry not available
+                    if (cp.mesh && cp.mesh.material) {
+                        cp.mesh.material.color.setHex(claimingAgent.agentColor);
+                        
+                        // Also color the glow if it exists
+                        if (cp.mesh.children && cp.mesh.children.length > 0) {
+                            cp.mesh.children.forEach(child => {
+                                if (child.material) {
+                                    child.material.color.setHex(claimingAgent.agentColor);
+                                }
+                            });
+                        }
                     }
                 }
                 
-                console.log(`Agent ${claimingAgent.agentId} claimed CP ${pointIndex}`);
+
             }
         });
     }

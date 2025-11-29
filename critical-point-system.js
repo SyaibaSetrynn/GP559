@@ -14,107 +14,77 @@ export class CriticalPointSystem {
         this.cpRadius = 0.05; // Fixed size for all CPs
         this.glowIntensity = 0.8;
         this.coloredLights = []; // Track colored lights in the scene
+        
+        // Centralized CP registry for tracking all critical points
+        this.cpRegistry = new Map(); // Maps CP mesh ID to CP data
+        this.cpsByOwner = new Map(); // Maps owner color to array of CP IDs
+        this.nextCpId = 0;
     }
 
     /**
      * Add critical points to an object
      * @param {THREE.Mesh} targetObject - The object to add CPs to
-     * @<3param {number} count - Number of critical points to add (default: 3)
+     * @param {number} count - Number of critical points to add (default: 3)
      * @param {number} color - Color of the critical points in hex (default: 0xff0000)
-     * @param {Object} options - Additional options { radius: 0.05, pulseSpeed: 3, minCPs: 1, maxCPs: 5, minDistance: 0.3 }
+     * @param {Object} options - Additional options { radius: 0.05, pulseSpeed: 3 }
      * @returns {Array} Array of created critical point meshes
      */
     addCriticalPoints(targetObject, count = 3, color = 0xff0000, options = {}) {
+        const cps = [];
         const opts = {
             radius: options.radius || this.cpRadius,
             pulseSpeed: options.pulseSpeed || 3,
-            minCPs: options.minCPs || 1,
-            maxCPs: options.maxCPs || 5,
-            minDistance: options.minDistance || 0.3, // Minimum distance between CPs
             ...options
         };
-        
-        // Get accessible faces and determine optimal CP count
-        const accessibleFaces = this.getAccessibleFaces(targetObject);
-        if (accessibleFaces.length === 0) {
-            console.warn('No accessible faces found for critical points');
-            return [];
-        }
-        
-        // Calculate actual count based on available faces and constraints
-        const maxPossible = Math.min(accessibleFaces.length * 2, opts.maxCPs); // Max 2 CPs per face
-        const actualCount = Math.max(opts.minCPs, Math.min(count, maxPossible));
-        
-        const cps = [];
-        const placedPositions = []; // Track positions to ensure minimum distance
         
         // Get the bounding box of the target object
         const bbox = new THREE.Box3().setFromObject(targetObject);
         const size = bbox.getSize(new THREE.Vector3());
         
-        let attempts = 0;
-        const maxAttempts = actualCount * 10; // Prevent infinite loops
-        
-        while (cps.length < actualCount && attempts < maxAttempts) {
-            attempts++;
-            
+        for (let i = 0; i < count; i++) {
             const cp = this.createCriticalPoint(color, opts);
             
-            // Get a distributed position (spread across different faces)
-            const position = this.getDistributedSurfacePosition(
-                targetObject, 
-                bbox, 
-                size, 
-                opts.radius, 
-                cps.length, 
-                actualCount, 
-                accessibleFaces
-            );
+            // Place CP randomly on the object surface
+            const position = this.getRandomSurfacePosition(targetObject, bbox, size, opts.radius);
+            cp.position.copy(position);
             
-            // Check minimum distance from existing CPs
-            if (this.isValidPosition(position, placedPositions, opts.minDistance)) {
-                cp.position.copy(position);
-                placedPositions.push(position.clone());
-                
-                // Add to scene and track
-                this.scene.add(cp);
-                cps.push(cp);
-                this.criticalPoints.push({
-                    cp: cp,
-                    targetObject: targetObject,
-                    originalColor: color,
-                    options: opts
-                });
-            } else {
-                // Remove the CP we created but couldn't place
-                cp.geometry.dispose();
-                cp.material.dispose();
+            // Register CP in centralized registry
+            const cpId = this.nextCpId++;
+            cp.userData.cpId = cpId;
+            
+            const cpData = {
+                id: cpId,
+                mesh: cp,
+                position: position.clone(),
+                targetObject: targetObject,
+                originalColor: color,
+                currentColor: color,
+                options: opts,
+                // Ownership and status tracking
+                ownedBy: null,          // Color hex of owner (null if neutral)
+                isActivelyClaimed: false, // Is there currently a line drawn to it?
+                claimedBy: null,        // Who is currently drawing a line to it?
+                lastClaimedTime: 0,     // Timestamp of last claim
+                isVisible: true,        // Can be seen by agents/players
+                claimHistory: []        // History of claims for debugging
+            };
+            
+            this.cpRegistry.set(cpId, cpData);
+            
+            // Trigger score display update if available
+            if (window.updateScoreDisplay && this.cpRegistry.size === 1) {
+                setTimeout(() => window.updateScoreDisplay(), 50);
             }
-        }
-        
-        // If we couldn't place the minimum required, try with relaxed distance constraints
-        if (cps.length < opts.minCPs) {
-            const relaxedDistance = opts.minDistance * 0.5;
-            while (cps.length < opts.minCPs && attempts < maxAttempts * 2) {
-                attempts++;
-                
-                const cp = this.createCriticalPoint(color, opts);
-                const position = this.getRandomSurfacePosition(targetObject, bbox, size, opts.radius);
-                
-                if (this.isValidPosition(position, placedPositions, relaxedDistance)) {
-                    cp.position.copy(position);
-                    placedPositions.push(position.clone());
-                    
-                    this.scene.add(cp);
-                    cps.push(cp);
-                    this.criticalPoints.push({
-                        cp: cp,
-                        targetObject: targetObject,
-                        originalColor: color,
-                        options: opts
-                    });
-                }
-            }
+            
+            // Add to scene and track
+            this.scene.add(cp);
+            cps.push(cp);
+            this.criticalPoints.push({
+                cp: cp,
+                targetObject: targetObject,
+                originalColor: color,
+                options: opts
+            });
         }
         
         return cps;
@@ -234,82 +204,7 @@ export class CriticalPointSystem {
         return position;
     }
 
-    /**
-     * Get a position that's distributed across different faces for better spread
-     */
-    getDistributedSurfacePosition(targetObject, bbox, size, cpRadius, currentIndex, totalCount, accessibleFaces) {
-        const geometry = targetObject.geometry;
-        
-        if (geometry.type === 'BoxGeometry') {
-            // Distribute CPs across different faces
-            const faceIndex = currentIndex % accessibleFaces.length;
-            const face = accessibleFaces[faceIndex];
-            
-            const halfWidth = geometry.parameters.width / 2;
-            const halfHeight = geometry.parameters.height / 2;
-            const halfDepth = geometry.parameters.depth / 2;
-            const margin = cpRadius;
-            
-            // Add some randomness within the face, but bias towards different areas
-            const subIndex = Math.floor(currentIndex / accessibleFaces.length);
-            const bias = subIndex / Math.max(1, Math.floor(totalCount / accessibleFaces.length) - 1);
-            
-            let x, y, z;
-            
-            switch (face) {
-                case 0: // right face (+X)
-                    x = halfWidth;
-                    y = (Math.random() - 0.5) * (geometry.parameters.height - 2 * margin);
-                    z = (bias - 0.5) * (geometry.parameters.depth - 2 * margin) + (Math.random() - 0.5) * 0.2;
-                    break;
-                case 1: // left face (-X)
-                    x = -halfWidth;
-                    y = (Math.random() - 0.5) * (geometry.parameters.height - 2 * margin);
-                    z = (bias - 0.5) * (geometry.parameters.depth - 2 * margin) + (Math.random() - 0.5) * 0.2;
-                    break;
-                case 4: // front face (+Z)
-                    x = (bias - 0.5) * (geometry.parameters.width - 2 * margin) + (Math.random() - 0.5) * 0.2;
-                    y = (Math.random() - 0.5) * (geometry.parameters.height - 2 * margin);
-                    z = halfDepth;
-                    break;
-                case 5: // back face (-Z)
-                    x = (bias - 0.5) * (geometry.parameters.width - 2 * margin) + (Math.random() - 0.5) * 0.2;
-                    y = (Math.random() - 0.5) * (geometry.parameters.height - 2 * margin);
-                    z = -halfDepth;
-                    break;
-                default:
-                    // Fallback to random position
-                    const randX = (Math.random() - 0.5) * (geometry.parameters.width - 2 * margin);
-                    const randY = (Math.random() - 0.5) * (geometry.parameters.height - 2 * margin);
-                    const randZ = (Math.random() - 0.5) * (geometry.parameters.depth - 2 * margin);
-                    
-                    switch (face) {
-                        case 2: x = randX; y = halfHeight; z = randZ; break; // top face
-                        case 3: x = randX; y = -halfHeight; z = randZ; break; // bottom face
-                        default: x = randX; y = randY; z = randZ; break;
-                    }
-            }
-            
-            const position = new THREE.Vector3(x, y, z);
-            position.add(targetObject.position);
-            return position;
-        }
-        
-        // Fallback to random position for non-box geometry
-        return this.getRandomSurfacePosition(targetObject, bbox, size, cpRadius);
-    }
 
-    /**
-     * Check if a position is valid (minimum distance from existing CPs)
-     */
-    isValidPosition(newPosition, existingPositions, minDistance) {
-        for (const existingPos of existingPositions) {
-            if (newPosition.distanceTo(existingPos) < minDistance) {
-                return false;
-            }
-        }
-        return true;
-    }
 
     /**
      * Update all critical points (call this in your animation loop)
@@ -507,6 +402,198 @@ export class CriticalPointSystem {
 
 
 
+    /**
+     * Claim a critical point (draw line to it)
+     * @param {number} cpId - The ID of the critical point
+     * @param {number} claimerColor - Color hex of the claimer
+     * @param {string} claimerName - Name/ID of the claimer (for debugging)
+     */
+    claimCriticalPoint(cpId, claimerColor, claimerName = 'Unknown') {
+        const cpData = this.cpRegistry.get(cpId);
+        if (!cpData) {
+            console.warn(`CP with ID ${cpId} not found`);
+            return false;
+        }
+        
+        cpData.isActivelyClaimed = true;
+        cpData.claimedBy = claimerName;
+        cpData.lastClaimedTime = Date.now();
+        cpData.claimHistory.push({
+            claimer: claimerName,
+            color: claimerColor,
+            timestamp: Date.now(),
+            action: 'claim'
+        });
+        
+        return true;
+    }
+    
+    /**
+     * Release claim on a critical point (remove line)
+     * @param {number} cpId - The ID of the critical point
+     * @param {string} releaserName - Name/ID of the releaser
+     */
+    releaseCriticalPoint(cpId, releaserName = 'Unknown') {
+        const cpData = this.cpRegistry.get(cpId);
+        if (!cpData) {
+            console.warn(`CP with ID ${cpId} not found`);
+            return false;
+        }
+        
+        cpData.isActivelyClaimed = false;
+        cpData.claimedBy = null;
+        cpData.claimHistory.push({
+            claimer: releaserName,
+            timestamp: Date.now(),
+            action: 'release'
+        });
+        
+        return true;
+    }
+    
+    /**
+     * Capture/own a critical point (change its color permanently)
+     * @param {number} cpId - The ID of the critical point
+     * @param {number} ownerColor - Color hex of the new owner
+     * @param {string} ownerName - Name/ID of the owner
+     */
+    captureCriticalPoint(cpId, ownerColor, ownerName = 'Unknown') {
+        const cpData = this.cpRegistry.get(cpId);
+        if (!cpData) {
+            console.warn(`CP with ID ${cpId} not found`);
+            return false;
+        }
+        
+        // Remove from old owner's list
+        if (cpData.ownedBy !== null) {
+            const oldOwnerCPs = this.cpsByOwner.get(cpData.ownedBy) || [];
+            const index = oldOwnerCPs.indexOf(cpId);
+            if (index > -1) {
+                oldOwnerCPs.splice(index, 1);
+            }
+        }
+        
+        // Set new owner
+        cpData.ownedBy = ownerColor;
+        cpData.currentColor = ownerColor;
+        cpData.claimHistory.push({
+            claimer: ownerName,
+            color: ownerColor,
+            timestamp: Date.now(),
+            action: 'capture'
+        });
+        
+        // Add to new owner's list
+        if (!this.cpsByOwner.has(ownerColor)) {
+            this.cpsByOwner.set(ownerColor, []);
+        }
+        this.cpsByOwner.get(ownerColor).push(cpId);
+        
+        // Update visual appearance
+        cpData.mesh.material.color.setHex(ownerColor);
+        if (cpData.mesh.children[0]) {
+            cpData.mesh.children[0].material.color.setHex(ownerColor);
+        }
+        
+        return true;
+    }
+    
+    /**
+     * Get all critical points data (for agents/players to access)
+     * @returns {Map} Map of CP ID to CP data
+     */
+    getAllCriticalPoints() {
+        return new Map(this.cpRegistry);
+    }
+    
+    /**
+     * Get critical points owned by a specific color
+     * @param {number} ownerColor - Color hex of the owner
+     * @returns {Array} Array of CP IDs owned by this color
+     */
+    getCriticalPointsByOwner(ownerColor) {
+        return this.cpsByOwner.get(ownerColor) || [];
+    }
+    
+    /**
+     * Get scoring information
+     * @returns {Object} Scoring data with breakdown by color
+     */
+    getScoring() {
+        // Create snapshot to avoid concurrent modification issues
+        const registrySnapshot = new Map(this.cpRegistry);
+        const ownerSnapshot = new Map(this.cpsByOwner);
+        
+        const scoring = {
+            total: registrySnapshot.size,
+            byOwner: {},
+            neutral: 0,
+            activelyClaimed: 0
+        };
+        
+
+        
+        // Initialize owner counts from snapshot
+        for (const [ownerColor, cpIds] of ownerSnapshot) {
+            scoring.byOwner[ownerColor.toString(16)] = {
+                owned: cpIds.length,
+                activelyClaimed: 0
+            };
+        }
+        
+        // Count neutral and actively claimed from snapshot
+        for (const [cpId, cpData] of registrySnapshot) {
+            if (cpData.ownedBy === null) {
+                scoring.neutral++;
+            }
+            if (cpData.isActivelyClaimed) {
+                scoring.activelyClaimed++;
+                const ownerKey = cpData.ownedBy ? cpData.ownedBy.toString(16) : 'neutral';
+                if (scoring.byOwner[ownerKey]) {
+                    scoring.byOwner[ownerKey].activelyClaimed++;
+                }
+            }
+        }
+        
+
+        
+        return scoring;
+    }
+    
+    /**
+     * Get critical point by mesh (for interaction detection)
+     * @param {THREE.Mesh} mesh - The CP mesh
+     * @returns {Object|null} CP data or null if not found
+     */
+    getCriticalPointByMesh(mesh) {
+        const cpId = mesh.userData.cpId;
+        return cpId !== undefined ? this.cpRegistry.get(cpId) : null;
+    }
+    
+    /**
+     * Find nearest critical point to a position
+     * @param {THREE.Vector3} position - Position to search from
+     * @param {number} maxDistance - Maximum distance to search (optional)
+     * @returns {Object|null} {cpData, distance} or null if none found
+     */
+    findNearestCriticalPoint(position, maxDistance = Infinity) {
+        let nearest = null;
+        let minDistance = maxDistance;
+        
+        for (const [cpId, cpData] of this.cpRegistry) {
+            if (!cpData.isVisible) continue;
+            
+            const distance = position.distanceTo(cpData.position);
+            if (distance < minDistance) {
+                minDistance = distance;
+                nearest = { cpData, distance };
+            }
+        }
+        
+        return nearest;
+    }
+
+    // ...existing code...
 }
 
 // Color presets for easy use
