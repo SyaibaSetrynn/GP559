@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DQN Training - Critical Point Capture Game</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #1a1a2e;
+            color: white;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+        }
+        
+        #gameCanvas {
+            width: 100%;
+            height: 100vh;
+            display: block;
+        }
+        
+        #dqn-controls {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.9);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            border: 2px solid #4a90e2;
+            z-index: 1000;
+            min-width: 250px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+        
+        #dqn-controls h3 {
+            margin-top: 0;
+            color: #4a90e2;
+        }
+        
+        #dqn-controls button {
+            background: #4a90e2;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        
+        #dqn-controls button:hover {
+            background: #357abd;
+        }
+        
+        #dqn-controls button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        
+        #training-status {
+            margin-top: 10px;
+            padding: 5px;
+            background: rgba(74, 144, 226, 0.2);
+            border-radius: 3px;
+            font-size: 12px;
+        }
+        
+        #training-metrics {
+            margin-top: 10px;
+            font-size: 11px;
+            line-height: 1.4;
+        }
+        
+        .info-panel {
+            position: fixed;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.9);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            max-width: 300px;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+    </style>
+</head>
+<body>
+    <!-- TensorFlow.js -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    
+    <!-- Three.js for 3D graphics (if you're using it) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <!-- Your existing game files -->
+    <script src="GameManager.js"></script>
+    <script src="Agent.js"></script>
+    <script src="Player.js"></script>
+    <script src="critical-point-system.js"></script>
+    <script src="UI.js"></script>
+    <!-- Include other necessary game files -->
+    
+    <!-- DQN Training System -->
+    <script src="dqn_training.js"></script>
+    <script src="dqn_integration.js"></script>
+    
+    <canvas id="gameCanvas"></canvas>
+    
+    <div class="info-panel">
+        <h4>DQN Training Integration</h4>
+        <p><strong>Instructions:</strong></p>
+        <ul>
+            <li>Click "Start Training" to begin DQN agent training</li>
+            <li>The agents will learn to play the game automatically</li>
+            <li>Training metrics will be displayed in the control panel</li>
+            <li>Models are saved automatically and can be loaded later</li>
+        </ul>
+        <p><strong>Note:</strong> Make sure TensorFlow.js has loaded before starting training.</p>
+    </div>
+
+    <script>
+        // Initialize your existing game
+        let gameManager;
+        let dqnBridge;
+        
+        // Wait for TensorFlow.js to load
+        tf.ready().then(() => {
+            console.log('TensorFlow.js is ready!');
+            console.log('TensorFlow.js version:', tf.version.tfjs);
+            
+            initializeGame();
+        }).catch(error => {
+            console.error('Failed to initialize TensorFlow.js:', error);
+        });
+        
+        function initializeGame() {
+            try {
+                // Initialize your existing GameManager
+                // Modify this to match your actual game initialization
+                gameManager = new GameManager();
+                
+                // Set up the game canvas and scene
+                const canvas = document.getElementById('gameCanvas');
+                gameManager.initialize(canvas);
+                
+                // Initialize DQN integration
+                dqnBridge = new DQNGameBridge(gameManager);
+                
+                console.log('Game and DQN system initialized successfully');
+                
+                // Start the game loop
+                gameLoop();
+                
+            } catch (error) {
+                console.error('Failed to initialize game:', error);
+                document.body.innerHTML += `
+                    <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+                         background: red; color: white; padding: 20px; border-radius: 10px;">
+                        <h3>Initialization Error</h3>
+                        <p>Failed to initialize the game. Check the console for details.</p>
+                        <p>Make sure all game files are loaded correctly.</p>
+                    </div>
+                `;
+            }
+        }
+        
+        function gameLoop() {
+            // Your existing game loop
+            if (gameManager && gameManager.update) {
+                gameManager.update();
+            }
+            
+            if (gameManager && gameManager.render) {
+                gameManager.render();
+            }
+            
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            if (gameManager && gameManager.onWindowResize) {
+                gameManager.onWindowResize();
+            }
+        });
+        
+        // Clean up on page unload
+        window.addEventListener('beforeunload', () => {
+            if (dqnBridge) {
+                dqnBridge.dispose();
+            }
+        });
+        
+        // Expose some globals for debugging
+        window.gameManager = gameManager;
+        window.dqnBridge = dqnBridge;
+        window.tf = tf;
+    </script>
+</body>
+</html>
