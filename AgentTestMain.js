@@ -206,10 +206,10 @@ setTimeout(() => {
     updateScoreDisplay();
 }, 100); // Small delay to ensure all async operations complete
 
-// Create multiple agents (same as Player.js but spawn more)
-const agent1 = agentManager.createAgent(new T.Vector3(2, 1, 2));   // Red agent
-const agent2 = agentManager.createAgent(new T.Vector3(-2, 1, -2)); // Green agent
-const agent3 = agentManager.createAgent(new T.Vector3(3, 1, -1));  // Blue agent
+// Create multiple agents in corners of the map (slightly inset to avoid walls)
+const agent1 = agentManager.createAgent(new T.Vector3(3.5, 1, 3.5));   // Red agent - top-right corner
+const agent2 = agentManager.createAgent(new T.Vector3(-3.5, 1, 3.5));  // Green agent - top-left corner
+const agent3 = agentManager.createAgent(new T.Vector3(3.5, 1, -3.5));  // Blue agent - bottom-right corner
 
 // Add pathfinding utilities (same as Player.js)
 window.MapPathfinding = {
