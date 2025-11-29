@@ -241,6 +241,8 @@ class Player {
         
     }
 
+
+
     /**
      * might need some other functions for colors and shooting
      */
@@ -377,10 +379,9 @@ if (useMapGenerator) {
             child.updateWorldMatrix(true, false);
             collisionWorld.fromGraphNode(child);
             
-            // Add critical points only to walls and blocks (not floor)
+            // Add critical points to walls and blocks (not floor) using smart geometric detection
             if (criticalPointsEnabled && child !== floor) {
                 const CP_COLORS = window.CP_COLORS;
-                // Use fewer critical points on blocks to reduce chance of top placement
                 const pointCount = mazeBlocks.includes(child) ? 2 : 3;
                 const criticalPoints = criticalPointSystem.addCriticalPoints(child, pointCount, CP_COLORS.WHITE);
                 

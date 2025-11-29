@@ -78,6 +78,12 @@ export function createWalls(scene, width, depth, height) {
     frontWall.position.set(0, height / 2, -halfDepth);
     frontWall.castShadow = true;
     frontWall.receiveShadow = true;
+    // 分类面：前墙的内面是+Z方向，外面是-Z方向
+    frontWall.userData.faceClassification = {
+        isBoundaryWall: true,
+        inwardFaces: [4], // +Z face (南面，面向内部)
+        outwardFaces: [5] // -Z face (北面，面向外部)
+    };
     scene.add(frontWall);
     walls.push(frontWall);
     
@@ -89,6 +95,12 @@ export function createWalls(scene, width, depth, height) {
     backWall.position.set(0, height / 2, halfDepth);
     backWall.castShadow = true;
     backWall.receiveShadow = true;
+    // 分类面：后墙的内面是-Z方向，外面是+Z方向
+    backWall.userData.faceClassification = {
+        isBoundaryWall: true,
+        inwardFaces: [5], // -Z face (北面，面向内部)
+        outwardFaces: [4] // +Z face (南面，面向外部)
+    };
     scene.add(backWall);
     walls.push(backWall);
     
@@ -100,6 +112,12 @@ export function createWalls(scene, width, depth, height) {
     leftWall.position.set(-halfWidth, height / 2, 0);
     leftWall.castShadow = true;
     leftWall.receiveShadow = true;
+    // 分类面：左墙的内面是+X方向，外面是-X方向
+    leftWall.userData.faceClassification = {
+        isBoundaryWall: true,
+        inwardFaces: [0], // +X face (东面，面向内部)
+        outwardFaces: [1] // -X face (西面，面向外部)
+    };
     scene.add(leftWall);
     walls.push(leftWall);
     
@@ -111,6 +129,12 @@ export function createWalls(scene, width, depth, height) {
     rightWall.position.set(halfWidth, height / 2, 0);
     rightWall.castShadow = true;
     rightWall.receiveShadow = true;
+    // 分类面：右墙的内面是-X方向，外面是+X方向
+    rightWall.userData.faceClassification = {
+        isBoundaryWall: true,
+        inwardFaces: [1], // -X face (西面，面向内部)
+        outwardFaces: [0] // +X face (东面，面向外部)
+    };
     scene.add(rightWall);
     walls.push(rightWall);
     

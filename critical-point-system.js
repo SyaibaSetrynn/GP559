@@ -19,39 +19,102 @@ export class CriticalPointSystem {
     /**
      * Add critical points to an object
      * @param {THREE.Mesh} targetObject - The object to add CPs to
-     * @param {number} count - Number of critical points to add (default: 3)
+     * @<3param {number} count - Number of critical points to add (default: 3)
      * @param {number} color - Color of the critical points in hex (default: 0xff0000)
-     * @param {Object} options - Additional options { radius: 0.05, pulseSpeed: 3 }
+     * @param {Object} options - Additional options { radius: 0.05, pulseSpeed: 3, minCPs: 1, maxCPs: 5, minDistance: 0.3 }
      * @returns {Array} Array of created critical point meshes
      */
     addCriticalPoints(targetObject, count = 3, color = 0xff0000, options = {}) {
-        const cps = [];
         const opts = {
             radius: options.radius || this.cpRadius,
             pulseSpeed: options.pulseSpeed || 3,
+            minCPs: options.minCPs || 1,
+            maxCPs: options.maxCPs || 5,
+            minDistance: options.minDistance || 0.3, // Minimum distance between CPs
             ...options
         };
+        
+        // Get accessible faces and determine optimal CP count
+        const accessibleFaces = this.getAccessibleFaces(targetObject);
+        if (accessibleFaces.length === 0) {
+            console.warn('No accessible faces found for critical points');
+            return [];
+        }
+        
+        // Calculate actual count based on available faces and constraints
+        const maxPossible = Math.min(accessibleFaces.length * 2, opts.maxCPs); // Max 2 CPs per face
+        const actualCount = Math.max(opts.minCPs, Math.min(count, maxPossible));
+        
+        const cps = [];
+        const placedPositions = []; // Track positions to ensure minimum distance
         
         // Get the bounding box of the target object
         const bbox = new THREE.Box3().setFromObject(targetObject);
         const size = bbox.getSize(new THREE.Vector3());
         
-        for (let i = 0; i < count; i++) {
+        let attempts = 0;
+        const maxAttempts = actualCount * 10; // Prevent infinite loops
+        
+        while (cps.length < actualCount && attempts < maxAttempts) {
+            attempts++;
+            
             const cp = this.createCriticalPoint(color, opts);
             
-            // Place CP randomly on the object surface
-            const position = this.getRandomSurfacePosition(targetObject, bbox, size, opts.radius);
-            cp.position.copy(position);
+            // Get a distributed position (spread across different faces)
+            const position = this.getDistributedSurfacePosition(
+                targetObject, 
+                bbox, 
+                size, 
+                opts.radius, 
+                cps.length, 
+                actualCount, 
+                accessibleFaces
+            );
             
-            // Add to scene and track
-            this.scene.add(cp);
-            cps.push(cp);
-            this.criticalPoints.push({
-                cp: cp,
-                targetObject: targetObject,
-                originalColor: color,
-                options: opts
-            });
+            // Check minimum distance from existing CPs
+            if (this.isValidPosition(position, placedPositions, opts.minDistance)) {
+                cp.position.copy(position);
+                placedPositions.push(position.clone());
+                
+                // Add to scene and track
+                this.scene.add(cp);
+                cps.push(cp);
+                this.criticalPoints.push({
+                    cp: cp,
+                    targetObject: targetObject,
+                    originalColor: color,
+                    options: opts
+                });
+            } else {
+                // Remove the CP we created but couldn't place
+                cp.geometry.dispose();
+                cp.material.dispose();
+            }
+        }
+        
+        // If we couldn't place the minimum required, try with relaxed distance constraints
+        if (cps.length < opts.minCPs) {
+            const relaxedDistance = opts.minDistance * 0.5;
+            while (cps.length < opts.minCPs && attempts < maxAttempts * 2) {
+                attempts++;
+                
+                const cp = this.createCriticalPoint(color, opts);
+                const position = this.getRandomSurfacePosition(targetObject, bbox, size, opts.radius);
+                
+                if (this.isValidPosition(position, placedPositions, relaxedDistance)) {
+                    cp.position.copy(position);
+                    placedPositions.push(position.clone());
+                    
+                    this.scene.add(cp);
+                    cps.push(cp);
+                    this.criticalPoints.push({
+                        cp: cp,
+                        targetObject: targetObject,
+                        originalColor: color,
+                        options: opts
+                    });
+                }
+            }
         }
         
         return cps;
@@ -172,6 +235,83 @@ export class CriticalPointSystem {
     }
 
     /**
+     * Get a position that's distributed across different faces for better spread
+     */
+    getDistributedSurfacePosition(targetObject, bbox, size, cpRadius, currentIndex, totalCount, accessibleFaces) {
+        const geometry = targetObject.geometry;
+        
+        if (geometry.type === 'BoxGeometry') {
+            // Distribute CPs across different faces
+            const faceIndex = currentIndex % accessibleFaces.length;
+            const face = accessibleFaces[faceIndex];
+            
+            const halfWidth = geometry.parameters.width / 2;
+            const halfHeight = geometry.parameters.height / 2;
+            const halfDepth = geometry.parameters.depth / 2;
+            const margin = cpRadius;
+            
+            // Add some randomness within the face, but bias towards different areas
+            const subIndex = Math.floor(currentIndex / accessibleFaces.length);
+            const bias = subIndex / Math.max(1, Math.floor(totalCount / accessibleFaces.length) - 1);
+            
+            let x, y, z;
+            
+            switch (face) {
+                case 0: // right face (+X)
+                    x = halfWidth;
+                    y = (Math.random() - 0.5) * (geometry.parameters.height - 2 * margin);
+                    z = (bias - 0.5) * (geometry.parameters.depth - 2 * margin) + (Math.random() - 0.5) * 0.2;
+                    break;
+                case 1: // left face (-X)
+                    x = -halfWidth;
+                    y = (Math.random() - 0.5) * (geometry.parameters.height - 2 * margin);
+                    z = (bias - 0.5) * (geometry.parameters.depth - 2 * margin) + (Math.random() - 0.5) * 0.2;
+                    break;
+                case 4: // front face (+Z)
+                    x = (bias - 0.5) * (geometry.parameters.width - 2 * margin) + (Math.random() - 0.5) * 0.2;
+                    y = (Math.random() - 0.5) * (geometry.parameters.height - 2 * margin);
+                    z = halfDepth;
+                    break;
+                case 5: // back face (-Z)
+                    x = (bias - 0.5) * (geometry.parameters.width - 2 * margin) + (Math.random() - 0.5) * 0.2;
+                    y = (Math.random() - 0.5) * (geometry.parameters.height - 2 * margin);
+                    z = -halfDepth;
+                    break;
+                default:
+                    // Fallback to random position
+                    const randX = (Math.random() - 0.5) * (geometry.parameters.width - 2 * margin);
+                    const randY = (Math.random() - 0.5) * (geometry.parameters.height - 2 * margin);
+                    const randZ = (Math.random() - 0.5) * (geometry.parameters.depth - 2 * margin);
+                    
+                    switch (face) {
+                        case 2: x = randX; y = halfHeight; z = randZ; break; // top face
+                        case 3: x = randX; y = -halfHeight; z = randZ; break; // bottom face
+                        default: x = randX; y = randY; z = randZ; break;
+                    }
+            }
+            
+            const position = new THREE.Vector3(x, y, z);
+            position.add(targetObject.position);
+            return position;
+        }
+        
+        // Fallback to random position for non-box geometry
+        return this.getRandomSurfacePosition(targetObject, bbox, size, cpRadius);
+    }
+
+    /**
+     * Check if a position is valid (minimum distance from existing CPs)
+     */
+    isValidPosition(newPosition, existingPositions, minDistance) {
+        for (const existingPos of existingPositions) {
+            if (newPosition.distanceTo(existingPos) < minDistance) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
      * Update all critical points (call this in your animation loop)
      */
     updateCriticalPoints() {
@@ -251,42 +391,34 @@ export class CriticalPointSystem {
         const objPos = targetObject.position;
         
         // Define face centers and normals for raycasting
+        // EXCLUDE top (id: 2) and bottom (id: 3) faces - no critical points on horizontal surfaces
         const faces = [
             { id: 0, center: new THREE.Vector3(objPos.x + halfWidth, objPos.y, objPos.z), normal: new THREE.Vector3(1, 0, 0) },   // right
             { id: 1, center: new THREE.Vector3(objPos.x - halfWidth, objPos.y, objPos.z), normal: new THREE.Vector3(-1, 0, 0) },  // left
-            { id: 2, center: new THREE.Vector3(objPos.x, objPos.y + halfHeight, objPos.z), normal: new THREE.Vector3(0, 1, 0) },  // top
-            { id: 3, center: new THREE.Vector3(objPos.x, objPos.y - halfHeight, objPos.z), normal: new THREE.Vector3(0, -1, 0) }, // bottom
+            // REMOVED: top and bottom faces
             { id: 4, center: new THREE.Vector3(objPos.x, objPos.y, objPos.z + halfDepth), normal: new THREE.Vector3(0, 0, 1) },   // front
             { id: 5, center: new THREE.Vector3(objPos.x, objPos.y, objPos.z - halfDepth), normal: new THREE.Vector3(0, 0, -1) }   // back
         ];
 
         const accessibleFaces = [];
-        const raycaster = new THREE.Raycaster();
         
-        // Get all other objects in the scene for collision testing
-        const otherObjects = [];
-        this.scene.traverse((child) => {
-            if (child.isMesh && child !== targetObject && child.geometry) {
-                otherObjects.push(child);
-            }
-        });
-
-        faces.forEach(face => {
-            // Cast ray from face center outward along face normal
-            raycaster.set(face.center, face.normal);
-            const intersections = raycaster.intersectObjects(otherObjects);
-            
-            // Face is accessible if no intersections within a reasonable distance
-            const minAccessDistance = 0.2; // Minimum clearance needed
-            const blocked = intersections.some(intersection => intersection.distance < minAccessDistance);
-            
-            if (!blocked) {
+        // Use face classification for boundary walls
+        if (targetObject.userData && targetObject.userData.faceClassification && targetObject.userData.faceClassification.isBoundaryWall) {
+            // Boundary wall - only allow inward-facing faces
+            targetObject.userData.faceClassification.inwardFaces.forEach(faceId => {
+                accessibleFaces.push(faceId);
+            });
+        } else {
+            // No classification (inner maze blocks) - allow all vertical faces
+            faces.forEach(face => {
                 accessibleFaces.push(face.id);
-            }
-        });
+            });
+        }
 
         return accessibleFaces;
     }
+
+
 
     /**
      * Register a colored light that can interact with critical points

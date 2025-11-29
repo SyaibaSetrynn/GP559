@@ -131,11 +131,21 @@ if (useMapGenerator) {
             child.updateWorldMatrix(true, false);
             collisionWorld.fromGraphNode(child);
             
-            // Add critical points only to walls and blocks (same as Player.js)
+            // Add critical points to walls and blocks (not floor) using smart geometric detection
             if (criticalPointsEnabled && child !== floor) {
                 const CP_COLORS = window.CP_COLORS;
-                const pointCount = mazeBlocks.includes(child) ? 2 : 3;
-                const criticalPoints = criticalPointSystem.addCriticalPoints(child, pointCount, CP_COLORS.WHITE);
+                const isMazeBlock = mazeBlocks.includes(child);
+                const pointCount = isMazeBlock ? 2 : 3;
+                
+                // Enhanced CP placement with better distribution
+                const cpOptions = {
+                    minCPs: isMazeBlock ? 1 : 2,    // Ensure minimum coverage
+                    maxCPs: isMazeBlock ? 3 : 4,    // Prevent overcrowding
+                    minDistance: 0.4,              // Better spacing
+                    radius: 0.06                   // Slightly larger CPs
+                };
+                
+                const criticalPoints = criticalPointSystem.addCriticalPoints(child, pointCount, CP_COLORS.WHITE, cpOptions);
                 
                 // Register critical points with agent manager
                 criticalPoints.forEach(cp => {
@@ -169,7 +179,16 @@ if (useMapGenerator) {
             
             if (criticalPointsEnabled) {
                 const CP_COLORS = window.CP_COLORS;
-                const criticalPoints = criticalPointSystem.addCriticalPoints(obs, 3, CP_COLORS.WHITE);
+                
+                // Enhanced CP placement for maze blocks
+                const cpOptions = {
+                    minCPs: 1,          // At least one CP per block
+                    maxCPs: 3,          // Maximum 3 CPs per block
+                    minDistance: 0.3,   // Good spacing for individual blocks
+                    radius: 0.06        // Slightly larger CPs
+                };
+                
+                const criticalPoints = criticalPointSystem.addCriticalPoints(obs, 3, CP_COLORS.WHITE, cpOptions);
                 
                 criticalPoints.forEach(cp => {
                     agentManager.addCriticalPoint(cp.position, cp);
@@ -313,5 +332,7 @@ function updateScoreDisplay() {
         }
     }
 }
+
+
 
 window.requestAnimationFrame(animate);
