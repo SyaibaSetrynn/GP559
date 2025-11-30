@@ -358,13 +358,13 @@ export class CriticalPointSystem {
                 const distance = cp.position.distanceTo(lightData.position);
                 // Debug: Log distance checks occasionally
                 if (Math.random() < 0.001) { // 0.1% chance per frame
-                    console.log(`CP at (${cp.position.x.toFixed(2)}, ${cp.position.y.toFixed(2)}, ${cp.position.z.toFixed(2)}) - Light at (${lightData.position.x.toFixed(2)}, ${lightData.position.y.toFixed(2)}, ${lightData.position.z.toFixed(2)}) - Distance: ${distance.toFixed(2)}, Range: ${lightData.range}`);
+                    // CP and light distance check
                 }
                 if (distance <= lightData.range) {
                     beingHitByLight = lightData;
                     // Debug: Log when light hits CP
                     if (!cp.userData.isBeingHit) {
-                        console.log(`🔴 Light hitting CP! Distance: ${distance.toFixed(2)}, Range: ${lightData.range}`);
+                        // Light hitting critical point
                     }
                 }
             });
@@ -378,7 +378,7 @@ export class CriticalPointSystem {
                         startTime: currentTime
                     };
                     
-                    console.log(`🔴 Light hitting CP! Flashing ${beingHitByLight.color.toString(16)}`);
+                    // Critical point flashing
                 }
                 
                 // Visual feedback - make CP flash with light color

@@ -39,8 +39,7 @@ class Agent {
         this.camera = new T.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         this.camera.position.set(0, AGENT_HEIGHT, 0);
         this.collider = new Capsule(new T.Vector3(0, AGENT_HEIGHT/2, 0), new T.Vector3(0, AGENT_HEIGHT - AGENT_HEIGHT/4, 0), AGENT_HEIGHT/2);
-        console.log("Agent collider start: " + this.collider.start.x + " " + this.collider.start.y + " " + this.collider.start.z);
-        console.log("Agent radius: " + AGENT_RADIUS);
+        // Agent collider initialized
         this.object.add(this.mesh);
         this.object.add(this.camera);
         this.onGround = false;
@@ -150,6 +149,11 @@ class Agent {
      * updates position of the agent, needs to be called in animate()
      */
     update() {
+        // Skip all AI and physics when under DQN control
+        if (this.dqnControlled) {
+            return; // DQN system has full control, skip all agent logic
+        }
+        
         // console.log("Agent collider start: " + this.collider.start.x + " " + this.collider.start.y + " " + this.collider.start.z);
         
         // AI movement towards target using pathfinding
@@ -350,7 +354,7 @@ class Agent {
 
         // Debug: temporarily disable obstacles to test if that's the issue
         if (obstacles.length === 0) {
-            console.log(`Agent ${this.agentId}: No obstacles, clear LOS to CP at distance ${distance.toFixed(2)}`);
+            // Clear LOS to critical point
             return true;
         }
 
@@ -369,7 +373,7 @@ class Agent {
 
         const hasLOS = validIntersections.length === 0;
         if (!hasLOS) {
-            console.log(`Agent ${this.agentId}: LOS blocked by ${validIntersections.length} obstacles`);
+            // LOS blocked by obstacles
         }
 
         return hasLOS;
@@ -527,7 +531,7 @@ class Agent {
         const randomPos = this.findRandomWalkablePosition();
         if (randomPos) {
             this.setTarget(randomPos);
-            console.log(`Agent ${this.agentId}: New random target at (${randomPos.x.toFixed(2)}, ${randomPos.z.toFixed(2)})`);
+            // Agent targeting new random position
         }
     }
 
@@ -595,7 +599,7 @@ class Agent {
             const targetPos = nearestCP.position.clone();
             targetPos.y = 1; // Set appropriate Y level for agent
             this.setTarget(targetPos);
-            console.log(`Agent ${this.agentId}: Seeking critical point at (${targetPos.x.toFixed(2)}, ${targetPos.z.toFixed(2)})`);
+            // Agent targeting critical point
         } else {
             // No visible critical points, move randomly
             this.setRandomTarget();

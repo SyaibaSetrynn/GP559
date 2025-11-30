@@ -616,10 +616,7 @@ document.addEventListener('keydown', function(event) {
     if (event.key === 'p' || event.key === 'P') {
         // Print current scores
         const scores = agentManager.getScores();
-        console.log('Current Scores:');
-        scores.forEach(s => {
-            console.log(`Agent ${s.agentId} (Color: #${s.color.toString(16)}): ${s.score} points`);
-        });
+        // Current agent scores logged
     }
     if (event.key === 'l' || event.key === 'L') {
         // Toggle LOS UI visibility

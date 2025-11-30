@@ -67,12 +67,18 @@
 		
 		<!-- DQN Agent Controls -->
 		<div id="dqn-controls">
-			<h3>DQN Agents</h3>
-			<button id="start-episode">Start Episode</button>
-			<button id="reset-episode">Reset Episode</button>
-			<br>
-			<button id="toggle-auto">Auto Episodes: OFF</button>
-			<div id="training-status">Agents ready</div>
+			<h3>DQN Trained Agents</h3>
+			
+			<div style="margin-bottom: 10px;">
+				<label style="font-size: 10px;">Load Trained Weights:</label>
+				<textarea id="weights-input" placeholder="Paste WEIGHT_0=... WEIGHT_1=... etc. lines from training" style="width: 100%; height: 120px; background: #000; color: #0f0; border: 1px solid #4a90e2; font-family: monospace; font-size: 9px; padding: 5px; box-sizing: border-box; resize: vertical;"></textarea>
+			</div>
+			
+			<button id="load-weights">Load Trained Weights</button>
+			<button id="start-episode" disabled>Start Test Episode</button>
+			<button id="reset-episode" disabled>Reset Episode</button>
+			
+			<div id="training-status">Ready to load weights</div>
 			<div id="training-metrics"></div>
 		</div>
 		

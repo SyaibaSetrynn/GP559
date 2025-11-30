@@ -53,6 +53,9 @@ window.globalCPSystem = criticalPointSystem;
 // Initialize Agent Manager (same as Player.js)
 const agentManager = new AgentManager(scene, collisionWorld, criticalPointSystem);
 
+// Expose agentManager globally for DQN integration immediately
+window.gameManager = agentManager;
+
 // Loading terrain (same logic as Player.js)
 let levelObj = null;
 let objectsInScene = [];
@@ -140,11 +143,11 @@ if (useMapGenerator) {
                 const pointCount = mazeBlocks.includes(child) ? 2 : 3;
                 
                 // Debug logging for CP creation
-                console.log(`🎯 Attempting to add ${pointCount} CPs to object:`, child.geometry.type, child.position);
+                // console.log(`🎯 Attempting to add ${pointCount} CPs to object:`, child.geometry.type, child.position);
                 
                 const criticalPoints = criticalPointSystem.addCriticalPoints(child, pointCount, CP_COLORS.WHITE);
                 
-                console.log(`✅ Added ${criticalPoints.length} CPs to object`);
+                // console.log(`✅ Added ${criticalPoints.length} CPs to object`);
                 
                 // Register critical points with agent manager
                 criticalPoints.forEach(cp => {
@@ -180,14 +183,11 @@ if (useMapGenerator) {
                 const CP_COLORS = window.CP_COLORS;
                 const criticalPoints = criticalPointSystem.addCriticalPoints(obs, 3, CP_COLORS.WHITE);
                 
-                // Debug logging for CP creation
-                console.log(`🎯 Attempting to add 3 CPs to object:`, obs.geometry.type, obs.position);
-                
+                // Adding critical points to obstacles
                 criticalPoints.forEach(cp => {
                     agentManager.addCriticalPoint(cp.position, cp);
                 });
-                
-                console.log(`✅ Added ${criticalPoints.length} CPs to object`);
+                // Critical points added to obstacles
             }
             
             agentManager.addObstacles([obs]);
@@ -396,7 +396,7 @@ window.requestAnimationFrame(animate);
 
 
 async function generateScene() {
-    console.log('🏗️ Generating new scene...');
+    // console.log('🏗️ Generating new scene...');
     
     // Always use the smallest level (10x10) (same as Player.js)
     const mapWidth = 10;
@@ -477,11 +477,11 @@ async function generateScene() {
                 const pointCount = mazeBlocks.includes(child) ? 2 : 3;
                 
                 // Debug logging for CP creation
-                console.log(`🎯 Attempting to add ${pointCount} CPs to object:`, child.geometry.type, child.position);
+                // console.log(`🎯 Attempting to add ${pointCount} CPs to object:`, child.geometry.type, child.position);
                 
                 const criticalPoints = criticalPointSystem.addCriticalPoints(child, pointCount, CP_COLORS.WHITE);
                 
-                console.log(`✅ Added ${criticalPoints.length} CPs to object`);
+                // console.log(`✅ Added ${criticalPoints.length} CPs to object`);
                 
                 // Register critical points with agent manager
                 criticalPoints.forEach(cp => {
@@ -500,7 +500,7 @@ async function generateScene() {
     // Mark CPs as fully loaded after scene setup
     setTimeout(() => {
         cpsFullyLoaded = true;
-        console.log(`✅ CPs loaded: ${criticalPointSystem.cpRegistry.size} total`);
+        // console.log(`✅ CPs loaded: ${criticalPointSystem.cpRegistry.size} total`);
     }, 100); // Small delay to ensure all async operations complete
 
     // Create multiple agents (same as Player.js but spawn more)
@@ -691,9 +691,6 @@ async function generateScene() {
 
     // Expose critical point system globally for agents/players
     window.globalCPSystem = criticalPointSystem;
-    
-    // Expose agentManager globally for DQN integration
-    window.gameManager = agentManager;
 
     window.requestAnimationFrame(animate);
 }

@@ -145,6 +145,7 @@ class GameStateProcessor {
 
     processState(gameState) {
         const state = [];
+        console.log('=== PROCESS STATE DEBUG ===');
         
         // Agent position (normalized to [0,1])
         const agentPos = gameState.agent_position;
@@ -156,9 +157,12 @@ class GameStateProcessor {
             (agentPos[2] + mapSize/2) / mapSize   // z
         ];
         state.push(...normalizedPos);
+        console.log('After agent position:', state.length, 'features');
         
         // Critical points features
         const criticalPoints = gameState.critical_points || [];
+        console.log('Number of critical points:', criticalPoints.length);
+        console.log('Max CPs:', this.maxCPs);
         
         for (let i = 0; i < this.maxCPs; i++) {
             if (i < criticalPoints.length) {
@@ -189,10 +193,14 @@ class GameStateProcessor {
                 state.push(...new Array(this.cpFeatureDim).fill(0.0));
             }
         }
+        console.log('After critical points:', state.length, 'features');
+        console.log('Expected after CPs:', 3 + (this.maxCPs * this.cpFeatureDim));
         
         // Navigation grid (walls around agent)
         const navGrid = gameState.navigation_grid || new Array(this.gridSize * this.gridSize).fill(0);
+        console.log('Navigation grid size:', navGrid.length);
         state.push(...navGrid);
+        console.log('After navigation grid:', state.length, 'features');
         
         // Time remaining (normalized)
         const timeRemaining = gameState.time_remaining || 1.0;
@@ -202,6 +210,15 @@ class GameStateProcessor {
         const nearestUnclaimed = gameState.nearest_unclaimed_distance || 1.0;
         const nearestEnemy = gameState.nearest_enemy_distance || 1.0;
         state.push(nearestUnclaimed, nearestEnemy);
+        console.log('After distances:', state.length, 'features');
+        
+        console.log('Final state length:', state.length);
+        console.log('Expected state length:', this.computeStateDim());
+        if (state.length !== this.computeStateDim()) {
+            console.error('STATE LENGTH MISMATCH!');
+            console.error('Expected:', this.computeStateDim());
+            console.error('Actual:', state.length);
+        }
         
         return state;
     }

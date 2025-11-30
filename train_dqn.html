@@ -100,7 +100,7 @@
             
             <div class="metrics" id="training-metrics">
                 <strong>Training Configuration:</strong><br>
-                Episodes: 2000<br>
+                Episodes: 10,000<br>
                 Agents: 3<br>
                 State Dimension: 580<br>
                 Action Dimension: 5<br>
@@ -117,7 +117,7 @@
             <h2>Instructions</h2>
             <ol>
                 <li><strong>Start Training:</strong> Click "Start Training" to begin the DQN learning process</li>
-                <li><strong>Wait:</strong> Training will take several minutes to complete (2000 episodes)</li>
+                <li><strong>Wait:</strong> Training will take a while to complete (10,000 episodes)</li>
                 <li><strong>Use in Game:</strong> After training, agents will be ready to play optimally</li>
             </ol>
             <p><strong>Note:</strong> This runs a simplified simulation. Real game integration happens in the main game mode.</p>
@@ -313,36 +313,43 @@
             
             async outputWeightsToConsole() {
                 console.log('\n=== TRAINED DQN WEIGHTS ===');
-                console.log('Training completed! Here are the trained weights:');
+                console.log('Training completed! Here are the individual weight layers for copy-paste:');
                 
-                for (let agentId = 0; agentId < this.numAgents; agentId++) {
-                    try {
-                        console.log(`\n--- Agent ${agentId} Weights ---`);
+                // Just use the first agent's weights since all agents have the same architecture
+                const agent = this.agents[0];
+                
+                try {
+                    // Get Q-network weights
+                    const qWeights = agent.qNetwork.model.getWeights();
+                    
+                    console.log(`\n--- Individual Weight Layers (${qWeights.length} layers) ---`);
+                    
+                    for (let layerIdx = 0; layerIdx < qWeights.length; layerIdx++) {
+                        const weight = qWeights[layerIdx];
+                        const data = await weight.data();
+                        const weightData = {
+                            shape: weight.shape,
+                            values: Array.from(data)
+                        };
                         
-                        // Get Q-network weights
-                        const qWeights = this.agents[agentId].qNetwork.model.getWeights();
-                        const qWeightData = await Promise.all(qWeights.map(async (weight) => {
-                            const data = await weight.data();
-                            return {
-                                shape: weight.shape,
-                                values: Array.from(data)
-                            };
-                        }));
-                        
-                        console.log(`Agent ${agentId} Q-Network Weights:`, qWeightData);
-                        console.log(`Agent ${agentId} Epsilon:`, this.agents[agentId].epsilon);
-                        console.log(`Agent ${agentId} Step Count:`, this.agents[agentId].stepCount);
-                        
-                        // Dispose of the weight tensors to free memory
-                        qWeights.forEach(w => w.dispose());
-                        
-                    } catch (error) {
-                        console.error(`Error extracting weights for agent ${agentId}:`, error);
+                        const weightString = JSON.stringify(weightData);
+                        console.log(`WEIGHT_${layerIdx}=${weightString}`);
                     }
+                    
+                    // Also output epsilon and step count
+                    console.log(`EPSILON=${agent.epsilon}`);
+                    console.log(`STEP_COUNT=${agent.stepCount}`);
+                    
+                    console.log('\n=== COPY THE WEIGHT_X= LINES ABOVE ===');
+                    console.log('Paste these individual weight lines into the test environment.');
+                    console.log(`Total layers: ${qWeights.length}`);
+                    
+                    // Dispose of the weight tensors to free memory
+                    qWeights.forEach(w => w.dispose());
+                    
+                } catch (error) {
+                    console.error('Error extracting individual weights:', error);
                 }
-                
-                console.log('\n=== END TRAINED WEIGHTS ===');
-                console.log('You can copy these weights from the console if needed.');
             }
             
             stopTraining() {
@@ -372,8 +379,8 @@
             const metricsDiv = document.getElementById('training-metrics');
             metricsDiv.innerHTML = `
                 <strong>Training Progress:</strong><br>
-                Episode: ${episode}/2000<br>
-                Progress: ${(episode/2000*100).toFixed(1)}%<br>
+                Episode: ${episode}/10000<br>
+                Progress: ${(episode/10000*100).toFixed(1)}%<br>
                 <br>
                 <strong>Average Rewards (last 10 episodes):</strong><br>
                 Agent 0 (Red): ${avgRewards[0].toFixed(2)}<br>
@@ -408,10 +415,10 @@
                 document.getElementById('stop-training').disabled = false;
                 
                 updateStatus('Training started...');
-                log('Training 3 DQN agents over 2000 episodes');
+                log('Training 3 DQN agents over 10,000 episodes');
                 
                 // Custom training loop with progress updates
-                const numEpisodes = 2000;
+                const numEpisodes = 10000;
                 
                 for (let episode = 0; episode < numEpisodes && isTraining; episode++) {
                     const episodeRewards = await trainingManager.runEpisode(true);
