@@ -23,6 +23,23 @@
 				Scroll: Zoom in/out
 			</div>
 		</div>
+
+		<!-- DQN Training Controls -->
+		<div id="dqn-controls" style="margin-top: 20px; padding: 10px; border: 1px solid #ccc;">
+			<h3>DQN Training System - Phase 1</h3>
+			<div>
+				<strong>Current Mode:</strong> <span id="current-mode">Random</span>
+			</div>
+			<div style="margin-top: 10px;">
+				<button id="start-training">Start Data Collection</button>
+				<button id="stop-training">Stop Collection</button>
+				<button id="export-data">Export Training Data</button>
+			</div>
+			<div style="margin-top: 10px;">
+				<div>Experiences Collected: <span id="experience-count">0</span></div>
+				<div>Collection Status: <span id="collection-status">Stopped</span></div>
+			</div>
+		</div>
 		
 		<script>
 			// Simple timer to show the page is working
@@ -51,6 +68,7 @@
 		import * as THREE from 'three';
 		import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 		import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
+		import { DQNDataCollector } from './dqn_system.js';
 		import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 		import { CriticalPointSystem, CP_COLORS } from './critical-point-system.js';
 		
@@ -61,7 +79,52 @@
 		window.CriticalPointSystem = CriticalPointSystem;
 		window.CP_COLORS = CP_COLORS;
 		
-		console.log('Three.js, loaders, and Critical Point System loaded successfully');
+		// Initialize DQN Data Collection System
+		const dqnDataCollector = new DQNDataCollector();
+		window.dqnDataCollector = dqnDataCollector;
+		
+		// DQN UI Controls
+		document.addEventListener('DOMContentLoaded', () => {
+			const startBtn = document.getElementById('start-training');
+			const stopBtn = document.getElementById('stop-training');
+			const exportBtn = document.getElementById('export-data');
+			const modeSpan = document.getElementById('current-mode');
+			const expCountSpan = document.getElementById('experience-count');
+			const statusSpan = document.getElementById('collection-status');
+			
+			// Start data collection
+			startBtn.onclick = () => {
+				if (window.gameManager) {
+					window.gameManager.setAllAgentsMode('training', dqnDataCollector);
+					dqnDataCollector.startCollection();
+					modeSpan.textContent = 'Training (Data Collection)';
+					statusSpan.textContent = 'Collecting...';
+				}
+			};
+			
+			// Stop data collection
+			stopBtn.onclick = () => {
+				if (window.gameManager) {
+					window.gameManager.setAllAgentsMode('random');
+					dqnDataCollector.stopCollection();
+					modeSpan.textContent = 'Random';
+					statusSpan.textContent = 'Stopped';
+				}
+			};
+			
+			// Export training data
+			exportBtn.onclick = () => {
+				dqnDataCollector.exportTrainingData();
+			};
+			
+			// Update UI every second
+			setInterval(() => {
+				const stats = dqnDataCollector.getStats();
+				expCountSpan.textContent = stats.experienceCount;
+			}, 1000);
+		});
+		
+		console.log('Three.js, loaders, Critical Point System, and DQN system loaded successfully');
 	</script>
 
 	<script src="AgentTestMain.js" type="module" defer></script>

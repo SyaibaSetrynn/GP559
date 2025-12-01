@@ -149,9 +149,9 @@ class AgentManager {
      * Update all agents (movement and line of sight)
      */
     update() {
-        // Update agent movement (agents handle their own random movement)
+        // Update agent movement (pass agentManager for DQN data collection)
         this.agents.forEach(agent => {
-            agent.update();
+            agent.update(this);
         });
         
         // Update line of sight every few frames to avoid performance issues
@@ -206,6 +206,26 @@ class AgentManager {
             this.scene.remove(agent.object);
             this.agents.splice(agentIndex, 1);
         }
+    }
+    
+    /**
+     * Set mode for all agents
+     */
+    setAllAgentsMode(mode, dqnDataCollector = null) {
+        this.agents.forEach(agent => {
+            agent.setMode(mode, dqnDataCollector);
+        });
+        console.log(`All agents set to mode: ${mode}`);
+    }
+    
+    /**
+     * Get mode status for all agents
+     */
+    getAgentModes() {
+        return this.agents.map(agent => ({
+            agentId: agent.agentId,
+            mode: agent.getMode()
+        }));
     }
 }
 

@@ -29,6 +29,10 @@ class Agent {
         this.agentId = agentId;
         this.agentColor = agentColor;
         
+        // DQN mode switching
+        this.mode = 'random'; // 'random', 'training', or 'dqn'
+        this.dqnDataCollector = null;
+        
         this.mesh = this.createObject();
         this.object = new T.Group();
         this.camera = new T.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -123,7 +127,48 @@ class Agent {
     /**
      * updates position of the agent, needs to be called in animate()
      */
-    update() {
+    update(agentManager = null) {
+        // Handle different modes
+        switch(this.mode) {
+            case 'training':
+                this.updateTrainingMode(agentManager);
+                break;
+            case 'dqn':
+                this.updateDQNMode(agentManager);
+                break;
+            case 'random':
+            default:
+                this.updateRandomMode();
+                break;
+        }
+    }
+    
+    /**
+     * Training mode: collect data while moving randomly
+     */
+    updateTrainingMode(agentManager) {
+        // Collect training data if DQN system is available
+        if (this.dqnDataCollector && agentManager) {
+            this.dqnDataCollector.collectExperience(this, agentManager);
+        }
+        
+        // Continue with random movement
+        this.updateRandomMode();
+    }
+    
+    /**
+     * DQN mode: use trained neural network for decisions
+     */
+    updateDQNMode(agentManager) {
+        // TODO: Phase 3 - implement smart decision making
+        // For now, fall back to random movement
+        this.updateRandomMode();
+    }
+    
+    /**
+     * Random mode: pure random movement (original behavior)
+     */
+    updateRandomMode() {
         // console.log("Agent collider start: " + this.collider.start.x + " " + this.collider.start.y + " " + this.collider.start.z);
         
         // Pure random movement - continuous motion with occasional direction changes
@@ -495,6 +540,24 @@ class Agent {
         
         // Fallback to local system
         return this.claimedCriticalPoints.size;
+    }
+    
+    /**
+     * Set agent mode and initialize DQN system if needed
+     */
+    setMode(mode, dqnDataCollector = null) {
+        this.mode = mode;
+        if (mode === 'training' && dqnDataCollector) {
+            this.dqnDataCollector = dqnDataCollector;
+        }
+        console.log(`Agent ${this.agentId} mode set to: ${mode}`);
+    }
+    
+    /**
+     * Get current agent mode
+     */
+    getMode() {
+        return this.mode;
     }
 }
 
