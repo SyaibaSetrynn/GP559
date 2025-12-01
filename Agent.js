@@ -44,8 +44,6 @@ class Agent {
         this.controls = null;
     
         // Agent-specific properties
-        this.targetPosition = new T.Vector3(0, 0, 0);
-        this.isMovingToTarget = false;
         this.movementSpeed = AGENT_SPEED;
         
         // Line of sight properties
@@ -109,25 +107,7 @@ class Agent {
         return characterGrp;
     }
 
-    /**
-     * Set a target position for the agent to move towards
-     * @param {T.Vector3} targetPos - The target position
-     */
-    setTarget(targetPos) {
-        this.targetPosition.copy(targetPos);
-        this.isMovingToTarget = true;
-    }
 
-    /**
-     * Stop the agent from moving
-     */
-    stop() {
-        this.isMovingToTarget = false;
-        this.movement.w = false;
-        this.movement.a = false;
-        this.movement.s = false;
-        this.movement.d = false;
-    }
 
     /**
      * Make the agent jump
@@ -151,105 +131,72 @@ class Agent {
         
         // console.log("Agent collider start: " + this.collider.start.x + " " + this.collider.start.y + " " + this.collider.start.z);
         
-        // AI movement towards target using pathfinding
-        if (this.isMovingToTarget) {
-            const currentPos = new T.Vector3(this.camera.position.x, this.camera.position.y, this.camera.position.z);
-            const distance = currentPos.distanceTo(this.targetPosition);
+        // Pure random movement - continuous motion with occasional direction changes
+        if (!this.randomMoveTimer) this.randomMoveTimer = 0;
+        this.randomMoveTimer++;
+        
+        // Change movement direction every 30-90 frames (0.5-1.5 seconds at 60fps)
+        if (this.randomMoveTimer > (30 + Math.random() * 60)) {
+            this.randomMoveTimer = 0;
             
-            if (distance > 0.5) { // Still moving towards target (increased threshold)
-                // Use the pathfinding system if available
-                if (window.MapPathfinding) {
-                    const from = { x: currentPos.x, z: currentPos.z };
-                    const to = { x: this.targetPosition.x, z: this.targetPosition.z };
-                    
-                    const nextStep = window.MapPathfinding.getNextStep(from, to);
-                    
-                    if (nextStep) {
-                        // Convert pathfinding direction to movement flags
-                        const stepThreshold = 0.1;
-                        
-                        this.movement.w = nextStep.z > stepThreshold;   // Moving north (positive Z)
-                        this.movement.s = nextStep.z < -stepThreshold;  // Moving south (negative Z)
-                        this.movement.d = nextStep.x > stepThreshold;   // Moving east (positive X)
-                        this.movement.a = nextStep.x < -stepThreshold;  // Moving west (negative X)
-                        
-                        // Debug movement
-                        if (Math.random() < 0.01) { // 1% chance to log
-                            console.log(`Agent ${this.agentId} moving: nextStep(${nextStep.x.toFixed(2)}, ${nextStep.z.toFixed(2)}) flags: w:${this.movement.w} s:${this.movement.s} d:${this.movement.d} a:${this.movement.a}`);
-                        }
-                    } else {
-                        // No valid path found, stop moving
-                        console.log(`Agent ${this.agentId} no valid path found, stopping`);
-                        this.stop();
-                    }
-                } else {
-                    // Fallback to simple direct movement if pathfinding not available
-                    const direction = this.targetPosition.clone().sub(currentPos);
-                    direction.y = 0; // Only move in XZ plane
-                    direction.normalize();
-                    
-                    // Simple movement logic - move towards target
-                    const forward = new T.Vector3(0, 0, -1);
-                    const right = new T.Vector3(1, 0, 0);
-                    
-                    // Calculate movement components
-                    const forwardMovement = direction.dot(forward);
-                    const rightMovement = direction.dot(right);
-                    
-                    // Set movement flags based on direction
-                    this.movement.w = forwardMovement > 0.1;
-                    this.movement.s = forwardMovement < -0.1;
-                    this.movement.d = rightMovement > 0.1;
-                    this.movement.a = rightMovement < -0.1;
-                }
-            } else {
-                // Reached target
-                this.isMovingToTarget = false;
-                this.stop();
+            // Always pick at least one direction to ensure continuous movement
+            // Higher chance for forward/backward to encourage exploration
+            const directions = [];
+            
+            // Add forward/backward with higher weight
+            if (Math.random() < 0.6) directions.push('w');
+            if (Math.random() < 0.6) directions.push('s');
+            
+            // Add left/right with moderate weight
+            if (Math.random() < 0.4) directions.push('a');
+            if (Math.random() < 0.4) directions.push('d');
+            
+            // If no directions selected, force one
+            if (directions.length === 0) {
+                const allDirections = ['w', 's', 'd', 'a'];
+                directions.push(allDirections[Math.floor(Math.random() * allDirections.length)]);
             }
+            
+            // Reset all movement flags
+            this.movement.w = false;
+            this.movement.a = false;
+            this.movement.s = false;
+            this.movement.d = false;
+            
+            // Set selected directions
+            directions.forEach(dir => {
+                this.movement[dir] = true;
+            });
         }
 
-        // Update agent position (same logic as player but without pointer lock controls)
+        // Update agent position using world-space directions (not camera-relative)
         let moved = false;
+        const moveVector = new T.Vector3(0, 0, 0);
 
+        // Use world directions instead of camera directions for consistent movement
         if(this.movement.w) {
-            // Move forward in camera direction
-            const direction = new T.Vector3();
-            this.camera.getWorldDirection(direction);
-            direction.y = 0;
-            direction.normalize();
-            this.camera.position.add(direction.multiplyScalar(this.movementSpeed));
+            moveVector.z -= this.movementSpeed; // Forward is negative Z
             moved = true;
         }
             
         if(this.movement.a){
-            // Move left relative to camera direction
-            const direction = new T.Vector3();
-            this.camera.getWorldDirection(direction);
-            const left = new T.Vector3(-direction.z, 0, direction.x);
-            left.normalize();
-            this.camera.position.add(left.multiplyScalar(this.movementSpeed));
+            moveVector.x -= this.movementSpeed; // Left is negative X
             moved = true;
         }
             
         if(this.movement.s) {
-            // Move backward
-            const direction = new T.Vector3();
-            this.camera.getWorldDirection(direction);
-            direction.y = 0;
-            direction.normalize();
-            this.camera.position.add(direction.multiplyScalar(-this.movementSpeed));
+            moveVector.z += this.movementSpeed; // Backward is positive Z
             moved = true;
         }
             
         if(this.movement.d) {
-            // Move right relative to camera direction
-            const direction = new T.Vector3();
-            this.camera.getWorldDirection(direction);
-            const right = new T.Vector3(direction.z, 0, -direction.x);
-            right.normalize();
-            this.camera.position.add(right.multiplyScalar(this.movementSpeed));
+            moveVector.x += this.movementSpeed; // Right is positive X
             moved = true;
+        }
+        
+        // Apply combined movement vector for smoother diagonal movement
+        if(moved) {
+            this.camera.position.add(moveVector);
         }
         
         if(moved) {
@@ -279,6 +226,8 @@ class Agent {
         }
 
         this.collisions();
+        
+
     }
 
     /**
@@ -480,101 +429,9 @@ class Agent {
         });
     }
 
-    /**
-     * Check if the agent can move to a specific world position
-     * @param {number} x - World X coordinate
-     * @param {number} z - World Z coordinate
-     * @returns {boolean} True if the position is walkable
-     */
-    canMoveTo(x, z) {
-        return window.MapPathfinding ? window.MapPathfinding.isWalkable(x, z) : true;
-    }
 
-    /**
-     * Get all valid directions the agent can move from its current position
-     * @returns {Array} Array of valid movement directions
-     */
-    getValidMoveDirections() {
-        if (!window.MapPathfinding) return [];
-        
-        const currentPos = this.getPosition();
-        return window.MapPathfinding.getValidDirections(currentPos.x, currentPos.z);
-    }
 
-    /**
-     * Find a random walkable position within the map boundaries
-     * @returns {T.Vector3|null} Random walkable position or null if none found
-     */
-    findRandomWalkablePosition() {
-        if (!window.mapLayout) {
-            console.log(`Agent ${this.agentId}: mapLayout not available`);
-            return null;
-        }
-        
-        if (!window.MapPathfinding) {
-            console.log(`Agent ${this.agentId}: MapPathfinding not available`);
-            return null;
-        }
-        
-        const layout = window.mapLayout;
-        const halfWidth = layout.width / 2;
-        const halfDepth = layout.depth / 2;
-        
-        // Try up to 50 times to find a valid position
-        for (let attempts = 0; attempts < 50; attempts++) {
-            const x = (Math.random() - 0.5) * (layout.width - 2); // Stay inside walls
-            const z = (Math.random() - 0.5) * (layout.depth - 2);
-            
-            if (this.canMoveTo(x, z)) {
-                console.log(`Agent ${this.agentId}: Found walkable position (${x.toFixed(1)}, ${z.toFixed(1)}) after ${attempts + 1} attempts`);
-                return new T.Vector3(x, 1, z); // Y=1 for agent height
-            }
-        }
-        
-        console.log(`Agent ${this.agentId}: Failed to find walkable position after 50 attempts`);
-        return null;
-    }
 
-    /**
-     * Set a random target within the walkable area
-     */
-    setRandomTarget() {
-        const randomPos = this.findRandomWalkablePosition();
-        if (randomPos) {
-            console.log(`Agent ${this.agentId} setting target to (${randomPos.x.toFixed(1)}, ${randomPos.z.toFixed(1)})`);
-            this.setTarget(randomPos);
-            return true;
-        } else {
-            console.log(`Agent ${this.agentId} could not find walkable position!`);
-            return false;
-        }
-    }
-
-    /**
-     * Check if the direct path to target is clear
-     * @returns {boolean} True if direct path is walkable
-     */
-    isDirectPathClear() {
-        if (!window.MapPathfinding || !this.isMovingToTarget) return false;
-        
-        const currentPos = this.getPosition();
-        const from = { x: currentPos.x, z: currentPos.z };
-        const to = { x: this.targetPosition.x, z: this.targetPosition.z };
-        
-        // Check several points along the path
-        const steps = 10;
-        for (let i = 1; i <= steps; i++) {
-            const t = i / steps;
-            const checkX = from.x + (to.x - from.x) * t;
-            const checkZ = from.z + (to.z - from.z) * t;
-            
-            if (!window.MapPathfinding.isWalkable(checkX, checkZ)) {
-                return false;
-            }
-        }
-        
-        return true;
-    }
 
     /**
      * Find the nearest critical point that this agent can see

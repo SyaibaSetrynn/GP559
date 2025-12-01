@@ -149,15 +149,7 @@ class AgentManager {
      * Update all agents (movement and line of sight)
      */
     update() {
-        // Run simple AI behavior every 60 frames (about once per second at 60fps)
-        if (this.aiUpdateCounter === undefined) this.aiUpdateCounter = 0;
-        this.aiUpdateCounter++;
-        
-        if (this.aiUpdateCounter % 30 === 0) { // Update AI twice per second instead of once
-            this.updateSimpleAI();
-        }
-        
-        // Update agent movement
+        // Update agent movement (agents handle their own random movement)
         this.agents.forEach(agent => {
             agent.update();
         });
@@ -172,53 +164,11 @@ class AgentManager {
     }
 
     /**
-     * Simple AI behavior - SIMPLIFIED VERSION - agents just move to random walkable positions
+     * Simple AI behavior - agents handle their own random movement now
      */
     updateSimpleAI() {
-        this.agents.forEach((agent, index) => {
-            // Give agents new targets occasionally even if they're moving
-            const shouldGetNewTarget = !agent.isMovingToTarget || (Math.random() < 0.2); // 20% chance to get new target
-            
-            if (!shouldGetNewTarget) {
-                return;
-            }
-            
-            // Skip if under DQN control
-            if (agent.dqnControlled) {
-                return;
-            }
-            
-            // Debug: Check current position
-            const currentPos = agent.getPosition();
-            console.log(`Agent ${agent.agentId} at (${currentPos.x.toFixed(1)}, ${currentPos.z.toFixed(1)}) getting new target`);
-            
-            // TEMPORARY: Give agents simple manual targets to test pathfinding
-            const manualTargets = [
-                new T.Vector3(0, 1, 0),    // Center
-                new T.Vector3(2, 1, 2),    // Near center
-                new T.Vector3(-2, 1, -2),  // Other side
-                new T.Vector3(1, 1, -1),   // Another spot
-            ];
-            
-            const targetIndex = Math.floor(Math.random() * manualTargets.length);
-            const targetPos = manualTargets[targetIndex];
-            
-            console.log(`Agent ${agent.agentId} targeting manual position (${targetPos.x}, ${targetPos.z})`);
-            agent.setTarget(targetPos);
-            
-            // Just pick a random walkable location
-            // const success = agent.setRandomTarget();
-            // 
-            // if (!success) {
-            //     console.log(`Agent ${agent.agentId} failed to find valid target!`);
-            // }
-            
-            // Manually increment score for testing
-            if (!agent.testScore) agent.testScore = 0;
-            if (Math.random() < 0.1) { // 10% chance to get a point
-                agent.testScore++;
-            }
-        });
+        // Agents now handle their own pure random movement in Agent.update()
+        // This function can be used for other high-level AI logic if needed
     }
 
     /**
