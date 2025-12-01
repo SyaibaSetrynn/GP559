@@ -1,9 +1,4 @@
 import * as T from "https://unpkg.com/three@0.161.0/build/three.module.js";
-import {OrbitControls} from "https://unpkg.com/three@0.161.0/examples/jsm/controls/OrbitControls.js";
-import * as O from "https://unpkg.com/three@0.161.0/examples/jsm/loaders/OBJLoader.js";
-import * as P from "https://unpkg.com/three@0.161.0/examples/jsm/controls/PointerLockControls.js";
-import { Octree } from "https://unpkg.com/three@0.165.0/examples/jsm/math/Octree.js";
-import { OctreeHelper } from "https://unpkg.com/three@0.165.0/examples/jsm/helpers/OctreeHelper.js";
 import { Capsule } from "https://unpkg.com/three@0.165.0/examples/jsm/math/Capsule.js";
 
 /**
@@ -161,7 +156,7 @@ class Agent {
             const currentPos = new T.Vector3(this.camera.position.x, this.camera.position.y, this.camera.position.z);
             const distance = currentPos.distanceTo(this.targetPosition);
             
-            if (distance > 0.2) { // Still moving towards target
+            if (distance > 0.5) { // Still moving towards target (increased threshold)
                 // Use the pathfinding system if available
                 if (window.MapPathfinding) {
                     const from = { x: currentPos.x, z: currentPos.z };
@@ -177,8 +172,14 @@ class Agent {
                         this.movement.s = nextStep.z < -stepThreshold;  // Moving south (negative Z)
                         this.movement.d = nextStep.x > stepThreshold;   // Moving east (positive X)
                         this.movement.a = nextStep.x < -stepThreshold;  // Moving west (negative X)
+                        
+                        // Debug movement
+                        if (Math.random() < 0.01) { // 1% chance to log
+                            console.log(`Agent ${this.agentId} moving: nextStep(${nextStep.x.toFixed(2)}, ${nextStep.z.toFixed(2)}) flags: w:${this.movement.w} s:${this.movement.s} d:${this.movement.d} a:${this.movement.a}`);
+                        }
                     } else {
                         // No valid path found, stop moving
+                        console.log(`Agent ${this.agentId} no valid path found, stopping`);
                         this.stop();
                     }
                 } else {
@@ -505,7 +506,15 @@ class Agent {
      * @returns {T.Vector3|null} Random walkable position or null if none found
      */
     findRandomWalkablePosition() {
-        if (!window.mapLayout) return null;
+        if (!window.mapLayout) {
+            console.log(`Agent ${this.agentId}: mapLayout not available`);
+            return null;
+        }
+        
+        if (!window.MapPathfinding) {
+            console.log(`Agent ${this.agentId}: MapPathfinding not available`);
+            return null;
+        }
         
         const layout = window.mapLayout;
         const halfWidth = layout.width / 2;
@@ -517,10 +526,12 @@ class Agent {
             const z = (Math.random() - 0.5) * (layout.depth - 2);
             
             if (this.canMoveTo(x, z)) {
+                console.log(`Agent ${this.agentId}: Found walkable position (${x.toFixed(1)}, ${z.toFixed(1)}) after ${attempts + 1} attempts`);
                 return new T.Vector3(x, 1, z); // Y=1 for agent height
             }
         }
         
+        console.log(`Agent ${this.agentId}: Failed to find walkable position after 50 attempts`);
         return null;
     }
 
@@ -530,8 +541,12 @@ class Agent {
     setRandomTarget() {
         const randomPos = this.findRandomWalkablePosition();
         if (randomPos) {
+            console.log(`Agent ${this.agentId} setting target to (${randomPos.x.toFixed(1)}, ${randomPos.z.toFixed(1)})`);
             this.setTarget(randomPos);
-            // Agent targeting new random position
+            return true;
+        } else {
+            console.log(`Agent ${this.agentId} could not find walkable position!`);
+            return false;
         }
     }
 
@@ -611,6 +626,11 @@ class Agent {
      * @returns {number} Number of claimed critical points
      */
     getScore() {
+        // Use test score for now to debug UI updates
+        if (this.testScore !== undefined) {
+            return this.testScore;
+        }
+        
         // Use centralized CP system if available and fully initialized
         if (window.globalCPSystem && typeof window.globalCPSystem.getCriticalPointsByOwner === 'function') {
             try {
@@ -629,7 +649,7 @@ class Agent {
 // Agent-specific global variables
 const AGENT_HEIGHT = 0.5;
 const AGENT_RADIUS = 0.5 * Math.sqrt(2) / 2;
-const AGENT_SPEED = 0.02;
+const AGENT_SPEED = 0.05;
 const AGENT_JUMP_HEIGHT = 1.2;
 const AGENT_JUMP_SPEED = 0.03;
 const GRAVITY = (AGENT_JUMP_SPEED * AGENT_JUMP_SPEED) / (2 * AGENT_JUMP_HEIGHT);

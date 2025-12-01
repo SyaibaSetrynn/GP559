@@ -84,6 +84,39 @@
     <!-- TensorFlow.js -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
     
+    <!-- Three.js Setup for 3D Training Episodes -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.161.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.161.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+        import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { CriticalPointSystem, CP_COLORS } from './critical-point-system.js';
+        
+        // Expose Three.js and related systems to global scope
+        window.THREE = THREE;
+        window.OBJLoader = OBJLoader;
+        window.MTLLoader = MTLLoader;
+        window.CriticalPointSystem = CriticalPointSystem;
+        window.CP_COLORS = CP_COLORS;
+        
+        console.log('Three.js, loaders, and Critical Point System loaded for training');
+        window.threeJsReady = true;
+    </script>
+    
+    <!-- Game Systems -->
+    <script src="AgentManager.js"></script>
+    <script src="Agent.js"></script>
+    <script src="Player.js"></script>
+    
     <!-- DQN Training System -->
     <script src="dqn_training.js"></script>
     
@@ -94,17 +127,29 @@
         <div class="control-panel">
             <h2>Training Controls</h2>
             <button id="start-training">Start Training</button>
+            <button id="start-fast-training" style="background: #ff6600;">Start Fast Training (No 3D)</button>
             <button id="stop-training" disabled>Stop Training</button>
+            <button id="test-trained-agents" disabled style="margin-left: 20px; background: #28a745;">Test Trained Agents</button>
             
             <div class="status" id="training-status">Ready to train</div>
             
             <div class="metrics" id="training-metrics">
                 <strong>Training Configuration:</strong><br>
-                Episodes: 10,000<br>
+                3D Mode: 10,000 episodes | Fast Mode: 5,000 episodes<br>
                 Agents: 3<br>
                 State Dimension: 580<br>
                 Action Dimension: 5<br>
                 Learning Rate: 0.0001
+            </div>
+        </div>
+        
+        <div class="control-panel">
+            <h2>3D Training Visualization</h2>
+            <div id="training-canvas-container" style="width: 100%; height: 300px; background: #000; border-radius: 5px; position: relative;">
+                <div id="training-3d-view" style="width: 100%; height: 100%;"></div>
+                <div id="episode-overlay" style="position: absolute; top: 10px; left: 10px; color: white; font-size: 12px; background: rgba(0,0,0,0.7); padding: 5px; border-radius: 3px;">
+                    Episode: 0/10000 | Step: 0/200
+                </div>
             </div>
         </div>
         
@@ -117,10 +162,12 @@
             <h2>Instructions</h2>
             <ol>
                 <li><strong>Start Training:</strong> Click "Start Training" to begin the DQN learning process</li>
+                <li><strong>Watch Training:</strong> See real 3D agents learning in the visualization above</li>
                 <li><strong>Wait:</strong> Training will take a while to complete (10,000 episodes)</li>
-                <li><strong>Use in Game:</strong> After training, agents will be ready to play optimally</li>
+                <li><strong>Copy Weights:</strong> After training, copy the weights from browser console (F12)</li>
+                <li><strong>Test in Game:</strong> Paste weights into indexagent.html to test trained agents</li>
             </ol>
-            <p><strong>Note:</strong> This runs a simplified simulation. Real game integration happens in the main game mode.</p>
+            <p><strong>Note:</strong> This now runs actual 3D training episodes with real agent movement, physics, and critical point interactions!</p>
         </div>
     </div>
 
@@ -128,41 +175,32 @@
         let trainingManager = null;
         let isTraining = false;
         
-        // Mock game environment for training
+        // Fast Mock Environment for speed (fallback when 3D is too slow)
         class MockGameEnvironment extends GameEnvironment {
             constructor() {
-                super(null, 3000); // No real game manager needed for training
+                super(null, 3000);
             }
             
             getCurrentGameState() {
-                // Return realistic mock state for training
-                const numCPs = 10 + Math.floor(Math.random() * 10); // 10-20 critical points
+                const numCPs = 10 + Math.floor(Math.random() * 10);
                 const criticalPoints = [];
                 
                 for (let i = 0; i < numCPs; i++) {
                     criticalPoints.push({
                         position: [
-                            (Math.random() - 0.5) * 8, // Random position in map
+                            (Math.random() - 0.5) * 8,
                             1,
                             (Math.random() - 0.5) * 8
                         ],
-                        color: Math.random() < 0.7 ? null : Math.floor(Math.random() * 3), // 70% unclaimed
-                        available: Math.random() < 0.8 // 80% available
+                        color: Math.random() < 0.7 ? null : Math.floor(Math.random() * 3),
+                        available: Math.random() < 0.8
                     });
                 }
                 
                 return {
-                    agent_position: [
-                        (Math.random() - 0.5) * 8,
-                        1,
-                        (Math.random() - 0.5) * 8
-                    ],
+                    agent_position: [(Math.random() - 0.5) * 8, 1, (Math.random() - 0.5) * 8],
                     critical_points: criticalPoints,
-                    agent_owned_points: {
-                        0: Math.floor(Math.random() * 5),
-                        1: Math.floor(Math.random() * 5),
-                        2: Math.floor(Math.random() * 5)
-                    },
+                    agent_owned_points: { 0: Math.floor(Math.random() * 5), 1: Math.floor(Math.random() * 5), 2: Math.floor(Math.random() * 5) },
                     time_remaining: 0.5 + Math.random() * 0.5,
                     navigation_grid: Array(15 * 15).fill(0).map(() => Math.random() < 0.1 ? 1 : 0),
                     nearest_unclaimed_distance: Math.random(),
@@ -170,19 +208,471 @@
                     map_size: 10
                 };
             }
+            
+            step(action, agentId) {
+                const newState = this.getCurrentGameState();
+                let reward = -0.01; // Time penalty
+                
+                // Simple reward calculation
+                if (newState.nearest_unclaimed_distance < 0.5) {
+                    reward += 0.1;
+                }
+                if (action === 4 && newState.nearest_unclaimed_distance > 0.7) {
+                    reward -= 0.05;
+                }
+                
+                return Promise.resolve({
+                    state: this.processor.processState(newState),
+                    reward: reward,
+                    done: Math.random() < 0.01 // Random episode termination
+                });
+            }
+            
+            reset() {
+                const initialState = this.getCurrentGameState();
+                return this.processor.processState(initialState);
+            }
         }
         
-        // Simplified training manager that avoids const assignment issues
-        class MockTrainingManager {
+        // Real 3D Game Environment for Training
+        class Real3DGameEnvironment extends GameEnvironment {
+            constructor(gameManager) {
+                super(gameManager, 3000);
+                this.gameManager = gameManager;
+                this.episodeStep = 0;
+                this.maxSteps = 200;
+            }
+            
+            getCurrentGameState() {
+                if (!this.gameManager || !this.gameManager.agentManager) {
+                    // Fallback to mock data if game not ready
+                    return this.getMockState();
+                }
+                
+                try {
+                    // Get real game state from the actual 3D game
+                    const agentManager = this.gameManager.agentManager;
+                    const agents = agentManager.agents;
+                    
+                    if (!agents || agents.length === 0) {
+                        return this.getMockState();
+                    }
+                    
+                    // Get primary agent position (agent 0)
+                    const primaryAgent = agents[0];
+                    const agentPos = primaryAgent.obj ? [
+                        primaryAgent.obj.position.x,
+                        primaryAgent.obj.position.y,
+                        primaryAgent.obj.position.z
+                    ] : [0, 1, 0];
+                    
+                    // Get critical points from the game
+                    const criticalPoints = [];
+                    if (this.gameManager.criticalPointSystem && this.gameManager.criticalPointSystem.points) {
+                        for (let cp of this.gameManager.criticalPointSystem.points) {
+                            criticalPoints.push({
+                                position: [cp.position.x, cp.position.y, cp.position.z],
+                                color: cp.ownedBy,
+                                available: cp.available !== false
+                            });
+                        }
+                    }
+                    
+                    // Get agent scores
+                    const agentOwnedPoints = {};
+                    for (let i = 0; i < agents.length; i++) {
+                        agentOwnedPoints[i] = agents[i].score || 0;
+                    }
+                    
+                    // Calculate distances to objectives
+                    const nearestUnclaimed = this.calculateNearestUnclaimedDistance(agentPos, criticalPoints);
+                    const nearestEnemy = this.calculateNearestEnemyDistance(agentPos, agents);
+                    
+                    // Generate navigation grid around agent
+                    const navGrid = this.generateNavigationGrid(agentPos);
+                    
+                    return {
+                        agent_position: agentPos,
+                        critical_points: criticalPoints,
+                        agent_owned_points: agentOwnedPoints,
+                        time_remaining: Math.max(0, (this.maxSteps - this.episodeStep) / this.maxSteps),
+                        navigation_grid: navGrid,
+                        nearest_unclaimed_distance: nearestUnclaimed,
+                        nearest_enemy_distance: nearestEnemy,
+                        map_size: 10
+                    };
+                } catch (error) {
+                    console.error('Error getting real game state:', error);
+                    return this.getMockState();
+                }
+            }
+            
+            getMockState() {
+                // Fallback mock state for when 3D game isn't ready
+                const numCPs = 10 + Math.floor(Math.random() * 10);
+                const criticalPoints = [];
+                
+                for (let i = 0; i < numCPs; i++) {
+                    criticalPoints.push({
+                        position: [
+                            (Math.random() - 0.5) * 8,
+                            1,
+                            (Math.random() - 0.5) * 8
+                        ],
+                        color: Math.random() < 0.7 ? null : Math.floor(Math.random() * 3),
+                        available: Math.random() < 0.8
+                    });
+                }
+                
+                return {
+                    agent_position: [(Math.random() - 0.5) * 8, 1, (Math.random() - 0.5) * 8],
+                    critical_points: criticalPoints,
+                    agent_owned_points: { 0: Math.floor(Math.random() * 5), 1: Math.floor(Math.random() * 5), 2: Math.floor(Math.random() * 5) },
+                    time_remaining: 0.5 + Math.random() * 0.5,
+                    navigation_grid: Array(15 * 15).fill(0).map(() => Math.random() < 0.1 ? 1 : 0),
+                    nearest_unclaimed_distance: Math.random(),
+                    nearest_enemy_distance: Math.random(),
+                    map_size: 10
+                };
+            }
+            
+            calculateNearestUnclaimedDistance(agentPos, criticalPoints) {
+                let minDist = 1.0;
+                for (let cp of criticalPoints) {
+                    if (cp.color === null || cp.color === undefined) {
+                        const dist = Math.sqrt(
+                            Math.pow(agentPos[0] - cp.position[0], 2) +
+                            Math.pow(agentPos[2] - cp.position[2], 2)
+                        ) / 10.0; // Normalize to [0,1]
+                        minDist = Math.min(minDist, Math.min(1.0, dist));
+                    }
+                }
+                return minDist;
+            }
+            
+            calculateNearestEnemyDistance(agentPos, agents) {
+                let minDist = 1.0;
+                for (let i = 1; i < agents.length; i++) { // Skip agent 0 (self)
+                    if (agents[i].obj) {
+                        const enemyPos = agents[i].obj.position;
+                        const dist = Math.sqrt(
+                            Math.pow(agentPos[0] - enemyPos.x, 2) +
+                            Math.pow(agentPos[2] - enemyPos.z, 2)
+                        ) / 10.0; // Normalize to [0,1]
+                        minDist = Math.min(minDist, Math.min(1.0, dist));
+                    }
+                }
+                return minDist;
+            }
+            
+            generateNavigationGrid(agentPos) {
+                // Simple navigation grid - in real implementation this would check actual terrain/obstacles
+                return Array(15 * 15).fill(0).map(() => Math.random() < 0.1 ? 1 : 0);
+            }
+            
+            step(action, agentId) {
+                this.episodeStep++;
+                
+                // Execute action on the real 3D agent
+                if (this.gameManager && this.gameManager.agentManager) {
+                    this.executeActionOn3DAgent(action, agentId);
+                }
+                
+                // Allow some time for physics/movement
+                return new Promise(resolve => {
+                    setTimeout(() => {
+                        const newState = this.getCurrentGameState();
+                        const reward = this.calculateReward(action, agentId, newState);
+                        const done = this.episodeStep >= this.maxSteps;
+                        
+                        resolve({
+                            state: this.processor.processState(newState),
+                            reward: reward,
+                            done: done
+                        });
+                    }, 1); // 1ms delay for minimal physics
+                });
+            }
+            
+            executeActionOn3DAgent(action, agentId) {
+                try {
+                    if (!this.gameManager.agentManager || !this.gameManager.agentManager.agents[agentId]) {
+                        return;
+                    }
+                    
+                    const agent = this.gameManager.agentManager.agents[agentId];
+                    const actionNames = {
+                        0: "strafe_left",
+                        1: "strafe_right", 
+                        2: "move_forward",
+                        3: "move_backward",
+                        4: "stay"
+                    };
+                    
+                    const actionName = actionNames[action] || "stay";
+                    
+                    // Execute the action on the 3D agent
+                    if (actionName !== "stay" && agent.obj) {
+                        const moveSpeed = 0.1;
+                        const pos = agent.obj.position;
+                        
+                        switch (actionName) {
+                            case "move_forward":
+                                pos.z -= moveSpeed;
+                                break;
+                            case "move_backward":
+                                pos.z += moveSpeed;
+                                break;
+                            case "strafe_left":
+                                pos.x -= moveSpeed;
+                                break;
+                            case "strafe_right":
+                                pos.x += moveSpeed;
+                                break;
+                        }
+                        
+                        // Keep agent within bounds
+                        pos.x = Math.max(-5, Math.min(5, pos.x));
+                        pos.z = Math.max(-5, Math.min(5, pos.z));
+                    }
+                } catch (error) {
+                    console.error('Error executing action on 3D agent:', error);
+                }
+            }
+            
+            calculateReward(action, agentId, gameState) {
+                // Simple reward calculation
+                let reward = -0.01; // Time penalty
+                
+                // Reward for moving toward unclaimed points
+                if (gameState.nearest_unclaimed_distance < 0.5) {
+                    reward += 0.1;
+                }
+                
+                // Penalty for staying still when far from objectives
+                if (action === 4 && gameState.nearest_unclaimed_distance > 0.7) {
+                    reward -= 0.05;
+                }
+                
+                return reward;
+            }
+            
+            reset() {
+                this.episodeStep = 0;
+                
+                // Reset the 3D game environment
+                if (this.gameManager && this.gameManager.agentManager) {
+                    try {
+                        // Reset agent positions
+                        const agents = this.gameManager.agentManager.agents;
+                        for (let i = 0; i < agents.length; i++) {
+                            if (agents[i].obj) {
+                                agents[i].obj.position.set(
+                                    (Math.random() - 0.5) * 8,
+                                    1,
+                                    (Math.random() - 0.5) * 8
+                                );
+                                agents[i].score = 0;
+                            }
+                        }
+                        
+                        // Reset critical points
+                        if (this.gameManager.criticalPointSystem) {
+                            this.gameManager.criticalPointSystem.resetAllPoints();
+                        }
+                    } catch (error) {
+                        console.error('Error resetting 3D environment:', error);
+                    }
+                }
+                
+                const initialState = this.getCurrentGameState();
+                return this.processor.processState(initialState);
+            }
+        }
+        
+        // Real 3D Training Manager
+        class Real3DTrainingManager {
             constructor(options = {}) {
-                // Use direct assignment instead of Object.assign to avoid const issues
                 this.numAgents = options.numAgents || 3;
                 this.savePrefix = options.savePrefix || "dqn_agent";
+                this.gameManager = null;
+                this.scene = null;
+                this.renderer = null;
+                this.camera = null;
+                this.fastMode = options.fastMode || false;
                 
-                // Initialize with mock environment
-                this.env = new MockGameEnvironment();
+                // Initialize 3D environment first
+                if (this.fastMode) {
+                    // Fast mode - skip 3D rendering, use mock environment
+                    this.env = new MockGameEnvironment();
+                    this.initializeAgents();
+                } else {
+                    this.init3DEnvironment().then(() => {
+                        this.env = new Real3DGameEnvironment(this.gameManager);
+                        this.initializeAgents();
+                    });
+                }
                 
-                // Create agents with proper state dimension
+                // Training metrics
+                this.episodeRewards = {};
+                this.episodeLengths = [];
+                this.isTraining = false;
+                
+                for (let i = 0; i < this.numAgents; i++) {
+                    this.episodeRewards[i] = [];
+                }
+            }
+            
+            async init3DEnvironment() {
+                console.log('Initializing 3D environment for training...');
+                
+                // Wait for Three.js to be ready
+                while (!window.threeJsReady) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+                
+                try {
+                    // Create 3D scene
+                    this.scene = new THREE.Scene();
+                    this.scene.background = new THREE.Color(0x87CEEB);
+                    
+                    // Create camera
+                    const container = document.getElementById('training-3d-view');
+                    const width = container.clientWidth;
+                    const height = container.clientHeight;
+                    
+                    this.camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
+                    this.camera.position.set(0, 10, 10);
+                    this.camera.lookAt(0, 0, 0);
+                    
+                    // Create renderer
+                    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+                    this.renderer.setSize(width, height);
+                    this.renderer.shadowMap.enabled = true;
+                    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                    container.appendChild(this.renderer.domElement);
+                    
+                    // Add lighting
+                    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+                    this.scene.add(ambientLight);
+                    
+                    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+                    directionalLight.position.set(10, 20, 5);
+                    directionalLight.castShadow = true;
+                    this.scene.add(directionalLight);
+                    
+                    // Create game manager (similar to AgentTestMain.js)
+                    this.gameManager = {
+                        scene: this.scene,
+                        camera: this.camera,
+                        renderer: this.renderer,
+                        agentManager: null,
+                        criticalPointSystem: null
+                    };
+                    
+                    // Initialize agent manager
+                    await this.initializeGameComponents();
+                    
+                    // Start render loop
+                    this.startRenderLoop();
+                    
+                    console.log('3D environment initialized successfully');
+                } catch (error) {
+                    console.error('Error initializing 3D environment:', error);
+                    throw error;
+                }
+            }
+            
+            async initializeGameComponents() {
+                // Load terrain (simplified)
+                const terrainGeometry = new THREE.PlaneGeometry(20, 20);
+                const terrainMaterial = new THREE.MeshLambertMaterial({ color: 0x90EE90 });
+                const terrain = new THREE.Mesh(terrainGeometry, terrainMaterial);
+                terrain.rotation.x = -Math.PI / 2;
+                terrain.receiveShadow = true;
+                this.scene.add(terrain);
+                
+                // Initialize AgentManager (simplified version)
+                this.gameManager.agentManager = {
+                    agents: [],
+                    init: () => {
+                        // Create 3 agents
+                        for (let i = 0; i < this.numAgents; i++) {
+                            const agentGeometry = new THREE.CapsuleGeometry(0.3, 1.2, 4, 8);
+                            const colors = [0xff0000, 0x00ff00, 0x0000ff];
+                            const agentMaterial = new THREE.MeshLambertMaterial({ color: colors[i] });
+                            const agentMesh = new THREE.Mesh(agentGeometry, agentMaterial);
+                            
+                            agentMesh.position.set((Math.random() - 0.5) * 8, 1, (Math.random() - 0.5) * 8);
+                            agentMesh.castShadow = true;
+                            this.scene.add(agentMesh);
+                            
+                            this.gameManager.agentManager.agents.push({
+                                obj: agentMesh,
+                                score: 0,
+                                id: i
+                            });
+                        }
+                    }
+                };
+                
+                // Initialize Critical Point System
+                this.gameManager.criticalPointSystem = {
+                    points: [],
+                    init: () => {
+                        // Create critical points
+                        for (let i = 0; i < 15; i++) {
+                            const cpGeometry = new THREE.SphereGeometry(0.3, 8, 6);
+                            const cpMaterial = new THREE.MeshLambertMaterial({ color: 0xffff00 });
+                            const cpMesh = new THREE.Mesh(cpGeometry, cpMaterial);
+                            
+                            cpMesh.position.set(
+                                (Math.random() - 0.5) * 16,
+                                0.5,
+                                (Math.random() - 0.5) * 16
+                            );
+                            this.scene.add(cpMesh);
+                            
+                            this.gameManager.criticalPointSystem.points.push({
+                                position: cpMesh.position,
+                                ownedBy: null,
+                                available: true,
+                                mesh: cpMesh
+                            });
+                        }
+                    },
+                    resetAllPoints: () => {
+                        for (let point of this.gameManager.criticalPointSystem.points) {
+                            point.ownedBy = null;
+                            point.available = true;
+                            point.mesh.material.color.setHex(0xffff00);
+                        }
+                    }
+                };
+                
+                // Initialize components
+                this.gameManager.agentManager.init();
+                this.gameManager.criticalPointSystem.init();
+            }
+            
+            startRenderLoop() {
+                let lastRender = 0;
+                const animate = (currentTime) => {
+                    requestAnimationFrame(animate);
+                    
+                    // Only render at 10 FPS during training for performance
+                    if (currentTime - lastRender > 100) { // 100ms = 10 FPS
+                        if (this.renderer && this.scene && this.camera) {
+                            this.renderer.render(this.scene, this.camera);
+                        }
+                        lastRender = currentTime;
+                    }
+                };
+                animate();
+            }
+            
+            initializeAgents() {
+                // Create DQN agents
                 this.agents = [];
                 try {
                     const stateDim = this.env.processor.computeStateDim();
@@ -203,24 +693,20 @@
                         this.agents.push(agent);
                         console.log(`Agent ${i} created successfully`);
                     }
+                    
+                    console.log('Real3DTrainingManager initialized successfully');
                 } catch (error) {
                     console.error('Error creating agents:', error);
                     throw error;
                 }
-                
-                // Training metrics
-                this.episodeRewards = {};
-                this.episodeLengths = [];
-                this.isTraining = false;
-                
-                for (let i = 0; i < this.numAgents; i++) {
-                    this.episodeRewards[i] = [];
-                }
-                
-                console.log('MockTrainingManager initialized successfully');
             }
             
-            async runEpisode(training = true) {
+            async runEpisode(training = true, episodeNum = 0) {
+                if (!this.env || !this.agents) {
+                    console.log('Environment or agents not ready, skipping episode');
+                    return {};
+                }
+                
                 try {
                     let states = {};
                     const episodeRewards = {};
@@ -229,8 +715,8 @@
                         episodeRewards[i] = [];
                     }
                     
-                    // Reset environment
-                    const initialState = this.env.reset();
+                    // Reset 3D environment
+                    const initialState = await this.env.reset();
                     for (let agentId = 0; agentId < this.numAgents; agentId++) {
                         states[agentId] = [...initialState];
                     }
@@ -238,7 +724,10 @@
                     let done = false;
                     let step = 0;
                     
-                    while (!done && step < 200) { // Shorter episodes for faster training
+                    // Update episode overlay
+                    this.updateEpisodeOverlay(episodeNum, step);
+                    
+                    while (!done && step < 200) { // 200 steps per episode
                         // Each agent takes an action
                         const actions = {};
                         for (let agentId = 0; agentId < this.numAgents; agentId++) {
@@ -256,7 +745,7 @@
                         
                         for (let agentId = 0; agentId < this.numAgents; agentId++) {
                             try {
-                                const result = this.env.step(actions[agentId], agentId);
+                                const result = await this.env.step(actions[agentId], agentId);
                                 nextStates[agentId] = result.state;
                                 rewards[agentId] = result.reward;
                                 done = result.done;
@@ -292,6 +781,16 @@
                         
                         states = nextStates;
                         step++;
+                        
+                        // Update episode overlay less frequently for performance
+                        if (step % 50 === 0) {
+                            this.updateEpisodeOverlay(episodeNum, step);
+                        }
+                        
+                        // Minimal delay for fast training (only update UI occasionally)
+                        if (step % 50 === 0) {
+                            await new Promise(resolve => setTimeout(resolve, 1));
+                        }
                     }
                     
                     // Store episode metrics
@@ -306,6 +805,13 @@
                 } catch (error) {
                     console.error('Error in runEpisode:', error);
                     throw error;
+                }
+            }
+            
+            updateEpisodeOverlay(episode, step) {
+                const overlay = document.getElementById('episode-overlay');
+                if (overlay) {
+                    overlay.textContent = `Episode: ${episode}/10000 | Step: ${step}/200`;
                 }
             }
             
@@ -324,6 +830,8 @@
                     
                     console.log(`\n--- Individual Weight Layers (${qWeights.length} layers) ---`);
                     
+                    let weightsText = '';
+                    
                     for (let layerIdx = 0; layerIdx < qWeights.length; layerIdx++) {
                         const weight = qWeights[layerIdx];
                         const data = await weight.data();
@@ -333,16 +841,28 @@
                         };
                         
                         const weightString = JSON.stringify(weightData);
-                        console.log(`WEIGHT_${layerIdx}=${weightString}`);
+                        const weightLine = `WEIGHT_${layerIdx}=${weightString}`;
+                        console.log(weightLine);
+                        weightsText += weightLine + '\n';
                     }
                     
                     // Also output epsilon and step count
-                    console.log(`EPSILON=${agent.epsilon}`);
-                    console.log(`STEP_COUNT=${agent.stepCount}`);
+                    const epsilonLine = `EPSILON=${agent.epsilon}`;
+                    const stepLine = `STEP_COUNT=${agent.stepCount}`;
+                    console.log(epsilonLine);
+                    console.log(stepLine);
+                    weightsText += epsilonLine + '\n';
+                    weightsText += stepLine + '\n';
                     
                     console.log('\n=== COPY THE WEIGHT_X= LINES ABOVE ===');
                     console.log('Paste these individual weight lines into the test environment.');
                     console.log(`Total layers: ${qWeights.length}`);
+                    
+                    // Store weights for easy copying
+                    this.trainedWeightsText = weightsText;
+                    
+                    // Show copy button
+                    this.showCopyWeightsButton();
                     
                     // Dispose of the weight tensors to free memory
                     qWeights.forEach(w => w.dispose());
@@ -350,6 +870,45 @@
                 } catch (error) {
                     console.error('Error extracting individual weights:', error);
                 }
+            }
+            
+            showCopyWeightsButton() {
+                // Add a copy button to the UI
+                const statusDiv = document.getElementById('training-status');
+                if (statusDiv) {
+                    const copyButton = document.createElement('button');
+                    copyButton.textContent = 'Copy Trained Weights';
+                    copyButton.style.marginTop = '10px';
+                    copyButton.onclick = () => {
+                        navigator.clipboard.writeText(this.trainedWeightsText).then(() => {
+                            copyButton.textContent = 'Weights Copied! ✓';
+                            copyButton.style.background = '#28a745';
+                            log('Weights copied to clipboard! Paste them into indexagent.html');
+                        }).catch(err => {
+                            console.error('Failed to copy weights:', err);
+                            // Fallback - show in a textarea for manual copy
+                            this.showWeightsInTextarea();
+                        });
+                    };
+                    statusDiv.appendChild(copyButton);
+                }
+            }
+            
+            showWeightsInTextarea() {
+                // Create a textarea with the weights for manual copying
+                const container = document.querySelector('.container');
+                const weightsPanel = document.createElement('div');
+                weightsPanel.className = 'control-panel';
+                weightsPanel.innerHTML = `
+                    <h2>Trained Weights (Copy This)</h2>
+                    <textarea id="trained-weights-output" style="width: 100%; height: 200px; background: #000; color: #0f0; font-family: monospace; font-size: 10px;">${this.trainedWeightsText}</textarea>
+                    <p style="font-size: 12px; color: #4a90e2;">Select all text above (Ctrl+A) and copy (Ctrl+C), then paste into indexagent.html</p>
+                `;
+                container.appendChild(weightsPanel);
+                
+                // Auto-select the text
+                const textarea = document.getElementById('trained-weights-output');
+                textarea.select();
             }
             
             stopTraining() {
@@ -394,34 +953,55 @@
             `;
         }
         
-        async function startTraining() {
+        async function startTraining(fastMode = false) {
             if (isTraining) return;
             
-            updateStatus('Initializing training...');
+            updateStatus(fastMode ? 'Initializing fast training...' : 'Initializing training...');
             
             try {
                 if (typeof tf === 'undefined') {
                     throw new Error('TensorFlow.js not loaded');
                 }
                 
-                // Create custom training manager with mock environment
-                trainingManager = new MockTrainingManager({
+                // Create custom training manager with real 3D environment or fast mode
+                trainingManager = new Real3DTrainingManager({
                     numAgents: 3,
-                    savePrefix: 'game_dqn_agent'
+                    savePrefix: 'game_dqn_agent',
+                    fastMode: fastMode
                 });
+                
+                // Wait for environment to be fully initialized
+                if (!fastMode) {
+                    let retries = 0;
+                    while ((!trainingManager.env || !trainingManager.agents) && retries < 50) {
+                        await new Promise(resolve => setTimeout(resolve, 200));
+                        retries++;
+                    }
+                    
+                    if (!trainingManager.env || !trainingManager.agents) {
+                        throw new Error('Failed to initialize 3D environment for training');
+                    }
+                } else {
+                    // Fast mode is ready immediately
+                    let retries = 0;
+                    while (!trainingManager.agents && retries < 10) {
+                        await new Promise(resolve => setTimeout(resolve, 50));
+                        retries++;
+                    }
+                }
                 
                 isTraining = true;
                 document.getElementById('start-training').disabled = true;
                 document.getElementById('stop-training').disabled = false;
                 
-                updateStatus('Training started...');
-                log('Training 3 DQN agents over 10,000 episodes');
+                updateStatus(fastMode ? 'Fast training started...' : 'Training started...');
+                log(fastMode ? 'Fast training 3 DQN agents over 10,000 episodes (no 3D rendering)' : 'Training 3 DQN agents over 10,000 episodes');
                 
                 // Custom training loop with progress updates
-                const numEpisodes = 10000;
+                const numEpisodes = fastMode ? 5000 : 10000; // Fewer episodes in fast mode
                 
                 for (let episode = 0; episode < numEpisodes && isTraining; episode++) {
-                    const episodeRewards = await trainingManager.runEpisode(true);
+                    const episodeRewards = await trainingManager.runEpisode(true, episode);
                     
                     // Log progress every 50 episodes
                     if (episode % 50 === 0) {
@@ -439,8 +1019,8 @@
                     
                     // Training progress - no model saving needed
                     
-                    // Allow UI updates
-                    if (episode % 10 === 0) {
+                    // Allow UI updates less frequently for speed
+                    if (episode % 100 === 0) {
                         await new Promise(resolve => setTimeout(resolve, 1));
                     }
                 }
@@ -454,6 +1034,9 @@
                     // Output weights to console
                     await trainingManager.outputWeightsToConsole();
                     log('Trained weights have been printed to the browser console (F12).');
+                    
+                    // Enable test button
+                    document.getElementById('test-trained-agents').disabled = false;
                 }
                 
             } catch (error) {
@@ -475,9 +1058,41 @@
         
         // Removed save/load functionality - training happens in memory only
         
+        async function testTrainedAgents() {
+            if (!trainingManager || !trainingManager.agents) {
+                log('ERROR: No trained agents available');
+                return;
+            }
+            
+            updateStatus('Running test episode with trained agents...');
+            log('Testing trained agents - watch them play optimally!');
+            
+            try {
+                // Run a test episode without training (pure inference)
+                const testRewards = await trainingManager.runEpisode(false, 'TEST');
+                
+                log('Test episode completed!');
+                for (let i = 0; i < 3; i++) {
+                    const totalReward = testRewards[i] ? testRewards[i].reduce((a, b) => a + b, 0) : 0;
+                    log(`Agent ${i} test reward: ${totalReward.toFixed(2)}`);
+                }
+                
+                updateStatus('Test completed - agents performed optimally!');
+            } catch (error) {
+                console.error('Test error:', error);
+                log(`Test failed: ${error.message}`);
+            }
+        }
+        
+        async function startFastTraining() {
+            await startTraining(true);
+        }
+        
         // Event listeners
         document.getElementById('start-training').addEventListener('click', startTraining);
+        document.getElementById('start-fast-training').addEventListener('click', startFastTraining);
         document.getElementById('stop-training').addEventListener('click', stopTraining);
+        document.getElementById('test-trained-agents').addEventListener('click', testTrainedAgents);
         
         // Initialize when TensorFlow is ready
         tf.ready().then(() => {

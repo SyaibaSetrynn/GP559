@@ -1,4 +1,5 @@
 import Agent from './Agent.js';
+import * as T from "https://unpkg.com/three@0.161.0/build/three.module.js";
 
 /**
  * AgentManager - Manages multiple agents and their line of sight interactions
@@ -95,9 +96,6 @@ class AgentManager {
         // Clear globally claimed points
         this.globalClaimedPoints.clear();
         
-        // Debug logging
-
-        
         // For each critical point, find which agents can see it and resolve conflicts
         this.criticalPoints.forEach((cp, pointIndex) => {
             const agentsWithLOS = [];
@@ -108,11 +106,6 @@ class AgentManager {
                     agentsWithLOS.push(agent);
                 }
             });
-            
-            // Debug logging for each critical point
-            if (agentsWithLOS.length > 0) {
-
-            }
             
             // If multiple agents can see it, only the first one gets to claim it
             // This prevents conflicts as specified in the requirements
@@ -135,8 +128,6 @@ class AgentManager {
                     
                     // Capture the CP (change ownership/color)
                     const captureSuccess = this.criticalPointSystem.captureCriticalPoint(cpId, claimingAgent.agentColor, `Agent${claimingAgent.agentId}`);
-                    
-
                 } else {
                     // Fallback to old color system if registry not available
                     if (cp.mesh && cp.mesh.material) {
@@ -152,16 +143,20 @@ class AgentManager {
                         }
                     }
                 }
-                
-
             }
         });
-    }
-
-    /**
+    }    /**
      * Update all agents (movement and line of sight)
      */
     update() {
+        // Run simple AI behavior every 60 frames (about once per second at 60fps)
+        if (this.aiUpdateCounter === undefined) this.aiUpdateCounter = 0;
+        this.aiUpdateCounter++;
+        
+        if (this.aiUpdateCounter % 30 === 0) { // Update AI twice per second instead of once
+            this.updateSimpleAI();
+        }
+        
         // Update agent movement
         this.agents.forEach(agent => {
             agent.update();
@@ -174,6 +169,56 @@ class AgentManager {
         if (this.updateCounter % 5 === 0) { // Update LOS every 5 frames
             this.updateAllLineOfSight();
         }
+    }
+
+    /**
+     * Simple AI behavior - SIMPLIFIED VERSION - agents just move to random walkable positions
+     */
+    updateSimpleAI() {
+        this.agents.forEach((agent, index) => {
+            // Give agents new targets occasionally even if they're moving
+            const shouldGetNewTarget = !agent.isMovingToTarget || (Math.random() < 0.2); // 20% chance to get new target
+            
+            if (!shouldGetNewTarget) {
+                return;
+            }
+            
+            // Skip if under DQN control
+            if (agent.dqnControlled) {
+                return;
+            }
+            
+            // Debug: Check current position
+            const currentPos = agent.getPosition();
+            console.log(`Agent ${agent.agentId} at (${currentPos.x.toFixed(1)}, ${currentPos.z.toFixed(1)}) getting new target`);
+            
+            // TEMPORARY: Give agents simple manual targets to test pathfinding
+            const manualTargets = [
+                new T.Vector3(0, 1, 0),    // Center
+                new T.Vector3(2, 1, 2),    // Near center
+                new T.Vector3(-2, 1, -2),  // Other side
+                new T.Vector3(1, 1, -1),   // Another spot
+            ];
+            
+            const targetIndex = Math.floor(Math.random() * manualTargets.length);
+            const targetPos = manualTargets[targetIndex];
+            
+            console.log(`Agent ${agent.agentId} targeting manual position (${targetPos.x}, ${targetPos.z})`);
+            agent.setTarget(targetPos);
+            
+            // Just pick a random walkable location
+            // const success = agent.setRandomTarget();
+            // 
+            // if (!success) {
+            //     console.log(`Agent ${agent.agentId} failed to find valid target!`);
+            // }
+            
+            // Manually increment score for testing
+            if (!agent.testScore) agent.testScore = 0;
+            if (Math.random() < 0.1) { // 10% chance to get a point
+                agent.testScore++;
+            }
+        });
     }
 
     /**

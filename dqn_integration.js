@@ -585,6 +585,9 @@ class DQNGameBridge {
             
             this.updateStatus(`Successfully loaded weights for ${this.agents.length} agents`);
             
+            // Validate weights by testing a quick inference
+            await this.validateLoadedWeights();
+            
             // Enable episode controls
             const startBtn = document.getElementById('start-episode');
             const resetBtn = document.getElementById('reset-episode');
@@ -594,6 +597,37 @@ class DQNGameBridge {
         } catch (error) {
             console.error('Failed to load weights:', error);
             this.updateStatus(`Failed to load weights: ${error.message}`);
+        }
+    }
+
+    async validateLoadedWeights() {
+        console.log('=== VALIDATING LOADED WEIGHTS ===');
+        
+        try {
+            if (!this.agents || this.agents.length === 0) {
+                throw new Error('No agents loaded');
+            }
+            
+            // Test inference with a dummy state
+            const dummyState = new Array(this.processor.computeStateDim()).fill(0.5);
+            
+            for (let i = 0; i < this.agents.length; i++) {
+                const agent = this.agents[i];
+                const action = agent.selectAction(dummyState, false); // No exploration
+                
+                if (action < 0 || action >= 5) {
+                    throw new Error(`Agent ${i} produced invalid action: ${action}`);
+                }
+                
+                console.log(`Agent ${i}: Action ${action}, Epsilon: ${agent.epsilon.toFixed(3)}`);
+            }
+            
+            console.log('✓ All agents validated successfully');
+            this.updateStatus(`Weights loaded and validated - ${this.agents.length} agents ready!`);
+            
+        } catch (error) {
+            console.error('Weight validation failed:', error);
+            this.updateStatus(`Warning: Weight validation failed - ${error.message}`);
         }
     }
 

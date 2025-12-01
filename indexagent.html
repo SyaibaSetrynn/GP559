@@ -3,99 +3,40 @@
 	<head>
 		<link rel="stylesheet" href="./style.css" />
 		<title>Agent Test Environment - DQN Training</title>
-		<style>
-			/* DQN Training UI Styles */
-			#dqn-controls {
-				position: absolute;
-				top: 10px;
-				left: 10px;
-				background: rgba(0,0,0,0.8);
-				color: white;
-				padding: 15px;
-				border-radius: 8px;
-				border: 2px solid #4a90e2;
-				font-family: monospace;
-				font-size: 12px;
-				min-width: 200px;
-				z-index: 1000;
-			}
-			
-			#dqn-controls h3 {
-				margin-top: 0;
-				color: #4a90e2;
-				font-size: 14px;
-			}
-			
-			#dqn-controls button {
-				background: #4a90e2;
-				color: white;
-				border: none;
-				padding: 6px 12px;
-				margin: 3px;
-				border-radius: 4px;
-				cursor: pointer;
-				font-size: 11px;
-			}
-			
-			#dqn-controls button:hover {
-				background: #357abd;
-			}
-			
-			#dqn-controls button:disabled {
-				background: #666;
-				cursor: not-allowed;
-			}
-			
-			#training-status {
-				margin-top: 8px;
-				padding: 4px;
-				background: rgba(74, 144, 226, 0.2);
-				border-radius: 3px;
-				font-size: 11px;
-			}
-			
-			#training-metrics {
-				margin-top: 8px;
-				font-size: 10px;
-				line-height: 1.3;
-			}
-		</style>
+
 	</head>
 
 	<body>
 		<div id="div1"></div>
 		
-		<!-- DQN Agent Controls -->
-		<div id="dqn-controls">
-			<h3>DQN Trained Agents</h3>
-			
-			<div style="margin-bottom: 10px;">
-				<label style="font-size: 10px;">Load Trained Weights:</label>
-				<textarea id="weights-input" placeholder="Paste WEIGHT_0=... WEIGHT_1=... etc. lines from training" style="width: 100%; height: 120px; background: #000; color: #0f0; border: 1px solid #4a90e2; font-family: monospace; font-size: 9px; padding: 5px; box-sizing: border-box; resize: vertical;"></textarea>
-			</div>
-			
-			<button id="load-weights">Load Trained Weights</button>
-			<button id="start-episode" disabled>Start Test Episode</button>
-			<button id="reset-episode" disabled>Reset Episode</button>
-			
-			<div id="training-status">Ready to load weights</div>
-			<div id="training-metrics"></div>
-		</div>
+
 		
-		<!-- Line of Sight System UI -->
-		<div id="losUI" style="position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.7); color: white; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 12px; display: block;">
-			<h3 style="margin: 0 0 10px 0;">Agent Test Environment</h3>
-			<button id="resetButton" onclick="window.location.reload()" style="background: #ff4444; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; margin-bottom: 10px;">Reset Scene</button>
+		<!-- Game Info Display - Plain Text -->
+		<div id="losUI">
+			Agent Test Environment
+			<button id="resetButton" onclick="window.location.reload()">Reset Scene</button>
 			<div id="agentScores">Loading scores...</div>
-			<div style="margin-top: 10px; font-size: 10px;">
+			<div id="testTimer">Timer: 0</div>
+			<div>
 				Free-roam camera controls<br>
 				Mouse: Look around<br>
 				Scroll: Zoom in/out
 			</div>
 		</div>
 		
-		<!-- TensorFlow.js -->
-		<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+		<script>
+			// Simple timer to show the page is working
+			let timerCount = 0;
+			setInterval(() => {
+				timerCount++;
+				const timerDiv = document.getElementById('testTimer');
+				if (timerDiv) {
+					timerDiv.textContent = `Timer: ${timerCount} (${new Date().toLocaleTimeString()})`;
+				}
+			}, 1000);
+		</script>
+		
+
 		
 	<script type="importmap">
 		{
@@ -123,69 +64,6 @@
 		console.log('Three.js, loaders, and Critical Point System loaded successfully');
 	</script>
 
-	<!-- DQN Training System -->
-	<script src="dqn_training.js"></script>
-	<script src="dqn_integration.js"></script>
-	
 	<script src="AgentTestMain.js" type="module" defer></script>
-	
-	<script>
-		// DQN Integration
-		let dqnBridge;
-		
-		// Wait for TensorFlow.js and initialize DQN after the game is ready
-		function initializeDQN() {
-			console.log('Checking DQN initialization requirements...');
-			console.log('TensorFlow available:', typeof tf !== 'undefined');
-			console.log('GameManager available:', typeof window.gameManager !== 'undefined');
-			console.log('GameManager value:', window.gameManager);
-			
-			if (typeof tf !== 'undefined' && window.gameManager) {
-				try {
-					console.log('Initializing DQN Bridge...');
-					dqnBridge = new DQNGameBridge(window.gameManager);
-					window.dqnBridge = dqnBridge; // Expose globally for debugging
-					console.log('DQN Training System initialized successfully');
-				} catch (error) {
-					console.error('Failed to initialize DQN system:', error);
-				}
-			} else {
-				console.log('Requirements not met, retrying in 2 seconds...');
-				// Retry after a longer delay
-				setTimeout(initializeDQN, 2000);
-			}
-		}
-		
-		// Initialize DQN when everything is ready
-		function startDQNInitialization() {
-			if (typeof tf !== 'undefined') {
-				tf.ready().then(() => {
-					console.log('TensorFlow.js is ready!');
-					console.log('TensorFlow.js version:', tf.version.tfjs);
-					// Wait a bit more for the game to be fully initialized
-					setTimeout(initializeDQN, 1000);
-				});
-			} else {
-				console.log('TensorFlow.js not yet loaded, waiting...');
-				setTimeout(startDQNInitialization, 1000);
-			}
-		}
-		
-		// Start initialization after page load
-		window.addEventListener('load', () => {
-			console.log('Page loaded, starting DQN initialization...');
-			setTimeout(startDQNInitialization, 2000); // Give extra time for game setup
-		});
-		
-		// Clean up on page unload
-		window.addEventListener('beforeunload', () => {
-			if (dqnBridge) {
-				dqnBridge.dispose();
-			}
-		});
-		
-		// Expose DQN bridge for debugging
-		window.dqnBridge = dqnBridge;
-	</script>
 	</body>
 </html>
