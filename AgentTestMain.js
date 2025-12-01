@@ -43,7 +43,7 @@ let criticalPointsEnabled = true;
 // Initialize Agent Manager
 const agentManager = new AgentManager(scene, collisionWorld, criticalPointSystem);
 
-// Expose globals for DQN integration
+// Expose globals for testing
 window.globalCPSystem = criticalPointSystem;
 window.gameManager = agentManager;
 

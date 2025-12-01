@@ -124,11 +124,6 @@ class Agent {
      * updates position of the agent, needs to be called in animate()
      */
     update() {
-        // Skip all AI and physics when under DQN control
-        if (this.dqnControlled) {
-            return; // DQN system has full control, skip all agent logic
-        }
-        
         // console.log("Agent collider start: " + this.collider.start.x + " " + this.collider.start.y + " " + this.collider.start.z);
         
         // Pure random movement - continuous motion with occasional direction changes
