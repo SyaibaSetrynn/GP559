@@ -187,32 +187,44 @@ export class DQNNetwork {
             const nextStates = batch.map(exp => exp.nextState);
             const dones = batch.map(exp => exp.done);
             
+            // Validate and clean data
+            const cleanStates = states.map(state => 
+                Array.isArray(state) ? state.map(v => Number(v) || 0) : []
+            );
+            const cleanNextStates = nextStates.map(state => 
+                Array.isArray(state) ? state.map(v => Number(v) || 0) : []
+            );
+            
             // Convert to tensors
-            const statesTensor = tf.tensor2d(states);
-            const nextStatesTensor = tf.tensor2d(nextStates);
+            const statesTensor = tf.tensor2d(cleanStates);
+            const nextStatesTensor = tf.tensor2d(cleanNextStates);
             
             // Get current Q-values and next Q-values
             const currentQValues = this.mainNetwork.predict(statesTensor);
-            const nextQValues = await this.predict(nextStates, true); // Use target network
+            const nextQValues = this.targetNetwork.predict(nextStatesTensor);
             
             // Calculate target Q-values using Bellman equation
             const currentQData = await currentQValues.data();
+            const nextQData = await nextQValues.data();
             const targetQValues = Array.from(currentQData);
             
             for (let i = 0; i < batch.length; i++) {
-                const batchIndex = i;
                 const actionIndex = actions[i];
                 const reward = rewards[i];
                 const done = dones[i];
                 
                 let targetValue = reward;
                 if (!done) {
-                    const maxNextQ = Math.max(...nextQValues.slice(i * this.config.actionSize, (i + 1) * this.config.actionSize));
+                    // Get max Q-value from next state
+                    const nextStateStart = i * this.config.actionSize;
+                    const nextStateEnd = nextStateStart + this.config.actionSize;
+                    const nextStateQValues = Array.from(nextQData.slice(nextStateStart, nextStateEnd));
+                    const maxNextQ = Math.max(...nextStateQValues);
                     targetValue += this.trainingConfig.gamma * maxNextQ;
                 }
                 
                 // Update the Q-value for the taken action
-                const qIndex = batchIndex * this.config.actionSize + actionIndex;
+                const qIndex = i * this.config.actionSize + actionIndex;
                 targetQValues[qIndex] = targetValue;
             }
             
@@ -230,6 +242,7 @@ export class DQNNetwork {
             statesTensor.dispose();
             nextStatesTensor.dispose();
             currentQValues.dispose();
+            nextQValues.dispose();
             targetTensor.dispose();
             
             // Update training step and target network if needed

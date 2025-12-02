@@ -21,7 +21,7 @@ export class DQNTrainer {
         // Training configuration
         this.config = {
             // Network configuration
-            stateSize: config.stateSize || 8,
+            stateSize: config.stateSize || 10,
             actionSize: config.actionSize || 4,
             hiddenLayers: config.hiddenLayers || [64, 32],
             learningRate: config.learningRate || 0.001,
@@ -334,7 +334,80 @@ export class DQNTrainer {
             agent.testScore = 0;
         }
         
-        // TODO: Reset critical points to neutral state
+        // Reset ALL agents to starting positions (for fair multi-agent environment)
+        gameManager.agents.forEach((otherAgent, index) => {
+            if (otherAgent === agent) return; // Already reset above
+            
+            const otherStartPos = startingPositions[index % startingPositions.length];
+            
+            if (otherAgent.mesh) {
+                otherAgent.mesh.position.set(otherStartPos.x, otherStartPos.y, otherStartPos.z);
+            }
+            if (otherAgent.camera) {
+                otherAgent.camera.position.set(otherStartPos.x, otherStartPos.y, otherStartPos.z);
+            }
+            if (otherAgent.collider) {
+                otherAgent.collider.start.set(otherStartPos.x, otherStartPos.y - 0.25, otherStartPos.z);
+                otherAgent.collider.end.set(otherStartPos.x, otherStartPos.y + 0.25, otherStartPos.z);
+            }
+            if (otherAgent.claimedCriticalPoints) {
+                otherAgent.claimedCriticalPoints.clear();
+            }
+            if (otherAgent.testScore !== undefined) {
+                otherAgent.testScore = 0;
+            }
+        });
+        
+        // Reset critical points to neutral state
+        const criticalPointSystem = gameEnvironment.criticalPointSystem;
+        if (criticalPointSystem && criticalPointSystem.criticalPoints) {
+            criticalPointSystem.criticalPoints.forEach(cpData => {
+                if (cpData.cp && cpData.cp.material) {
+                    // Reset to original/neutral color
+                    cpData.cp.material.color.setHex(cpData.originalColor || 0xffffff);
+                    cpData.cp.material.opacity = 0.8;
+                    
+                    // Reset any glow children
+                    if (cpData.cp.children && cpData.cp.children.length > 0) {
+                        cpData.cp.children.forEach(child => {
+                            if (child.material) {
+                                child.material.color.setHex(cpData.originalColor || 0xffffff);
+                            }
+                        });
+                    }
+                }
+                
+                // Reset ownership and state
+                cpData.ownedBy = null;
+                cpData.currentOwner = null;
+                if (cpData.fillProgress !== undefined) {
+                    cpData.fillProgress = 0;
+                }
+                if (cpData.currentColor) {
+                    cpData.currentColor = cpData.originalColor || 0xffffff;
+                }
+            });
+            
+            // Reset registry ownership
+            if (criticalPointSystem.cpsByOwner) {
+                criticalPointSystem.cpsByOwner.clear();
+            }
+            
+            // Reset registry states
+            if (criticalPointSystem.cpRegistry) {
+                criticalPointSystem.cpRegistry.forEach((cpData, id) => {
+                    cpData.ownedBy = null;
+                    cpData.isActivelyClaimed = false;
+                    cpData.claimedBy = null;
+                    cpData.lastClaimedTime = 0;
+                    if (cpData.claimHistory) {
+                        cpData.claimHistory = [];
+                    }
+                });
+            }
+        }
+        
+        console.log(`Episode reset: Agent ${agent.agentId} and all CPs returned to start state`);
     }
 
     /**
