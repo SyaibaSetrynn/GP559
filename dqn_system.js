@@ -163,36 +163,56 @@ class RewardCalculator {
             this.lastCapturedCount.set(agent.agentId, agent.getScore());
         }
         
-        // Did agent capture a critical point? BIG REWARD!
+        // 1. MAJOR REWARD: Captured a critical point
         const currentScore = agent.getScore();
         const lastScore = this.lastCapturedCount.get(agent.agentId);
         if (currentScore > lastScore) {
-            reward += 100;
-            console.log(`Agent ${agent.agentId} captured CP! +100 reward`);
+            reward += 50; // Big reward for success
             this.lastCapturedCount.set(agent.agentId, currentScore);
         }
         
-        // Did agent get closer to nearest unclaimed CP?
+        // 2. MOVEMENT REWARD: Progress toward nearest critical point
         const oldDistance = oldState[4]; // Distance was 5th element
         const newDistance = newState[4];
         if (newDistance < oldDistance) {
-            reward += 2; // Small reward for moving toward goal
+            reward += 1; // Reward for getting closer
         } else if (newDistance > oldDistance) {
-            reward -= 1; // Small penalty for moving away
+            reward -= 0.5; // Small penalty for moving away
         }
         
-        // Did agent hit a wall or not move? (position didn't change much)
+        // 3. MOVEMENT QUALITY: Encourage meaningful movement, discourage jostling
         const oldX = oldState[0], oldZ = oldState[1];
         const newX = newState[0], newZ = newState[1];
         const movement = Math.abs(newX - oldX) + Math.abs(newZ - oldZ);
         
-        if (movement < 0.01) { // Very little movement
-            reward -= 5; // Penalty for getting stuck
-        } else {
-            reward += 0.1; // Tiny reward just for moving
+        if (movement < 0.005) { // Very little movement (stuck/jostling)
+            reward -= 2; // Penalty for not moving or jostling
+        } else if (movement > 0.01 && movement < 0.1) { // Good movement
+            reward += 0.2; // Small reward for meaningful movement
         }
         
-        return reward;
+        // 4. EXPLORATION BONUS: Reward for being in different areas
+        const centerDistance = Math.sqrt(newX * newX + newZ * newZ);
+        if (centerDistance > 2) { // Agent is exploring edges
+            reward += 0.1; // Small exploration bonus
+        }
+        
+        // 5. WALL COLLISION PENALTY: Check if agent can move in current direction
+        const canMoveForward = newState[6]; // Wall detection forward
+        const canMoveLeft = newState[7];    // Wall detection left
+        const canMoveBack = newState[8];    // Wall detection back  
+        const canMoveRight = newState[9];   // Wall detection right
+        
+        // Penalty for choosing actions that lead to walls
+        if ((action === 0 && !canMoveForward) ||
+            (action === 1 && !canMoveLeft) ||
+            (action === 2 && !canMoveBack) ||
+            (action === 3 && !canMoveRight)) {
+            reward -= 1; // Penalty for bad action choice
+        }
+        
+        // Clamp reward to reasonable range to prevent training instability
+        return Math.max(-10, Math.min(60, reward));
     }
 }
 
@@ -261,12 +281,23 @@ class DQNDataCollector {
         this.isCollecting = false;
         this.agentLastStates = new Map(); // Store last state for each agent
         this.agentLastActions = new Map(); // Store last action for each agent
+        
+        // Throttling mechanism - collect experiences every 500ms (0.5 seconds)
+        this.collectionInterval = 500; // milliseconds between data collection
+        this.agentLastCollectionTime = new Map(); // Track when each agent last collected data
     }
     
     startCollection() {
         this.isCollecting = true;
         this.experienceBuffer.clear();
-        console.log("Started DQN data collection");
+        
+        // Clear previous agent states and timers
+        this.agentLastStates.clear();
+        this.agentLastActions.clear();
+        this.agentLastCollectionTime.clear();
+        
+        console.log("Started DQN data collection (throttled to 2 experiences per second per agent)");
+        console.log("Expected collection rate: ~6 experiences/second for 3 agents");
     }
     
     stopCollection() {
@@ -276,9 +307,22 @@ class DQNDataCollector {
     
     /**
      * Called from Agent.update() when in training mode
+     * Now throttled to collect data every 0.5 seconds instead of every frame
      */
     collectExperience(agent, agentManager) {
         if (!this.isCollecting) return;
+        
+        const agentId = agent.agentId;
+        const currentTime = Date.now();
+        
+        // Check if enough time has passed since last collection for this agent
+        const lastCollectionTime = this.agentLastCollectionTime.get(agentId) || 0;
+        if (currentTime - lastCollectionTime < this.collectionInterval) {
+            return; // Skip this frame - not enough time has passed
+        }
+        
+        // Update last collection time
+        this.agentLastCollectionTime.set(agentId, currentTime);
         
         // 1. Observe current state
         const currentState = this.stateObserver.getState(agent, agentManager);
@@ -287,7 +331,6 @@ class DQNDataCollector {
         const action = this.actionRecorder.getCurrentAction(agent);
         
         // 3. If we have a previous state, calculate reward and store experience
-        const agentId = agent.agentId;
         if (this.agentLastStates.has(agentId)) {
             const lastState = this.agentLastStates.get(agentId);
             const lastAction = this.agentLastActions.get(agentId);
@@ -297,9 +340,14 @@ class DQNDataCollector {
             
             // Store the experience
             this.experienceBuffer.addExperience(lastState, lastAction, reward, currentState, false);
+            
+            // Debug log occasionally
+            if (this.experienceBuffer.getExperienceCount() % 50 === 0) {
+                console.log(`Collected ${this.experienceBuffer.getExperienceCount()} experiences (Agent ${agentId})`);
+            }
         }
         
-        // 4. Remember current state and action for next frame
+        // 4. Remember current state and action for next collection
         this.agentLastStates.set(agentId, currentState);
         this.agentLastActions.set(agentId, action);
     }
@@ -757,14 +805,19 @@ class SmartAgentController {
         this.network = trainedNetwork;
         this.stateObserver = new StateObserver();
         this.actionExecutor = new ActionExecutor();
-        this.epsilon = 0.1; // 10% exploration rate
+        this.epsilon = 0.05; // 5% exploration rate (lower to reduce jostling)
         this.lastAction = new Map(); // Track last action per agent
         this.decisionCount = new Map(); // Track decisions per agent
+        
+        // Action smoothing to reduce jostling
+        this.actionStickyness = 5; // Frames to stick with same action
+        this.actionFrameCount = new Map(); // Count frames for current action
+        this.currentStickyAction = new Map(); // Current sticky action per agent
     }
     
     /**
-     * Make a smart decision for an agent
-     * @param {Agent} agent - The agent to control
+     * Make a smart decision for an agent with action smoothing to reduce jostling
+     * @param {Agent} agent - The agent to control  
      * @param {AgentManager} agentManager - The agent manager
      */
     makeDecision(agent, agentManager) {
@@ -774,32 +827,57 @@ class SmartAgentController {
         }
         
         // Initialize tracking for this agent
-        if (!this.decisionCount.has(agent.agentId)) {
-            this.decisionCount.set(agent.agentId, 0);
+        const agentId = agent.agentId;
+        if (!this.decisionCount.has(agentId)) {
+            this.decisionCount.set(agentId, 0);
+            this.actionFrameCount.set(agentId, 0);
+            this.currentStickyAction.set(agentId, -1);
         }
         
-        // Get current state
-        const currentState = this.stateObserver.getState(agent, agentManager);
-        
         let action;
+        const currentFrameCount = this.actionFrameCount.get(agentId);
+        const currentStickyAction = this.currentStickyAction.get(agentId);
         
-        // Epsilon-greedy exploration
-        if (Math.random() < this.epsilon) {
-            // Explore: random action
-            action = Math.floor(Math.random() * 4);
-            // console.log(`Agent ${agent.agentId}: Exploring (random action ${action})`);
+        // Check if we should stick with current action to reduce jostling
+        if (currentStickyAction !== -1 && currentFrameCount < this.actionStickyness) {
+            // Continue with current action
+            action = currentStickyAction;
+            this.actionFrameCount.set(agentId, currentFrameCount + 1);
         } else {
-            // Exploit: use trained network
-            action = this.network.getBestAction(currentState);
-            // console.log(`Agent ${agent.agentId}: Using DQN (action ${action})`);
+            // Time to make a new decision
+            const currentState = this.stateObserver.getState(agent, agentManager);
+            
+            // Epsilon-greedy exploration
+            if (Math.random() < this.epsilon) {
+                // Explore: random action
+                action = Math.floor(Math.random() * 4);
+                
+                // Debug: Log exploration decisions occasionally
+                if (Math.random() < 0.01) { // 1% chance to log
+                    console.log(`Agent ${agentId} exploring: action ${action} (${['Forward', 'Left', 'Back', 'Right'][action]})`);
+                }
+            } else {
+                // Exploit: use trained network
+                action = this.network.getBestAction(currentState);
+                
+                // Debug: Log smart decisions occasionally
+                if (Math.random() < 0.01) { // 1% chance to log
+                    const nearestCPDist = currentState[4];
+                    console.log(`Agent ${agentId} smart decision: action ${action} (${['Forward', 'Left', 'Back', 'Right'][action]}) | Nearest CP: ${nearestCPDist.toFixed(2)} units away`);
+                }
+            }
+            
+            // Start new sticky action period
+            this.currentStickyAction.set(agentId, action);
+            this.actionFrameCount.set(agentId, 0);
         }
         
         // Execute the chosen action
         this.actionExecutor.executeAction(agent, action);
         
         // Track decision
-        this.lastAction.set(agent.agentId, action);
-        this.decisionCount.set(agent.agentId, this.decisionCount.get(agent.agentId) + 1);
+        this.lastAction.set(agentId, action);
+        this.decisionCount.set(agentId, this.decisionCount.get(agentId) + 1);
         
         return action;
     }
@@ -1040,11 +1118,560 @@ class FullDQNSystem extends CompleteDQNSystem {
     }
 }
 
+/**
+ * STEP 1: Episode Manager - OpenAI Multi-Agent Episode-Based Training
+ * 
+ * This class manages the episode-based training cycle:
+ * 1. Reset environment to initial state
+ * 2. Run episode for fixed duration
+ * 3. Collect experiences during episode
+ * 4. Prepare for learning phase
+ * 
+ * Inspired by OpenAI's multi-agent emergence environments paper
+ */
+class EpisodeManager {
+    constructor() {
+        this.currentEpisode = 0;
+        this.totalEpisodes = 0;
+        this.episodeLength = 15000; // 15 seconds per episode (good for fast iteration)
+        this.isRunning = false;
+        
+        // Episode state tracking
+        this.episodeStartTime = 0;
+        this.episodeEndTime = 0;
+        this.episodeExperiences = [];
+        
+        // Environment references (set during initialization)
+        this.gameManager = null;
+        this.dataCollector = null;
+        
+        // Episode statistics
+        this.episodeStats = [];
+        this.globalStats = {
+            totalEpisodes: 0,
+            totalExperiences: 0,
+            averageReward: 0,
+            averageCPsCaptured: 0
+        };
+        
+        console.log('🎬 Episode Manager initialized for OpenAI-style training');
+    }
+    
+    /**
+     * Initialize the episode manager with game components
+     */
+    initialize(gameManager, dataCollector) {
+        this.gameManager = gameManager;
+        this.dataCollector = dataCollector;
+        
+        console.log('🏗️  Episode Manager connected to game systems');
+        console.log('   - Game Manager:', !!this.gameManager);
+        console.log('   - Data Collector:', !!this.dataCollector);
+        
+        return true;
+    }
+    
+    /**
+     * Reset environment to initial state (Step 1a: Environment Reset)
+     */
+    async resetEnvironment() {
+        console.log('🔄 Resetting environment for new episode...');
+        
+        if (!this.gameManager) {
+            throw new Error('Game manager not initialized');
+        }
+        
+        // Reset critical points to neutral state
+        if (this.gameManager.criticalPointSystem) {
+            // Reset all critical points to unclaimed
+            if (this.gameManager.criticalPointSystem.criticalPoints) {
+                this.gameManager.criticalPointSystem.criticalPoints.forEach(cpData => {
+                    if (cpData.cp && cpData.cp.material) {
+                        cpData.cp.material.color.setHex(cpData.originalColor || 0xff0000);
+                        cpData.cp.material.opacity = 0.8;
+                    }
+                    cpData.ownedBy = null;
+                    cpData.currentOwner = null;
+                });
+            }
+        }
+        
+        // Reset agent positions and states
+        if (this.gameManager.agents) {
+            this.gameManager.agents.forEach((agent, index) => {
+                // Reset to initial positions (spread around circle)
+                const angle = (index / this.gameManager.agents.length) * 2 * Math.PI;
+                const radius = 15;
+                const x = Math.cos(angle) * radius;
+                const z = Math.sin(angle) * radius;
+                const y = 0.5;
+                
+                if (agent.mesh) {
+                    agent.mesh.position.set(x, y, z);
+                }
+                
+                // Reset agent scores and claimed points
+                if (agent.claimedCriticalPoints) {
+                    agent.claimedCriticalPoints.clear();
+                }
+                if (agent.testScore !== undefined) {
+                    agent.testScore = 0;
+                }
+            });
+        }
+        
+        console.log('✅ Environment reset complete');
+        
+        // Brief pause for environment to settle
+        await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    
+    /**
+     * Run a single episode (Step 1b: Episode Execution)
+     */
+    async runSingleEpisode(episodeNumber, episodeLength = null) {
+        const length = episodeLength || this.episodeLength;
+        
+        console.log(`\n🎬 Starting Episode ${episodeNumber}`);
+        console.log(`   Duration: ${length/1000} seconds`);
+        console.log(`   Agents: ${this.gameManager.agents.length}`);
+        
+        // Reset environment first
+        await this.resetEnvironment();
+        
+        // Clear experience buffer for this episode
+        if (this.dataCollector && this.dataCollector.experienceBuffer) {
+            this.dataCollector.experienceBuffer.clear();
+        }
+        
+        // Set agents to training mode and start data collection
+        this.gameManager.setAllAgentsMode('training', this.dataCollector);
+        this.dataCollector.startCollection();
+        
+        // Track episode timing
+        this.episodeStartTime = Date.now();
+        this.isRunning = true;
+        
+        console.log(`⏱️  Episode ${episodeNumber} running...`);
+        
+        // Run episode for specified duration
+        return new Promise((resolve) => {
+            const episodeTimer = setTimeout(async () => {
+                // Episode completed
+                this.episodeEndTime = Date.now();
+                this.isRunning = false;
+                
+                // Stop data collection
+                this.dataCollector.stopCollection();
+                
+                // Collect episode results
+                const episodeData = await this.collectEpisodeResults(episodeNumber, length);
+                
+                console.log(`✅ Episode ${episodeNumber} completed:`);
+                console.log(`   Duration: ${episodeData.actualDuration/1000}s`);
+                console.log(`   Experiences: ${episodeData.experienceCount}`);
+                console.log(`   CPs Captured: ${episodeData.cpsCaptured}`);
+                console.log(`   Total Reward: ${episodeData.totalReward.toFixed(2)}`);
+                
+                resolve(episodeData);
+            }, length);
+        });
+    }
+    
+    /**
+     * Collect and analyze episode results (Step 1c: Episode Analysis)
+     */
+    async collectEpisodeResults(episodeNumber, plannedDuration) {
+        const actualDuration = this.episodeEndTime - this.episodeStartTime;
+        const experiences = this.dataCollector.experienceBuffer.getAllExperiences();
+        
+        // Calculate episode statistics
+        let totalReward = 0;
+        experiences.forEach(exp => {
+            totalReward += exp.reward;
+        });
+        
+        // Count captured critical points
+        let cpsCaptured = 0;
+        if (this.gameManager.criticalPointSystem && this.gameManager.criticalPointSystem.criticalPoints) {
+            this.gameManager.criticalPointSystem.criticalPoints.forEach(cpData => {
+                if (cpData.ownedBy !== null) {
+                    cpsCaptured++;
+                }
+            });
+        }
+        
+        // Create episode data object
+        const episodeData = {
+            episode: episodeNumber,
+            plannedDuration: plannedDuration,
+            actualDuration: actualDuration,
+            experienceCount: experiences.length,
+            experiences: experiences,
+            totalReward: totalReward,
+            averageReward: experiences.length > 0 ? totalReward / experiences.length : 0,
+            cpsCaptured: cpsCaptured,
+            agentCount: this.gameManager.agents.length,
+            timestamp: new Date().toISOString()
+        };
+        
+        // Store episode stats
+        this.episodeStats.push(episodeData);
+        this.currentEpisode = episodeNumber;
+        
+        // Update global statistics
+        this.globalStats.totalEpisodes = episodeNumber;
+        this.globalStats.totalExperiences += experiences.length;
+        this.globalStats.averageReward = this.calculateGlobalAverageReward();
+        this.globalStats.averageCPsCaptured = this.calculateAverageCPsCaptured();
+        
+        return episodeData;
+    }
+    
+    /**
+     * Calculate global average reward across all episodes
+     */
+    calculateGlobalAverageReward() {
+        if (this.episodeStats.length === 0) return 0;
+        
+        const totalReward = this.episodeStats.reduce((sum, ep) => sum + ep.totalReward, 0);
+        const totalExperiences = this.episodeStats.reduce((sum, ep) => sum + ep.experienceCount, 0);
+        
+        return totalExperiences > 0 ? totalReward / totalExperiences : 0;
+    }
+    
+    /**
+     * Calculate average critical points captured per episode
+     */
+    calculateAverageCPsCaptured() {
+        if (this.episodeStats.length === 0) return 0;
+        
+        const totalCPs = this.episodeStats.reduce((sum, ep) => sum + ep.cpsCaptured, 0);
+        return totalCPs / this.episodeStats.length;
+    }
+    
+    /**
+     * Get episode manager status and statistics
+     */
+    getStatus() {
+        return {
+            currentEpisode: this.currentEpisode,
+            totalEpisodes: this.totalEpisodes,
+            isRunning: this.isRunning,
+            episodeLength: this.episodeLength,
+            globalStats: { ...this.globalStats },
+            recentEpisodes: this.episodeStats.slice(-3), // Last 3 episodes
+            initialized: !!(this.gameManager && this.dataCollector)
+        };
+    }
+    
+    /**
+     * Stop current episode early
+     */
+    stopEpisode() {
+        if (this.isRunning) {
+            this.isRunning = false;
+            this.dataCollector.stopCollection();
+            console.log('🛑 Episode stopped early by user');
+        }
+    }
+}
+
+/**
+ * STEP 2: Episode-Based Learning Loop - OpenAI Multi-Agent Style
+ * 
+ * This replaces the old experience replay training with episode-based learning:
+ * 1. Run episodes using Episode Manager
+ * 2. Learn immediately from each episode's experiences
+ * 3. Update network weights after each episode
+ * 4. Track learning progress across episodes
+ * 
+ * This is the core of OpenAI's approach - learn from actual gameplay, not replay buffers
+ */
+class EpisodeBasedTrainer {
+    constructor() {
+        this.network = null;
+        this.targetNetwork = null; // For stable DQN learning
+        this.episodeManager = null;
+        this.dataCollector = null;
+        
+        // Training parameters
+        this.learningRate = 0.0001;
+        this.batchSize = 32;
+        this.targetUpdateFreq = 5; // Update target network every N episodes
+        this.maxEpisodesPerSession = 50;
+        
+        // Training state
+        this.isTraining = false;
+        this.currentSession = 0;
+        this.totalEpisodesRun = 0;
+        
+        // Learning statistics
+        this.learningStats = {
+            episodeLosses: [],
+            episodeRewards: [],
+            episodeCPsCaptured: [],
+            averageLoss: 0,
+            averageReward: 0,
+            bestEpisodeReward: -Infinity,
+            totalTrainingTime: 0
+        };
+        
+        console.log('🎓 Episode-Based Trainer initialized (OpenAI Style)');
+    }
+    
+    /**
+     * Initialize the trainer with necessary components
+     */
+    async initialize(gameManager, dataCollector) {
+        console.log('🏗️  Initializing Episode-Based Trainer...');
+        
+        // Create fresh neural network
+        this.network = new SimpleDQNNetwork();
+        this.network.createModel();
+        
+        // Create target network for stable DQN learning
+        this.targetNetwork = new SimpleDQNNetwork();
+        this.targetNetwork.createModel();
+        this.updateTargetNetwork(); // Copy initial weights
+        
+        // Initialize episode manager
+        this.episodeManager = new EpisodeManager();
+        this.episodeManager.initialize(gameManager, dataCollector);
+        
+        this.dataCollector = dataCollector;
+        
+        console.log('✅ Episode-Based Trainer ready:');
+        console.log('   - Neural Network: ✅');
+        console.log('   - Target Network: ✅');
+        console.log('   - Episode Manager: ✅');
+        console.log('   - Data Collector: ✅');
+        
+        return true;
+    }
+    
+    /**
+     * Update target network weights (DQN stability technique)
+     */
+    updateTargetNetwork() {
+        if (this.network && this.targetNetwork && this.network.model && this.targetNetwork.model) {
+            const weights = this.network.model.getWeights();
+            this.targetNetwork.model.setWeights(weights);
+            console.log('🎯 Target network updated for stable learning');
+        }
+    }
+    
+    /**
+     * Main training loop - runs multiple episodes with learning
+     */
+    async runEpisodeBasedTraining(config) {
+        const {
+            episodes = 20,           // Fewer episodes for faster iteration
+            episodeLength = 10000,   // 10 seconds per episode (faster)
+            onEpisodeComplete,
+            onTrainingComplete
+        } = config;
+        
+        console.log('🎮 === STARTING EPISODE-BASED TRAINING (STEP 2) ===');
+        console.log('🧠 Learning after each episode - no experience replay!');
+        console.log(`📊 Plan: ${episodes} episodes × ${episodeLength/1000}s = ${(episodes*episodeLength/1000/60).toFixed(1)} minutes`);
+        
+        this.isTraining = true;
+        this.totalEpisodesRun = 0;
+        const trainingStartTime = Date.now();
+        
+        try {
+            for (let episode = 1; episode <= episodes; episode++) {
+                if (!this.isTraining) {
+                    console.log('🛑 Training stopped early');
+                    break;
+                }
+                
+                console.log(`\n🎬 Episode ${episode}/${episodes} - Learn & Play Cycle`);
+                
+                // Step 2a: Run single episode
+                const episodeData = await this.episodeManager.runSingleEpisode(episode, episodeLength);
+                
+                // Step 2b: Learn immediately from this episode
+                const learningResult = await this.learnFromEpisode(episodeData, episode);
+                
+                // Step 2c: Update target network periodically
+                if (episode % this.targetUpdateFreq === 0) {
+                    this.updateTargetNetwork();
+                }
+                
+                // Step 2d: Track learning progress
+                this.updateLearningStats(episodeData, learningResult);
+                
+                // Step 2e: Report progress
+                if (onEpisodeComplete) {
+                    await onEpisodeComplete(episode, episodes, {
+                        ...episodeData,
+                        ...learningResult,
+                        averageLoss: this.learningStats.averageLoss
+                    });
+                }
+                
+                this.totalEpisodesRun = episode;
+                
+                // Brief pause between episodes
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            
+            const trainingTime = Date.now() - trainingStartTime;
+            this.learningStats.totalTrainingTime = trainingTime;
+            
+            console.log('🏁 === EPISODE-BASED TRAINING COMPLETED ===');
+            console.log(`⏱️  Total time: ${(trainingTime/1000/60).toFixed(1)} minutes`);
+            console.log(`📊 Episodes completed: ${this.totalEpisodesRun}`);
+            console.log(`🏆 Best episode reward: ${this.learningStats.bestEpisodeReward.toFixed(2)}`);
+            console.log(`📈 Final average loss: ${this.learningStats.averageLoss.toFixed(4)}`);
+            console.log('🎯 Network learned from real gameplay episodes!');
+            
+            if (onTrainingComplete) {
+                await onTrainingComplete(this.learningStats);
+            }
+            
+            return true;
+            
+        } catch (error) {
+            console.error('❌ Episode-based training failed:', error);
+            return false;
+        } finally {
+            this.isTraining = false;
+        }
+    }
+    
+    /**
+     * Learn from a single episode's experiences (Step 2b)
+     */
+    async learnFromEpisode(episodeData, episodeNumber) {
+        const experiences = episodeData.experiences;
+        
+        if (experiences.length < 10) {
+            console.log(`⚠️  Episode ${episodeNumber}: Only ${experiences.length} experiences, skipping learning`);
+            return { loss: 0, learned: false };
+        }
+        
+        console.log(`🧠 Learning from Episode ${episodeNumber}: ${experiences.length} experiences`);
+        
+        try {
+            // Prepare training data from episode experiences
+            const states = experiences.map(exp => exp.state);
+            const actions = experiences.map(exp => exp.action);
+            const rewards = experiences.map(exp => exp.reward);
+            const nextStates = experiences.map(exp => exp.nextState);
+            const dones = experiences.map(() => false); // Episodes don't end with terminal states
+            
+            // Convert to tensors
+            const stateTensor = tf.tensor2d(states);
+            const nextStateTensor = tf.tensor2d(nextStates);
+            const actionTensor = tf.tensor1d(actions, 'int32');
+            const rewardTensor = tf.tensor1d(rewards);
+            
+            // Calculate Q-targets using target network (DQN approach)
+            const currentQValues = this.network.model.predict(stateTensor);
+            const nextQValues = this.targetNetwork.model.predict(nextStateTensor);
+            
+            // Create targets
+            const targets = currentQValues.clone();
+            
+            // Update Q-values for taken actions
+            const gamma = 0.95; // Discount factor
+            for (let i = 0; i < experiences.length; i++) {
+                const maxNextQ = await nextQValues.slice([i, 0], [1, -1]).max(1).data();
+                const target = rewards[i] + gamma * maxNextQ[0];
+                
+                // Update the Q-value for the action taken
+                const targetArray = await targets.slice([i, 0], [1, -1]).data();
+                targetArray[actions[i]] = target;
+                
+                // Set the updated values back
+                targets.slice([i, 0], [1, -1]).assign(tf.tensor1d(targetArray));
+            }
+            
+            // Train the network
+            const history = await this.network.model.fit(stateTensor, targets, {
+                epochs: 1,
+                batchSize: Math.min(this.batchSize, experiences.length),
+                verbose: 0
+            });
+            
+            const loss = history.history.loss[0];
+            
+            // Clean up tensors
+            stateTensor.dispose();
+            nextStateTensor.dispose();
+            actionTensor.dispose();
+            rewardTensor.dispose();
+            currentQValues.dispose();
+            nextQValues.dispose();
+            targets.dispose();
+            
+            console.log(`✅ Episode ${episodeNumber} learning complete: Loss = ${loss.toFixed(4)}`);
+            
+            return { loss, learned: true };
+            
+        } catch (error) {
+            console.error(`❌ Episode ${episodeNumber} learning failed:`, error);
+            return { loss: 999, learned: false };
+        }
+    }
+    
+    /**
+     * Update learning statistics (Step 2d)
+     */
+    updateLearningStats(episodeData, learningResult) {
+        // Track losses
+        if (learningResult.learned) {
+            this.learningStats.episodeLosses.push(learningResult.loss);
+            this.learningStats.averageLoss = this.learningStats.episodeLosses.reduce((a, b) => a + b, 0) / this.learningStats.episodeLosses.length;
+        }
+        
+        // Track rewards
+        this.learningStats.episodeRewards.push(episodeData.totalReward);
+        this.learningStats.averageReward = this.learningStats.episodeRewards.reduce((a, b) => a + b, 0) / this.learningStats.episodeRewards.length;
+        
+        // Track best episode
+        if (episodeData.totalReward > this.learningStats.bestEpisodeReward) {
+            this.learningStats.bestEpisodeReward = episodeData.totalReward;
+        }
+        
+        // Track critical points captured
+        this.learningStats.episodeCPsCaptured.push(episodeData.cpsCaptured);
+    }
+    
+    /**
+     * Stop training early
+     */
+    stopTraining() {
+        this.isTraining = false;
+        if (this.episodeManager) {
+            this.episodeManager.stopEpisode();
+        }
+        console.log('🛑 Episode-based training stopped');
+    }
+    
+    /**
+     * Get current training statistics
+     */
+    getStats() {
+        return {
+            isTraining: this.isTraining,
+            totalEpisodesRun: this.totalEpisodesRun,
+            network: !!this.network,
+            learningStats: { ...this.learningStats },
+            episodeManager: this.episodeManager ? this.episodeManager.getStatus() : null
+        };
+    }
+}
+
 // Export classes for use in other files
 export { 
     DQNDataCollector, StateObserver, ActionRecorder, RewardCalculator, ExperienceBuffer,
     SimpleDQNNetwork, SimpleDQNTrainer, CompleteDQNSystem,
-    ActionExecutor, SmartAgentController, DQNAgentBehavior, FullDQNSystem
+    ActionExecutor, SmartAgentController, DQNAgentBehavior, FullDQNSystem,
+    EpisodeManager, EpisodeBasedTrainer
 };
 
 // Create global instances
@@ -1052,7 +1679,18 @@ window.DQNDataCollector = DQNDataCollector;
 window.SimpleDQNNetwork = SimpleDQNNetwork;
 window.SimpleDQNTrainer = SimpleDQNTrainer;
 window.CompleteDQNSystem = CompleteDQNSystem;
+window.EpisodeManager = EpisodeManager;
 window.ActionExecutor = ActionExecutor;
 window.SmartAgentController = SmartAgentController;
 window.DQNAgentBehavior = DQNAgentBehavior;
 window.FullDQNSystem = FullDQNSystem;
+window.EpisodeBasedTrainer = EpisodeBasedTrainer;
+
+/**
+ * SimpleDQNTrainer - DEPRECATED: Use EpisodeBasedTrainer instead
+ * 
+ * This class used experience replay training which has been replaced
+ * by episode-based training for better multi-agent learning.
+ * 
+ * @deprecated Use EpisodeBasedTrainer for OpenAI-style episode learning
+ */

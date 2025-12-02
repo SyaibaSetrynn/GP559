@@ -33,17 +33,14 @@
 				<button id="random-mode">Random Mode</button>
 			</div>
 			
-			<div style="margin: 3px 0;">
-				<button id="start-collection">Start Collection</button>
-				<button id="stop-collection">Stop</button>
-				<button id="export-data">Export Data</button>
-			</div>
-			<div style="margin: 2px 0; font-size: 11px;">
-				Exp: <span id="experience-count">0</span> | Rate: <span id="collection-rate">0/sec</span>
+			<div style="margin: 2px 0; font-size: 11px; color: #666;">
+				<em>Episode-based training handles data collection automatically</em>
 			</div>
 			
 			<div style="margin: 3px 0;">
-				<button id="train-network">Train Network</button>
+				<button id="test-episode">Test Episode (Step 1)</button>
+				<button id="test-training">Test Training (Step 2)</button>
+				<button id="train-network">Full Training</button>
 				<button id="export-weights">Export Weights</button>
 			</div>
 			<div style="margin: 2px 0; font-size: 11px;">
@@ -55,7 +52,7 @@
 				<button id="load-weights">Load Weights</button>
 			</div>
 			<div style="margin: 2px 0; font-size: 11px;">
-				Explore: <input type="range" id="epsilon-slider" min="0" max="100" value="10" style="width: 60px;"> <span id="epsilon-value">10%</span>
+				Explore: <input type="range" id="epsilon-slider" min="0" max="100" value="5" style="width: 60px;"> <span id="epsilon-value">5%</span>
 			</div>
 			<div style="margin: 2px 0; font-size: 11px;">
 				Smart Decisions: <span id="smart-decisions">0</span>
@@ -146,69 +143,8 @@
 				const expCountSpan = document.getElementById('experience-count');
 				const rateSpan = document.getElementById('collection-rate');
 				
-				// Collection rate tracking
-				let lastExpCount = 0;
-				let lastUpdateTime = Date.now();
-				
-				// Start Collection
-				document.getElementById('start-collection').onclick = () => {
-					console.log('Starting data collection');
-					window.gameManager.setAllAgentsMode('training', dqnDataCollector);
-					dqnDataCollector.startCollection();
-					if (modeSpan) modeSpan.textContent = 'Data Collection';
-					if (statusSpan) statusSpan.textContent = 'Collecting...';
-					
-					// Reset rate tracking
-					lastExpCount = 0;
-					lastUpdateTime = Date.now();
-				};
-				
-				// Stop Collection
-				document.getElementById('stop-collection').onclick = () => {
-					console.log('Stopping data collection');
-					dqnDataCollector.stopCollection();
-					window.gameManager.setAllAgentsMode('random');
-					if (modeSpan) modeSpan.textContent = 'Random';
-					if (statusSpan) statusSpan.textContent = 'Stopped';
-				};
-				
-				// Export Data - Show useful summary
-				document.getElementById('export-data').onclick = () => {
-					const stats = dqnDataCollector.getStats();
-					const experiences = dqnDataCollector.experienceBuffer.getAllExperiences();
-					
-					console.log('=== TRAINING DATA SUMMARY ===');
-					console.log(`Total experiences collected: ${experiences.length}`);
-					console.log(`Data collection status: ${stats.collecting ? 'Active' : 'Stopped'}`);
-					
-					if (experiences.length > 0) {
-						// Show sample experience
-						const sample = experiences[0];
-						console.log('Sample experience format:');
-						console.log('- State:', sample.state.length, 'values (agent pos, nearest CP, walls, etc.)');
-						console.log('- Action:', sample.action, '(0=Forward, 1=Left, 2=Back, 3=Right)');
-						console.log('- Reward:', sample.reward);
-						console.log('- Next State:', sample.nextState.length, 'values');
-						
-						// Calculate reward statistics
-						let totalReward = 0;
-						let positiveRewards = 0;
-						for (const exp of experiences) {
-							totalReward += exp.reward;
-							if (exp.reward > 0) positiveRewards++;
-						}
-						console.log(`Average reward: ${(totalReward / experiences.length).toFixed(2)}`);
-						console.log(`Positive rewards: ${positiveRewards}/${experiences.length} (${((positiveRewards/experiences.length)*100).toFixed(1)}%)`);
-						
-						if (experiences.length >= 50) {
-							console.log('✅ Ready for training! Click "Train Network" to proceed.');
-						} else {
-							console.log(`⚠️  Need ${50 - experiences.length} more experiences for training.`);
-						}
-					} else {
-						console.log('No training data collected yet. Start data collection first.');
-					}
-				};
+				// Episode-based training handles data collection automatically
+				console.log('🎓 Episode-based training system ready');
 				
 				// Reset Scene
 				document.getElementById('reset-scene').onclick = () => {
@@ -223,88 +159,196 @@
 					if (statusSpan) statusSpan.textContent = 'Random mode';
 				};
 				
-				// Train Network
-				document.getElementById('train-network').onclick = async () => {
-					const experiences = dqnDataCollector.experienceBuffer.getAllExperiences();
+				// Test Training - Step 2: Episode-Based Learning Loop
+				document.getElementById('test-training').onclick = async () => {
+					console.log('🧪 === TESTING STEP 2: EPISODE-BASED LEARNING ===');
+					console.log('Testing short training session with immediate learning');
 					
-					if (experiences.length < 50) {
-						alert(`Only ${experiences.length} experiences collected. Need at least 50 for training.`);
-						console.log(`⚠️  Insufficient data: ${experiences.length}/50 experiences`);
-						return;
-					}
-					
-					// Check if TensorFlow.js is ready
+					// Check TensorFlow.js
 					if (typeof tf === 'undefined') {
 						alert('TensorFlow.js is still loading. Please wait a moment and try again.');
-						console.log('⚠️  TensorFlow.js not loaded yet');
 						return;
 					}
 					
-					console.log('=== STARTING NEURAL NETWORK TRAINING ===');
-					console.log(`Training on ${experiences.length} experiences...`);
-					
-					// Limit training data to prevent freezing
-					const maxTrainingData = 1000; // Use max 1000 experiences
-					const trainingData = experiences.length > maxTrainingData 
-						? experiences.slice(-maxTrainingData) // Use most recent 1000
-						: experiences;
-					
-					console.log(`Using ${trainingData.length} experiences for training (limited to prevent freezing)`);
-					
-					// Update UI
-					if (modeSpan) modeSpan.textContent = 'Training';
-					if (statusSpan) statusSpan.textContent = 'Preparing training...';
-					
-					// Add small delay to show UI update
-					await new Promise(resolve => setTimeout(resolve, 100));
-					
 					try {
-						// Import training classes
-						const { SimpleDQNTrainer } = await import('./dqn_system.js');
-						const trainer = new SimpleDQNTrainer();
+						// Import new trainer
+						const { EpisodeBasedTrainer } = await import('./dqn_system.js');
+						const trainer = new EpisodeBasedTrainer();
 						
 						// Initialize trainer
-						if (!trainer.network.model) {
-							trainer.initialize();
+						console.log('🏗️  Initializing Episode-Based Trainer...');
+						const initialized = await trainer.initialize(window.gameManager, dqnDataCollector);
+						
+						if (!initialized) {
+							throw new Error('Failed to initialize episode-based trainer');
 						}
 						
-						if (statusSpan) statusSpan.textContent = 'Training network...';
+						// Update UI
+						if (modeSpan) modeSpan.textContent = 'Testing Learning';
+						if (statusSpan) statusSpan.textContent = 'Running test training...';
+						document.getElementById('progress-text').textContent = 'Step 2: Testing episode-based learning';
 						
-						// Train with very conservative settings to prevent freezing
-						const success = await trainer.trainOnExperiences(trainingData, {
-							epochs: 5, // Very few epochs
-							batchSize: 16, // Small batch
-							onProgress: async (epoch, totalEpochs, logs) => {
-								const lossSpan = document.getElementById('training-loss');
-								const networkSpan = document.getElementById('network-status');
-								if (lossSpan) lossSpan.textContent = logs.loss.toFixed(4);
-								if (networkSpan) networkSpan.textContent = `Training ${epoch}/${totalEpochs}`;
-								console.log(`Training epoch ${epoch}/${totalEpochs}, Loss: ${logs.loss.toFixed(4)}`);
+						// Run short training session (3 episodes, 5 seconds each)
+						console.log('🎬 Running test training: 3 episodes × 5 seconds');
+						const success = await trainer.runEpisodeBasedTraining({
+							episodes: 3,
+							episodeLength: 5000, // 5 second episodes
+							onEpisodeComplete: async (episode, totalEpisodes, stats) => {
+								console.log(`📊 Episode ${episode}/${totalEpisodes} Results:`);
+								console.log(`   Experiences: ${stats.experienceCount}, Reward: ${stats.totalReward.toFixed(2)}`);
+								console.log(`   CPs Captured: ${stats.cpsCaptured}, Loss: ${stats.loss ? stats.loss.toFixed(4) : 'N/A'}`);
 								
-								// Yield control to prevent UI freezing
-								await new Promise(resolve => setTimeout(resolve, 50));
+								// Update UI
+								document.getElementById('progress-text').textContent = `Episode ${episode}/3 complete`;
+								if (stats.loss) {
+									document.getElementById('training-loss').textContent = stats.loss.toFixed(4);
+								}
+							},
+							onTrainingComplete: async (learningStats) => {
+								console.log('📈 === STEP 2 TEST COMPLETE ===');
+								console.log('Learning Statistics:');
+								console.log(`   Episodes completed: ${learningStats.episodeRewards.length}`);
+								console.log(`   Average reward: ${learningStats.averageReward.toFixed(3)}`);
+								console.log(`   Average loss: ${learningStats.averageLoss.toFixed(4)}`);
+								console.log(`   Best episode: ${learningStats.bestEpisodeReward.toFixed(2)}`);
+								console.log(`   Training time: ${(learningStats.totalTrainingTime/1000).toFixed(1)}s`);
 							}
 						});
 						
 						if (success) {
-							console.log('✅ Training completed successfully!');
-							console.log('Network is now ready for smart agent mode.');
-							if (modeSpan) modeSpan.textContent = 'Training Complete';
-							if (statusSpan) statusSpan.textContent = 'Network trained';
-							document.getElementById('network-status').textContent = 'Trained & Ready';
-									// Store trained network for DQN mode
-						window.trainedNetwork = trainer.network;
-					} else {
-						throw new Error('Training failed');
+							console.log('✅ Step 2 testing complete! Episode-based learning is working.');
+							console.log('🎓 The network learned from each episode immediately');
+							console.log('🚀 Ready for full training sessions!');
+							
+							// Update UI
+							if (modeSpan) modeSpan.textContent = 'Learning Test Complete';
+							if (statusSpan) statusSpan.textContent = 'Network learned from episodes';
+							document.getElementById('progress-text').textContent = 'Step 2 ✅: Episode learning working!';
+							document.getElementById('network-status').textContent = 'Test Trained';
+							
+							// Store test network
+							window.testTrainer = trainer;
+							window.trainedNetwork = trainer.network;
+							
+						} else {
+							throw new Error('Episode-based learning test failed');
+						}
+						
+					} catch (error) {
+						console.error('❌ Step 2 testing failed:', error);
+						if (modeSpan) modeSpan.textContent = 'Learning Test Failed';
+						if (statusSpan) statusSpan.textContent = 'Error: ' + error.message;
+						alert('Step 2 test failed: ' + error.message);
+					}
+				};
+				
+				// Full Training - Complete Episode-Based Training Session
+				document.getElementById('train-network').onclick = async () => {
+					console.log('🎓 === FULL EPISODE-BASED TRAINING SESSION ===');
+					console.log('🎯 OpenAI Multi-Agent Style - Learn from actual gameplay');
+					
+					// Check TensorFlow.js
+					if (typeof tf === 'undefined') {
+						alert('TensorFlow.js is still loading. Please wait a moment and try again.');
+						return;
 					}
 					
-				} catch (error) {
-					console.error('❌ Training failed:', error);
-					if (modeSpan) modeSpan.textContent = 'Training Failed';
-					if (statusSpan) statusSpan.textContent = 'Error: ' + error.message;
-					alert('Training failed: ' + error.message);
-				}
-			};
+					// Training parameters (optimized for good learning)
+					const episodeLength = 15000;  // 15 seconds per episode
+					const totalEpisodes = 25;     // 25 episodes = ~6.5 minutes
+					const estimatedTime = (episodeLength * totalEpisodes) / 1000 / 60;
+					
+					console.log(`📊 Training Plan: ${totalEpisodes} episodes × ${episodeLength/1000}s = ~${estimatedTime.toFixed(1)} minutes`);
+					console.log('🔄 Each episode: Reset → Play → Learn → Repeat');
+					
+					// Confirm with user
+					const confirmed = confirm(`Start full training session (~${estimatedTime.toFixed(1)} minutes)?`);
+					if (!confirmed) {
+						console.log('Training cancelled by user');
+						return;
+					}
+					
+					try {
+						// Import and initialize trainer
+						const { EpisodeBasedTrainer } = await import('./dqn_system.js');
+						const trainer = new EpisodeBasedTrainer();
+						
+						console.log('🏗️  Initializing full training session...');
+						await trainer.initialize(window.gameManager, dqnDataCollector);
+						
+						// Update UI
+						if (modeSpan) modeSpan.textContent = 'Full Training';
+						if (statusSpan) statusSpan.textContent = 'Running full session...';
+						document.getElementById('progress-text').textContent = 'Full training in progress...';
+						
+						// Store trainer globally for potential stopping
+						window.currentTrainer = trainer;
+						
+						// Run full training session
+						const success = await trainer.runEpisodeBasedTraining({
+							episodes: totalEpisodes,
+							episodeLength: episodeLength,
+							onEpisodeComplete: async (episode, totalEpisodes, stats) => {
+								const lossSpan = document.getElementById('training-loss');
+								const networkSpan = document.getElementById('network-status');
+								const progressSpan = document.getElementById('progress-text');
+								
+								// Update UI with detailed progress
+								if (lossSpan && stats.loss) lossSpan.textContent = stats.loss.toFixed(4);
+								if (networkSpan) networkSpan.textContent = `Episode ${episode}/${totalEpisodes}`;
+								if (progressSpan) progressSpan.textContent = `${episode}/${totalEpisodes} - ${stats.cpsCaptured} CPs, ${stats.experienceCount} exp`;
+								
+								// Detailed logging every 5 episodes
+								if (episode % 5 === 0 || episode === totalEpisodes) {
+									console.log(`🎬 Episode ${episode}/${totalEpisodes} Summary:`);
+									console.log(`   Reward: ${stats.totalReward.toFixed(2)}, Loss: ${stats.loss ? stats.loss.toFixed(4) : 'N/A'}`);
+									console.log(`   CPs: ${stats.cpsCaptured}, Exp: ${stats.experienceCount}, Duration: ${(stats.actualDuration/1000).toFixed(1)}s`);
+								}
+							},
+							onTrainingComplete: async (learningStats) => {
+								console.log('🏁 === FULL TRAINING SESSION COMPLETED ===');
+								console.log(`📊 Final Statistics:`);
+								console.log(`   Total episodes: ${learningStats.episodeRewards.length}`);
+								console.log(`   Training time: ${(learningStats.totalTrainingTime/1000/60).toFixed(1)} minutes`);
+								console.log(`   Best episode reward: ${learningStats.bestEpisodeReward.toFixed(2)}`);
+								console.log(`   Final average loss: ${learningStats.averageLoss.toFixed(4)}`);
+								console.log(`   Average reward: ${learningStats.averageReward.toFixed(3)}`);
+								console.log('🧠 Network learned from real multi-agent gameplay!');
+							}
+						});
+						
+						// Clean up trainer reference
+						window.currentTrainer = null;
+						
+						if (success) {
+							console.log('✅ Full episode-based training completed successfully!');
+							console.log('🎯 Network ready for smart agent mode');
+							console.log('💾 Export weights to save this trained model');
+							
+							// Update UI
+							if (modeSpan) modeSpan.textContent = 'Training Complete';
+							if (statusSpan) statusSpan.textContent = 'Fully trained network';
+							document.getElementById('network-status').textContent = 'Episode-Trained';
+							document.getElementById('progress-text').textContent = 'Training complete! Ready for smart mode';
+							
+							// Store trained network
+							window.trainedNetwork = trainer.network;
+							
+							// Return to random mode
+							window.gameManager.setAllAgentsMode('random');
+							
+						} else {
+							throw new Error('Full training session failed');
+						}
+						
+					} catch (error) {
+						console.error('❌ Full training failed:', error);
+						if (modeSpan) modeSpan.textContent = 'Training Failed';
+						if (statusSpan) statusSpan.textContent = 'Error: ' + error.message;
+						alert('Full training failed: ' + error.message);
+						window.gameManager.setAllAgentsMode('random');
+					}
+				};
 			
 			// Export Weights - Save trained network to file
 			document.getElementById('export-weights').onclick = async () => {
@@ -470,6 +514,11 @@
 						
 						console.log('✅ Smart agent mode enabled successfully!');
 						console.log('Agents are now using the trained neural network for decisions');
+						console.log('💡 Watch for:');
+						console.log('   - Agents should glow blue (visual indicator)');
+						console.log('   - More purposeful movement toward critical points');
+						console.log('   - Smart decision counter should increase');
+						console.log('   - Occasional debug messages in console');
 						
 						// Store globally for other functions
 						window.dqnBehavior = dqnBehavior;
@@ -496,33 +545,20 @@
 				}
 			};
 				
-				// Update experience count and rate every second
+				// Update smart decision counter for DQN mode
 				setInterval(() => {
 					try {
-						const stats = dqnDataCollector.getStats();
-						const currentExp = stats.experienceCount || 0;
-						
-						// Update experience count
-						if (expCountSpan) expCountSpan.textContent = currentExp;
-						
-						// Calculate and update collection rate
-						if (stats.collecting && rateSpan) {
-							const currentTime = Date.now();
-							const timeDiff = (currentTime - lastUpdateTime) / 1000; // seconds
-							const expDiff = currentExp - lastExpCount;
-							
-							if (timeDiff > 0) {
-								const rate = (expDiff / timeDiff).toFixed(1);
-								rateSpan.textContent = rate + '/sec';
-								
-								// Update tracking values
-								lastExpCount = currentExp;
-								lastUpdateTime = currentTime;
+						if (window.dqnBehavior) {
+							const behaviorStats = window.dqnBehavior.getStatus();
+							const smartDecisionSpan = document.getElementById('smart-decisions');
+							if (smartDecisionSpan && behaviorStats.smartStats) {
+								let totalDecisions = 0;
+								Object.values(behaviorStats.smartStats.agentStats || {}).forEach(agentStats => {
+									totalDecisions += agentStats.decisions || 0;
+								});
+								smartDecisionSpan.textContent = totalDecisions;
 							}
-						} else if (rateSpan) {
-							rateSpan.textContent = '0/sec';
 						}
-						
 					} catch (error) {
 						console.warn('UI update error:', error);
 					}

@@ -180,21 +180,22 @@ class Agent {
         if (!this.randomMoveTimer) this.randomMoveTimer = 0;
         this.randomMoveTimer++;
         
-        // Change movement direction every 30-90 frames (0.5-1.5 seconds at 60fps)
-        if (this.randomMoveTimer > (30 + Math.random() * 60)) {
+        // Change movement direction every 20-60 frames (more frequent direction changes for better exploration)
+        const changeInterval = this.mode === 'training' ? (20 + Math.random() * 40) : (30 + Math.random() * 60);
+        if (this.randomMoveTimer > changeInterval) {
             this.randomMoveTimer = 0;
             
-            // Always pick at least one direction to ensure continuous movement
-            // Higher chance for forward/backward to encourage exploration
+            // More aggressive exploration during training mode
+            const explorationBonus = this.mode === 'training' ? 0.3 : 0.0;
             const directions = [];
             
-            // Add forward/backward with higher weight
-            if (Math.random() < 0.6) directions.push('w');
-            if (Math.random() < 0.6) directions.push('s');
+            // Add forward/backward with higher weight (boosted during training)
+            if (Math.random() < (0.7 + explorationBonus)) directions.push('w');
+            if (Math.random() < (0.7 + explorationBonus)) directions.push('s');
             
-            // Add left/right with moderate weight
-            if (Math.random() < 0.4) directions.push('a');
-            if (Math.random() < 0.4) directions.push('d');
+            // Add left/right with higher weight during training
+            if (Math.random() < (0.5 + explorationBonus)) directions.push('a');
+            if (Math.random() < (0.5 + explorationBonus)) directions.push('d');
             
             // If no directions selected, force one
             if (directions.length === 0) {
@@ -587,7 +588,39 @@ class Agent {
         if (mode === 'dqn' && dqnAgentBehavior) {
             this.dqnAgentBehavior = dqnAgentBehavior;
         }
+        
+        // Visual feedback for mode changes
+        this.updateVisualMode(mode);
+        
         console.log(`Agent ${this.agentId} mode set to: ${mode}`);
+    }
+    
+    /**
+     * Update visual appearance based on mode
+     */
+    updateVisualMode(mode) {
+        if (this.mesh && this.mesh.children && this.mesh.children.length > 0) {
+            const agentMesh = this.mesh.children[0]; // The main cube
+            
+            switch(mode) {
+                case 'training':
+                    // Pulsing effect during training
+                    agentMesh.material.opacity = 0.9;
+                    agentMesh.material.emissive.setHex(0x004400); // Slight green glow
+                    break;
+                case 'dqn':
+                    // Bright glow for smart mode
+                    agentMesh.material.opacity = 1.0;
+                    agentMesh.material.emissive.setHex(0x000044); // Blue glow for smart mode
+                    break;
+                case 'random':
+                default:
+                    // Normal appearance
+                    agentMesh.material.opacity = 0.7;
+                    agentMesh.material.emissive.setHex(0x000000); // No glow
+                    break;
+            }
+        }
     }
     
     /**
