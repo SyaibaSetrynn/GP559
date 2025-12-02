@@ -211,11 +211,21 @@ class AgentManager {
     /**
      * Set mode for all agents
      */
-    setAllAgentsMode(mode, dqnDataCollector = null) {
+    setAllAgentsMode(mode, dqnDataCollector = null, dqnAgentBehavior = null) {
         this.agents.forEach(agent => {
-            agent.setMode(mode, dqnDataCollector);
+            agent.setMode(mode, dqnDataCollector, dqnAgentBehavior);
         });
         console.log(`All agents set to mode: ${mode}`);
+    }
+    
+    /**
+     * Set DQN behavior for all agents (for smart mode)
+     */
+    setAllAgentsDQNBehavior(dqnAgentBehavior) {
+        this.agents.forEach(agent => {
+            agent.setDQNBehavior(dqnAgentBehavior);
+        });
+        console.log(`DQN behavior set for all agents`);
     }
     
     /**

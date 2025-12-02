@@ -3,7 +3,8 @@
 	<head>
 		<link rel="stylesheet" href="./style.css" />
 		<title>Agent Test Environment</title>
-
+		<!-- Load TensorFlow.js -->
+		<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
 	</head>
 
 	<body>
@@ -11,33 +12,57 @@
 		
 
 		
-		<!-- Game Info Display - Plain Text -->
-		<div id="losUI">
-			Agent Test Environment
-			<button id="resetButton" onclick="window.location.reload()">Reset Scene</button>
+		<!-- Game Info Display - Fixed Overlay -->
+		<div id="losUI" style="position: fixed; top: 10px; left: 10px; background: rgba(255,255,255,0.9); padding: 8px; border: 1px solid black; font-size: 12px; z-index: 1000;">
+			<strong>Agent Test Environment</strong>
 			<div id="agentScores">Loading scores...</div>
 			<div id="testTimer">Timer: 0</div>
-			<div>
-				Free-roam camera controls<br>
-				Mouse: Look around<br>
-				Scroll: Zoom in/out
+			<div style="font-size: 11px;">
+				Camera: Mouse look, Scroll zoom
 			</div>
 		</div>
 
-		<!-- DQN Training Controls -->
-		<div id="dqn-controls" style="margin-top: 20px; padding: 10px; border: 1px solid #ccc;">
-			<h3>DQN Training System - Phase 1</h3>
-			<div>
-				<strong>Current Mode:</strong> <span id="current-mode">Random</span>
+		<!-- DQN Controls - Fixed Overlay -->
+		<div id="dqn-controls" style="position: fixed; top: 10px; right: 10px; background: rgba(255,255,255,0.9); padding: 8px; border: 1px solid black; font-size: 12px; z-index: 1000; max-width: 350px;">
+			<h4 style="margin: 0 0 5px 0;">DQN Training System</h4>
+			<div style="margin: 2px 0;">Mode: <span id="current-mode">Random</span> | Phase: <span id="current-phase">Idle</span></div>
+			<div style="margin: 2px 0;">Status: <span id="system-status">Ready</span></div>
+			
+			<div style="margin: 3px 0;">
+				<button id="reset-scene">Reset</button>
+				<button id="random-mode">Random Mode</button>
 			</div>
-			<div style="margin-top: 10px;">
-				<button id="start-training">Start Data Collection</button>
-				<button id="stop-training">Stop Collection</button>
-				<button id="export-data">Export Training Data</button>
+			
+			<div style="margin: 3px 0;">
+				<button id="start-collection">Start Collection</button>
+				<button id="stop-collection">Stop</button>
+				<button id="export-data">Export Data</button>
 			</div>
-			<div style="margin-top: 10px;">
-				<div>Experiences Collected: <span id="experience-count">0</span></div>
-				<div>Collection Status: <span id="collection-status">Stopped</span></div>
+			<div style="margin: 2px 0; font-size: 11px;">
+				Exp: <span id="experience-count">0</span> | Rate: <span id="collection-rate">0/sec</span>
+			</div>
+			
+			<div style="margin: 3px 0;">
+				<button id="train-network">Train Network</button>
+				<button id="export-weights">Export Weights</button>
+			</div>
+			<div style="margin: 2px 0; font-size: 11px;">
+				Loss: <span id="training-loss">N/A</span> | Status: <span id="network-status">Not Trained</span>
+			</div>
+			
+			<div style="margin: 3px 0;">
+				<button id="dqn-mode">Enable DQN</button>
+				<button id="load-weights">Load Weights</button>
+			</div>
+			<div style="margin: 2px 0; font-size: 11px;">
+				Explore: <input type="range" id="epsilon-slider" min="0" max="100" value="10" style="width: 60px;"> <span id="epsilon-value">10%</span>
+			</div>
+			<div style="margin: 2px 0; font-size: 11px;">
+				Smart Decisions: <span id="smart-decisions">0</span>
+			</div>
+			
+			<div style="margin: 3px 0; font-size: 11px;">
+				<strong>Progress:</strong> <span id="progress-text">Ready</span>
 			</div>
 		</div>
 		
@@ -72,59 +97,444 @@
 		import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 		import { CriticalPointSystem, CP_COLORS } from './critical-point-system.js';
 		
-		// Expose Three.js and related systems to global scope (exactly like indexjake.html)
+		// Expose Three.js and related systems to global scope
 		window.THREE = THREE;
 		window.OBJLoader = OBJLoader;
 		window.MTLLoader = MTLLoader;
 		window.CriticalPointSystem = CriticalPointSystem;
 		window.CP_COLORS = CP_COLORS;
 		
-		// Initialize DQN Data Collection System
+		// Initialize DQN System
 		const dqnDataCollector = new DQNDataCollector();
 		window.dqnDataCollector = dqnDataCollector;
 		
-		// DQN UI Controls
-		document.addEventListener('DOMContentLoaded', () => {
-			const startBtn = document.getElementById('start-training');
-			const stopBtn = document.getElementById('stop-training');
-			const exportBtn = document.getElementById('export-data');
-			const modeSpan = document.getElementById('current-mode');
-			const expCountSpan = document.getElementById('experience-count');
-			const statusSpan = document.getElementById('collection-status');
+		// Wait for TensorFlow.js to be ready
+		let tfReady = false;
+		const waitForTensorFlow = async () => {
+			if (typeof tf !== 'undefined') {
+				try {
+					await tf.ready();
+					tfReady = true;
+					console.log('TensorFlow.js is ready for training');
+				} catch (error) {
+					console.error('TensorFlow.js initialization error:', error);
+				}
+			} else {
+				// Wait a bit more for TensorFlow to load
+				setTimeout(waitForTensorFlow, 100);
+			}
+		};
+		
+		// Start waiting for TensorFlow
+		waitForTensorFlow();
+		
+		// Setup DQN UI when page loads
+		window.addEventListener('load', () => {
+			console.log('Setting up DQN controls');
 			
-			// Start data collection
-			startBtn.onclick = () => {
-				if (window.gameManager) {
+			const setupControls = () => {
+				if (!window.gameManager) {
+					setTimeout(setupControls, 200);
+					return;
+				}
+				
+				console.log('Game manager ready, connecting DQN controls');
+				
+				// UI elements
+				const modeSpan = document.getElementById('current-mode');
+				const statusSpan = document.getElementById('system-status');
+				const expCountSpan = document.getElementById('experience-count');
+				const rateSpan = document.getElementById('collection-rate');
+				
+				// Collection rate tracking
+				let lastExpCount = 0;
+				let lastUpdateTime = Date.now();
+				
+				// Start Collection
+				document.getElementById('start-collection').onclick = () => {
+					console.log('Starting data collection');
 					window.gameManager.setAllAgentsMode('training', dqnDataCollector);
 					dqnDataCollector.startCollection();
-					modeSpan.textContent = 'Training (Data Collection)';
-					statusSpan.textContent = 'Collecting...';
-				}
-			};
-			
-			// Stop data collection
-			stopBtn.onclick = () => {
-				if (window.gameManager) {
-					window.gameManager.setAllAgentsMode('random');
+					if (modeSpan) modeSpan.textContent = 'Data Collection';
+					if (statusSpan) statusSpan.textContent = 'Collecting...';
+					
+					// Reset rate tracking
+					lastExpCount = 0;
+					lastUpdateTime = Date.now();
+				};
+				
+				// Stop Collection
+				document.getElementById('stop-collection').onclick = () => {
+					console.log('Stopping data collection');
 					dqnDataCollector.stopCollection();
-					modeSpan.textContent = 'Random';
-					statusSpan.textContent = 'Stopped';
+					window.gameManager.setAllAgentsMode('random');
+					if (modeSpan) modeSpan.textContent = 'Random';
+					if (statusSpan) statusSpan.textContent = 'Stopped';
+				};
+				
+				// Export Data - Show useful summary
+				document.getElementById('export-data').onclick = () => {
+					const stats = dqnDataCollector.getStats();
+					const experiences = dqnDataCollector.experienceBuffer.getAllExperiences();
+					
+					console.log('=== TRAINING DATA SUMMARY ===');
+					console.log(`Total experiences collected: ${experiences.length}`);
+					console.log(`Data collection status: ${stats.collecting ? 'Active' : 'Stopped'}`);
+					
+					if (experiences.length > 0) {
+						// Show sample experience
+						const sample = experiences[0];
+						console.log('Sample experience format:');
+						console.log('- State:', sample.state.length, 'values (agent pos, nearest CP, walls, etc.)');
+						console.log('- Action:', sample.action, '(0=Forward, 1=Left, 2=Back, 3=Right)');
+						console.log('- Reward:', sample.reward);
+						console.log('- Next State:', sample.nextState.length, 'values');
+						
+						// Calculate reward statistics
+						let totalReward = 0;
+						let positiveRewards = 0;
+						for (const exp of experiences) {
+							totalReward += exp.reward;
+							if (exp.reward > 0) positiveRewards++;
+						}
+						console.log(`Average reward: ${(totalReward / experiences.length).toFixed(2)}`);
+						console.log(`Positive rewards: ${positiveRewards}/${experiences.length} (${((positiveRewards/experiences.length)*100).toFixed(1)}%)`);
+						
+						if (experiences.length >= 50) {
+							console.log('✅ Ready for training! Click "Train Network" to proceed.');
+						} else {
+							console.log(`⚠️  Need ${50 - experiences.length} more experiences for training.`);
+						}
+					} else {
+						console.log('No training data collected yet. Start data collection first.');
+					}
+				};
+				
+				// Reset Scene
+				document.getElementById('reset-scene').onclick = () => {
+					window.location.reload();
+				};
+				
+				// Random Mode
+				document.getElementById('random-mode').onclick = () => {
+					console.log('Setting random mode');
+					window.gameManager.setAllAgentsMode('random');
+					if (modeSpan) modeSpan.textContent = 'Random';
+					if (statusSpan) statusSpan.textContent = 'Random mode';
+				};
+				
+				// Train Network
+				document.getElementById('train-network').onclick = async () => {
+					const experiences = dqnDataCollector.experienceBuffer.getAllExperiences();
+					
+					if (experiences.length < 50) {
+						alert(`Only ${experiences.length} experiences collected. Need at least 50 for training.`);
+						console.log(`⚠️  Insufficient data: ${experiences.length}/50 experiences`);
+						return;
+					}
+					
+					// Check if TensorFlow.js is ready
+					if (typeof tf === 'undefined') {
+						alert('TensorFlow.js is still loading. Please wait a moment and try again.');
+						console.log('⚠️  TensorFlow.js not loaded yet');
+						return;
+					}
+					
+					console.log('=== STARTING NEURAL NETWORK TRAINING ===');
+					console.log(`Training on ${experiences.length} experiences...`);
+					
+					// Limit training data to prevent freezing
+					const maxTrainingData = 1000; // Use max 1000 experiences
+					const trainingData = experiences.length > maxTrainingData 
+						? experiences.slice(-maxTrainingData) // Use most recent 1000
+						: experiences;
+					
+					console.log(`Using ${trainingData.length} experiences for training (limited to prevent freezing)`);
+					
+					// Update UI
+					if (modeSpan) modeSpan.textContent = 'Training';
+					if (statusSpan) statusSpan.textContent = 'Preparing training...';
+					
+					// Add small delay to show UI update
+					await new Promise(resolve => setTimeout(resolve, 100));
+					
+					try {
+						// Import training classes
+						const { SimpleDQNTrainer } = await import('./dqn_system.js');
+						const trainer = new SimpleDQNTrainer();
+						
+						// Initialize trainer
+						if (!trainer.network.model) {
+							trainer.initialize();
+						}
+						
+						if (statusSpan) statusSpan.textContent = 'Training network...';
+						
+						// Train with very conservative settings to prevent freezing
+						const success = await trainer.trainOnExperiences(trainingData, {
+							epochs: 5, // Very few epochs
+							batchSize: 16, // Small batch
+							onProgress: async (epoch, totalEpochs, logs) => {
+								const lossSpan = document.getElementById('training-loss');
+								const networkSpan = document.getElementById('network-status');
+								if (lossSpan) lossSpan.textContent = logs.loss.toFixed(4);
+								if (networkSpan) networkSpan.textContent = `Training ${epoch}/${totalEpochs}`;
+								console.log(`Training epoch ${epoch}/${totalEpochs}, Loss: ${logs.loss.toFixed(4)}`);
+								
+								// Yield control to prevent UI freezing
+								await new Promise(resolve => setTimeout(resolve, 50));
+							}
+						});
+						
+						if (success) {
+							console.log('✅ Training completed successfully!');
+							console.log('Network is now ready for smart agent mode.');
+							if (modeSpan) modeSpan.textContent = 'Training Complete';
+							if (statusSpan) statusSpan.textContent = 'Network trained';
+							document.getElementById('network-status').textContent = 'Trained & Ready';
+									// Store trained network for DQN mode
+						window.trainedNetwork = trainer.network;
+					} else {
+						throw new Error('Training failed');
+					}
+					
+				} catch (error) {
+					console.error('❌ Training failed:', error);
+					if (modeSpan) modeSpan.textContent = 'Training Failed';
+					if (statusSpan) statusSpan.textContent = 'Error: ' + error.message;
+					alert('Training failed: ' + error.message);
 				}
 			};
 			
-			// Export training data
-			exportBtn.onclick = () => {
-				dqnDataCollector.exportTrainingData();
+			// Export Weights - Save trained network to file
+			document.getElementById('export-weights').onclick = async () => {
+				if (!window.trainedNetwork) {
+					alert('No trained network available. Train the network first.');
+					console.log('❌ No trained network to export');
+					return;
+				}
+				
+				try {
+					console.log('=== EXPORTING TRAINED WEIGHTS ===');
+					
+					// Get weights from the trained network
+					const weights = await window.trainedNetwork.getWeights();
+					const exportData = {
+						weights: weights,
+						stateSize: 14,
+						actionSize: 4,
+						timestamp: new Date().toISOString(),
+						version: '1.0'
+					};
+					
+					// Create downloadable file
+					const dataStr = JSON.stringify(exportData, null, 2);
+					const dataBlob = new Blob([dataStr], {type: 'application/json'});
+					const url = URL.createObjectURL(dataBlob);
+					
+					// Create download link
+					const downloadLink = document.createElement('a');
+					downloadLink.href = url;
+					downloadLink.download = `dqn-weights-${Date.now()}.json`;
+					downloadLink.style.display = 'none';
+					
+					// Trigger download
+					document.body.appendChild(downloadLink);
+					downloadLink.click();
+					document.body.removeChild(downloadLink);
+					URL.revokeObjectURL(url);
+					
+					console.log('✅ Weights exported successfully to file');
+					console.log(`File name: dqn-weights-${Date.now()}.json`);
+					
+					if (statusSpan) statusSpan.textContent = 'Weights exported';
+					
+				} catch (error) {
+					console.error('❌ Failed to export weights:', error);
+					alert('Failed to export weights: ' + error.message);
+				}
 			};
 			
-			// Update UI every second
-			setInterval(() => {
-				const stats = dqnDataCollector.getStats();
-				expCountSpan.textContent = stats.experienceCount;
-			}, 1000);
+			// Load Weights - Load trained network from file
+			document.getElementById('load-weights').onclick = () => {
+				console.log('=== LOADING WEIGHTS FROM FILE ===');
+				
+				// Create file input element
+				const fileInput = document.createElement('input');
+				fileInput.type = 'file';
+				fileInput.accept = '.json';
+				fileInput.style.display = 'none';
+				
+				fileInput.onchange = async (event) => {
+					const file = event.target.files[0];
+					if (!file) return;
+					
+					try {
+						console.log(`Reading file: ${file.name}`);
+						
+						// Read file content
+						const text = await file.text();
+						const weightData = JSON.parse(text);
+						
+						console.log('Parsed weight data:', weightData);
+						console.log('Weight data keys:', Object.keys(weightData));
+						
+						// Validate weight data
+						if (!weightData.weights || !weightData.stateSize || !weightData.actionSize) {
+							throw new Error('Invalid weight file format. Expected: weights, stateSize, actionSize');
+						}
+						
+						if (weightData.stateSize !== 14 || weightData.actionSize !== 4) {
+							throw new Error(`Incompatible network size. Expected 14 inputs, 4 outputs. Got ${weightData.stateSize} inputs, ${weightData.actionSize} outputs.`);
+						}
+						
+						console.log('Weight validation passed');
+						console.log(`Weights array length: ${weightData.weights.length}`);
+						
+						// Import weights into DQN system
+						const { SimpleDQNNetwork } = await import('./dqn_system.js');
+						const network = new SimpleDQNNetwork();
+						network.createModel();
+						
+						console.log('Created new network, attempting to load weights...');
+						
+						const loadResult = network.setWeights(weightData.weights);
+						console.log('Weight loading result:', loadResult);
+						
+						if (loadResult) {
+							window.trainedNetwork = network;
+							
+							console.log('✅ Weights loaded successfully from file');
+							console.log(`File: ${file.name}`);
+							console.log(`Timestamp: ${weightData.timestamp || 'Unknown'}`);
+							console.log('Network is ready for smart agent mode');
+							
+							// Update UI
+							if (modeSpan) modeSpan.textContent = 'Weights Loaded';
+							if (statusSpan) statusSpan.textContent = 'Loaded from file';
+							document.getElementById('network-status').textContent = 'Loaded & Ready';
+							
+						} else {
+							throw new Error('Failed to load weights into neural network');
+						}
+						
+					} catch (error) {
+						console.error('❌ Failed to load weights:', error);
+						console.error('Error details:', error.stack);
+						alert('Failed to load weights: ' + error.message);
+					}
+					
+					// Clean up
+					document.body.removeChild(fileInput);
+				};
+				
+				// Trigger file selection
+				document.body.appendChild(fileInput);
+				fileInput.click();
+			};
+			
+			// Enable DQN Mode
+			document.getElementById('dqn-mode').onclick = async () => {
+				if (!window.trainedNetwork) {
+					alert('No trained network available. Train the network first.');
+					console.log('❌ No trained network found. Complete training first.');
+					return;
+				}
+				
+				console.log('=== ENABLING SMART AGENT MODE ===');
+				console.log('Creating DQN behavior for agents...');
+				
+				try {
+					// Import DQN behavior classes
+					const { DQNAgentBehavior } = await import('./dqn_system.js');
+					
+					// Create DQN behavior instance
+					const dqnBehavior = new DQNAgentBehavior();
+					
+					// Load the trained network into the behavior
+					const weightData = { 
+						weights: await window.trainedNetwork.getWeights(),
+						stateSize: 14,
+						actionSize: 4
+					};
+					
+					if (dqnBehavior.loadTrainedWeights(weightData)) {
+						dqnBehavior.enableSmartMode();
+						
+						// Set all agents to use DQN mode with the smart behavior
+						window.gameManager.setAllAgentsMode('dqn', null, dqnBehavior);
+						
+						// Update UI
+						if (modeSpan) modeSpan.textContent = 'DQN Smart Mode';
+						if (statusSpan) statusSpan.textContent = 'Smart agents active';
+						
+						console.log('✅ Smart agent mode enabled successfully!');
+						console.log('Agents are now using the trained neural network for decisions');
+						
+						// Store globally for other functions
+						window.dqnBehavior = dqnBehavior;
+						
+					} else {
+						throw new Error('Failed to load trained weights into DQN behavior');
+					}
+					
+				} catch (error) {
+					console.error('❌ Failed to enable DQN mode:', error);
+					alert('Failed to enable DQN mode: ' + error.message);
+				}
+			};
+			
+			// Epsilon Slider - Control exploration rate
+			document.getElementById('epsilon-slider').oninput = (event) => {
+				const epsilonValue = parseInt(event.target.value) / 100; // Convert to 0-1 range
+				document.getElementById('epsilon-value').textContent = `${event.target.value}%`;
+				
+				// Update DQN behavior if it exists
+				if (window.dqnBehavior) {
+					window.dqnBehavior.setExplorationRate(epsilonValue);
+					console.log(`Exploration rate set to ${(epsilonValue * 100).toFixed(1)}%`);
+				}
+			};
+				
+				// Update experience count and rate every second
+				setInterval(() => {
+					try {
+						const stats = dqnDataCollector.getStats();
+						const currentExp = stats.experienceCount || 0;
+						
+						// Update experience count
+						if (expCountSpan) expCountSpan.textContent = currentExp;
+						
+						// Calculate and update collection rate
+						if (stats.collecting && rateSpan) {
+							const currentTime = Date.now();
+							const timeDiff = (currentTime - lastUpdateTime) / 1000; // seconds
+							const expDiff = currentExp - lastExpCount;
+							
+							if (timeDiff > 0) {
+								const rate = (expDiff / timeDiff).toFixed(1);
+								rateSpan.textContent = rate + '/sec';
+								
+								// Update tracking values
+								lastExpCount = currentExp;
+								lastUpdateTime = currentTime;
+							}
+						} else if (rateSpan) {
+							rateSpan.textContent = '0/sec';
+						}
+						
+					} catch (error) {
+						console.warn('UI update error:', error);
+					}
+				}, 1000);
+				
+				console.log('DQN UI controls connected successfully');
+			};
+			
+			setupControls();
 		});
 		
-		console.log('Three.js, loaders, Critical Point System, and DQN system loaded successfully');
+		console.log('DQN system initialized');
 	</script>
 
 	<script src="AgentTestMain.js" type="module" defer></script>

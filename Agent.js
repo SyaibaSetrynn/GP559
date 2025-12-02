@@ -160,17 +160,22 @@ class Agent {
      * DQN mode: use trained neural network for decisions
      */
     updateDQNMode(agentManager) {
-        // TODO: Phase 3 - implement smart decision making
-        // For now, fall back to random movement
-        this.updateRandomMode();
+        // Use smart behavior if available
+        if (this.dqnAgentBehavior) {
+            this.dqnAgentBehavior.updateAgent(this, agentManager);
+        } else {
+            // Fallback to random movement if no DQN behavior loaded
+            this.updateRandomMode();
+        }
+        
+        // Continue with physics and collision detection
+        this.handlePhysicsAndCollisions();
     }
     
     /**
      * Random mode: pure random movement (original behavior)
      */
     updateRandomMode() {
-        // console.log("Agent collider start: " + this.collider.start.x + " " + this.collider.start.y + " " + this.collider.start.z);
-        
         // Pure random movement - continuous motion with occasional direction changes
         if (!this.randomMoveTimer) this.randomMoveTimer = 0;
         this.randomMoveTimer++;
@@ -234,7 +239,37 @@ class Agent {
             moved = true;
         }
         
-        // Apply combined movement vector for smoother diagonal movement
+        // Continue with physics and collision detection
+        this.handlePhysicsAndCollisions();
+    }
+    
+    /**
+     * Handle physics and collision detection (shared by all modes)
+     */
+    handlePhysicsAndCollisions() {
+        // Apply movement based on current movement flags
+        let moved = false;
+        const moveVector = new T.Vector3(0, 0, 0);
+
+        // Use world directions for consistent movement
+        if(this.movement.w) {
+            moveVector.z -= this.movementSpeed; // Forward is negative Z
+            moved = true;
+        }
+        if(this.movement.a){
+            moveVector.x -= this.movementSpeed; // Left is negative X
+            moved = true;
+        }
+        if(this.movement.s) {
+            moveVector.z += this.movementSpeed; // Backward is positive Z
+            moved = true;
+        }
+        if(this.movement.d) {
+            moveVector.x += this.movementSpeed; // Right is positive X
+            moved = true;
+        }
+        
+        // Apply combined movement vector
         if(moved) {
             this.camera.position.add(moveVector);
         }
@@ -249,9 +284,8 @@ class Agent {
             this.collider.end.z = this.camera.position.z;      
         }
 
-        // update jump
+        // Handle jumping
         if(this.movement.spaceHold || !this.onGround) {
-
             this.collider.start.y += this.speedY;
             this.collider.end.y += this.speedY;
             const center = this.collider.start.clone().add(this.collider.end).multiplyScalar(0.5);
@@ -545,12 +579,23 @@ class Agent {
     /**
      * Set agent mode and initialize DQN system if needed
      */
-    setMode(mode, dqnDataCollector = null) {
+    setMode(mode, dqnDataCollector = null, dqnAgentBehavior = null) {
         this.mode = mode;
         if (mode === 'training' && dqnDataCollector) {
             this.dqnDataCollector = dqnDataCollector;
         }
+        if (mode === 'dqn' && dqnAgentBehavior) {
+            this.dqnAgentBehavior = dqnAgentBehavior;
+        }
         console.log(`Agent ${this.agentId} mode set to: ${mode}`);
+    }
+    
+    /**
+     * Set DQN behavior for smart mode
+     */
+    setDQNBehavior(dqnAgentBehavior) {
+        this.dqnAgentBehavior = dqnAgentBehavior;
+        console.log(`Agent ${this.agentId} DQN behavior loaded`);
     }
     
     /**
