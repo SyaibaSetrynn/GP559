@@ -184,6 +184,107 @@ export class DQNIntegration {
     }
 
     /**
+     * Export a model as JSON file for download
+     */
+    async exportModelAsJSON(modelName) {
+        try {
+            console.log(`Exporting model ${modelName} as JSON...`);
+            
+            // Load the model from localStorage
+            const model = await tf.loadLayersModel(`localstorage://${modelName}`);
+            
+            // Get model architecture and weights
+            const modelData = {
+                name: modelName,
+                exported: new Date().toISOString(),
+                architecture: model.toJSON(),
+                weights: []
+            };
+            
+            // Extract weights
+            const weights = model.getWeights();
+            for (let i = 0; i < weights.length; i++) {
+                const weightData = await weights[i].data();
+                modelData.weights.push({
+                    name: `layer_${i}`,
+                    shape: weights[i].shape,
+                    data: Array.from(weightData)
+                });
+            }
+            
+            // Convert to JSON string
+            const jsonString = JSON.stringify(modelData, null, 2);
+            
+            // Create and download file
+            const blob = new Blob([jsonString], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${modelName}_export.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            
+            URL.revokeObjectURL(url);
+            
+            console.log(`Model ${modelName} exported successfully as JSON`);
+            this.updateStatus(`Model exported: ${modelName}.json`);
+            
+            return true;
+        } catch (error) {
+            console.error('Error exporting model as JSON:', error);
+            this.updateStatus('Export failed');
+            return false;
+        }
+    }
+
+    /**
+     * Import a model from JSON file
+     */
+    async importModelFromJSON(file) {
+        try {
+            console.log('Importing model from JSON file...');
+            
+            const jsonString = await file.text();
+            const modelData = JSON.parse(jsonString);
+            
+            if (!modelData.architecture || !modelData.weights) {
+                throw new Error('Invalid model JSON format');
+            }
+            
+            // Recreate the model from architecture
+            const model = tf.models.modelFromJSON(modelData.architecture);
+            
+            // Recreate weights
+            const weightTensors = [];
+            for (const weightInfo of modelData.weights) {
+                const tensor = tf.tensor(weightInfo.data, weightInfo.shape);
+                weightTensors.push(tensor);
+            }
+            
+            // Set weights
+            model.setWeights(weightTensors);
+            
+            // Save to localStorage with imported name
+            const importName = modelData.name + '_imported_' + Date.now();
+            await model.save(`localstorage://${importName}`);
+            
+            // Clean up tensors
+            weightTensors.forEach(tensor => tensor.dispose());
+            
+            console.log(`Model imported successfully as ${importName}`);
+            this.updateStatus(`Model imported: ${importName}`);
+            
+            return importName;
+        } catch (error) {
+            console.error('Error importing model from JSON:', error);
+            this.updateStatus('Import failed');
+            throw error;
+        }
+    }
+
+    /**
      * Set up UI monitoring elements
      */
     setupUIMonitoring() {
@@ -359,6 +460,49 @@ export class DQNIntegration {
         }
         
         console.log('DQN integration disposed');
+    }
+
+    /**
+     * List all saved models in localStorage
+     */
+    async listSavedModels() {
+        try {
+            const models = [];
+            
+            // Get all localStorage keys
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                
+                // Check if this is a TensorFlow.js model
+                if (key && key.includes('tensorflowjs_models/') && key.endsWith('/info')) {
+                    // Extract model name from key
+                    const modelName = key.replace('tensorflowjs_models/', '').replace('/info', '');
+                    
+                    try {
+                        // Try to get model info
+                        const modelInfo = JSON.parse(localStorage.getItem(key));
+                        models.push({
+                            name: modelName,
+                            dateSaved: modelInfo.dateSaved || 'Unknown',
+                            modelTopology: modelInfo.modelTopology ? 'Present' : 'Missing'
+                        });
+                    } catch (e) {
+                        // If we can't parse the info, still add the model name
+                        models.push({
+                            name: modelName,
+                            dateSaved: 'Unknown',
+                            modelTopology: 'Unknown'
+                        });
+                    }
+                }
+            }
+            
+            console.log('Found saved models:', models);
+            return models;
+        } catch (error) {
+            console.error('Error listing saved models:', error);
+            return [];
+        }
     }
 }
 

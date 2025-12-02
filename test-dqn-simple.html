@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DQN Simple Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+</head>
+<body>
+    <h1>DQN Component Test</h1>
+    <div id="status">Loading...</div>
+    <button id="test-import">Test Import</button>
+    <button id="test-init">Test Initialize</button>
+    
+    <script type="module">
+        const statusDiv = document.getElementById('status');
+        
+        function updateStatus(msg) {
+            statusDiv.textContent = msg;
+            console.log('Status:', msg);
+        }
+        
+        document.getElementById('test-import').onclick = async () => {
+            try {
+                updateStatus('Testing imports...');
+                
+                // Test individual imports
+                console.log('Importing game state extractor...');
+                const { gameStateExtractor } = await import('./dqn/game-state-extractor.js');
+                console.log('Game state extractor:', gameStateExtractor);
+                
+                console.log('Importing action space...');
+                const { actionSpace } = await import('./dqn/action-space.js');
+                console.log('Action space:', actionSpace);
+                
+                console.log('Importing reward system...');
+                const { rewardSystem } = await import('./dqn/reward-system.js');
+                console.log('Reward system:', rewardSystem);
+                
+                console.log('Importing experience replay...');
+                const { experienceReplay } = await import('./dqn/experience-replay.js');
+                console.log('Experience replay:', experienceReplay);
+                
+                console.log('Importing DQN network...');
+                const DQNNetwork = await import('./dqn/dqn-network.js');
+                console.log('DQN network:', DQNNetwork);
+                
+                console.log('Importing DQN trainer...');
+                const { dqnTrainer } = await import('./dqn/dqn-trainer.js');
+                console.log('DQN trainer:', dqnTrainer);
+                
+                console.log('Importing DQN integration...');
+                const { dqnIntegration } = await import('./dqn/dqn-integration.js');
+                console.log('DQN integration:', dqnIntegration);
+                
+                updateStatus('All imports successful!');
+            } catch (error) {
+                updateStatus('Import error: ' + error.message);
+                console.error('Import error:', error);
+            }
+        };
+        
+        document.getElementById('test-init').onclick = async () => {
+            try {
+                updateStatus('Testing TensorFlow and initialization...');
+                
+                // Check TensorFlow
+                if (typeof tf === 'undefined') {
+                    throw new Error('TensorFlow.js not loaded');
+                }
+                console.log('TensorFlow version:', tf.version.tfjs);
+                
+                // Try to import and initialize DQN trainer
+                const { dqnTrainer } = await import('./dqn/dqn-trainer.js');
+                
+                console.log('DQN trainer loaded, attempting initialization...');
+                await dqnTrainer.initialize();
+                
+                console.log('DQN trainer initialized successfully!');
+                updateStatus('DQN trainer initialized successfully!');
+                
+            } catch (error) {
+                updateStatus('Initialization error: ' + error.message);
+                console.error('Initialization error:', error);
+            }
+        };
+        
+        // Auto-test imports on page load
+        setTimeout(() => {
+            document.getElementById('test-import').click();
+        }, 1000);
+    </script>
+</body>
+</html>

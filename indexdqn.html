@@ -43,6 +43,11 @@
 					<button id="stop-dqn" style="font-size: 10px;">Stop Training</button>
 					<button id="save-dqn" style="font-size: 10px;">Save Model</button>
 				</div>
+				<div style="margin: 2px 0;">
+					<button id="export-model" style="font-size: 10px;">Export JSON</button>
+					<button id="import-model" style="font-size: 10px;">Import JSON</button>
+					<input type="file" id="import-file" accept=".json" style="display: none;">
+				</div>
 			</div>
 		</div>
 
@@ -385,6 +390,70 @@
 					} catch (error) {
 						if (statusSpan) statusSpan.textContent = 'Save error';
 						console.error('Model save error:', error);
+					}
+				};
+				
+				// Export model as JSON
+				document.getElementById('export-model').onclick = async () => {
+					try {
+						// Get list of available models first
+						const savedModels = await dqnIntegration.listSavedModels();
+						
+						if (savedModels.length === 0) {
+							alert('No saved models to export');
+							return;
+						}
+						
+						let modelOptions = 'Select model to export:\n';
+						savedModels.forEach((model, index) => {
+							modelOptions += `${index + 1}. ${model.name} (${model.dateSaved})\n`;
+						});
+						
+						const modelName = prompt(modelOptions + '\nEnter model name to export:', 
+							savedModels.length > 0 ? savedModels[0].name : '');
+						if (!modelName) return;
+						
+						if (statusSpan) statusSpan.textContent = 'Exporting...';
+						const success = await dqnIntegration.exportModelAsJSON(modelName);
+						
+						if (success) {
+							alert(`Model ${modelName} exported successfully as JSON file!`);
+						} else {
+							alert('Export failed. Check console for details.');
+						}
+						
+					} catch (error) {
+						if (statusSpan) statusSpan.textContent = 'Export error';
+						console.error('Model export error:', error);
+						alert('Export failed. Check console for details.');
+					}
+				};
+				
+				// Import model from JSON
+				document.getElementById('import-model').onclick = () => {
+					document.getElementById('import-file').click();
+				};
+				
+				document.getElementById('import-file').onchange = async (event) => {
+					const file = event.target.files[0];
+					if (!file) return;
+					
+					try {
+						if (statusSpan) statusSpan.textContent = 'Importing...';
+						
+						const importedName = await dqnIntegration.importModelFromJSON(file);
+						alert(`Model imported successfully as: ${importedName}`);
+						
+						if (statusSpan) statusSpan.textContent = 'Import complete';
+						
+						// Clear the file input
+						event.target.value = '';
+						
+					} catch (error) {
+						if (statusSpan) statusSpan.textContent = 'Import error';
+						console.error('Model import error:', error);
+						alert('Import failed. Check console for details.');
+						event.target.value = '';
 					}
 				};
 				
