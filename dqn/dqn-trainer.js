@@ -42,7 +42,7 @@ export class DQNTrainer {
             
             // Episode management
             maxEpisodeLength: config.maxEpisodeLength || 1000,   // Max steps per episode
-            maxEpisodes: config.maxEpisodes || 10000             // Total episodes to train
+            maxEpisodes: config.maxEpisodes || 100               // Total episodes to train
         };
         
         // Components
