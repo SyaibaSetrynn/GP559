@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<link rel="stylesheet" href="./style.css" />
+		<title>Agent Test Environment</title>
+	</head>
+
+	<body>
+		<div id="div1"></div>
+		
+
+		
+		<!-- Game Info Display - Fixed Overlay -->
+		<div id="losUI" style="position: fixed; top: 10px; left: 10px; background: rgba(255,255,255,0.9); padding: 8px; border: 1px solid black; font-size: 12px; z-index: 1000;">
+			<strong>Agent Test Environment</strong>
+			<div id="agentScores">Loading scores...</div>
+			<div id="testTimer">Timer: 0</div>
+			<div style="font-size: 11px;">
+				Camera: Mouse look, Scroll zoom
+			</div>
+		</div>
+
+		<!-- Game Controls - Fixed Overlay -->
+		<div id="game-controls" style="position: fixed; top: 10px; right: 10px; background: rgba(255,255,255,0.9); padding: 8px; border: 1px solid black; font-size: 12px; z-index: 1000; max-width: 300px;">
+			<h4 style="margin: 0 0 5px 0;">Game Controls</h4>
+			<div style="margin: 2px 0;">Mode: <span id="current-mode">Random</span></div>
+			<div style="margin: 2px 0;">Status: <span id="system-status">Ready</span></div>
+			
+			<div style="margin: 3px 0;">
+				<button id="reset-scene">Reset Environment</button>
+				<button id="random-mode">Random Mode</button>
+			</div>
+		</div>
+		
+		<script>
+			// Simple timer to show the page is working
+			let timerCount = 0;
+			setInterval(() => {
+				timerCount++;
+				const timerDiv = document.getElementById('testTimer');
+				if (timerDiv) {
+					timerDiv.textContent = `Timer: ${timerCount} (${new Date().toLocaleTimeString()})`;
+				}
+			}, 1000);
+		</script>
+		
+
+		
+	<script type="importmap">
+		{
+			"imports": {
+				"three": "https://unpkg.com/three@0.161.0/build/three.module.js",
+				"three/addons/": "https://unpkg.com/three@0.161.0/examples/jsm/"
+			}
+		}
+	</script>
+
+	<script type="module">
+		import * as THREE from 'three';
+		import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+		import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
+		import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+		import { CriticalPointSystem, CP_COLORS } from './critical-point-system.js';
+		
+		// Expose Three.js and related systems to global scope
+		window.THREE = THREE;
+		window.OBJLoader = OBJLoader;
+		window.MTLLoader = MTLLoader;
+		window.CriticalPointSystem = CriticalPointSystem;
+		window.CP_COLORS = CP_COLORS;
+		
+		// Setup basic game controls when page loads
+		window.addEventListener('load', () => {
+			console.log('Setting up basic game controls');
+			
+			const setupControls = () => {
+				if (!window.gameManager) {
+					setTimeout(setupControls, 200);
+					return;
+				}
+				
+				console.log('Game manager ready, connecting basic controls');
+				
+				// Utility function for resetting critical points (used by UI)
+				window.resetCriticalPointsUtil = function() {
+					const cps = window.gameManager?.criticalPointSystem;
+					if (!cps) return;
+
+					console.log('Utility: Resetting critical points...');
+					console.log(`Before reset: ${cps.criticalPoints ? cps.criticalPoints.length : 0} critical points exist`);
+
+					// Reset existing critical points to neutral state
+					if (cps.criticalPoints && cps.criticalPoints.length > 0) {
+						console.log(`Resetting ${cps.criticalPoints.length} existing critical points to neutral state`);
+						
+						cps.criticalPoints.forEach(cpData => {
+							if (cpData.cp && cpData.cp.material) {
+								// Reset to original/neutral color
+								cpData.cp.material.color.setHex(cpData.originalColor || 0xffffff);
+								cpData.cp.material.opacity = 0.8;
+								
+								// Reset any glow children
+								if (cpData.cp.children && cpData.cp.children.length > 0) {
+									cpData.cp.children.forEach(child => {
+										if (child.material) {
+											child.material.color.setHex(cpData.originalColor || 0xffffff);
+										}
+									});
+								}
+							}
+							
+							// Reset ownership and state
+							cpData.ownedBy = null;
+							cpData.currentOwner = null;
+							if (cpData.fillProgress !== undefined) {
+								cpData.fillProgress = 0;
+							}
+							if (cpData.currentColor) {
+								cpData.currentColor = cpData.originalColor || 0xffffff;
+							}
+						});
+						
+						// Reset registry ownership but keep the critical points
+						if (cps.cpsByOwner) {
+							cps.cpsByOwner.clear();
+						}
+						if (cps.cpRegistry) {
+							cps.cpRegistry.forEach((cpData, id) => {
+								cpData.ownedBy = null;
+								cpData.isActivelyClaimed = false;
+								cpData.claimedBy = null;
+								cpData.lastClaimedTime = 0;
+								if (cpData.claimHistory) {
+									cpData.claimHistory = [];
+								}
+							});
+						}
+					} else {
+						console.log('No existing critical points found to reset');
+					}
+
+					console.log('Utility: Critical points reset completed');
+					console.log(`After reset: ${cps.criticalPoints ? cps.criticalPoints.length : 0} critical points exist`);
+				};
+				
+				// UI elements for basic controls
+				const modeSpan = document.getElementById('current-mode');
+				const statusSpan = document.getElementById('system-status');
+				
+				console.log('Basic game controls ready');
+				
+				// Reset Scene
+				document.getElementById('reset-scene').onclick = () => {
+					console.log('Resetting environment...');
+					
+					// Reset agents to starting positions
+					if (window.gameManager && window.gameManager.agents) {
+						window.gameManager.agents.forEach((agent, index) => {
+							// Calculate starting position (spread around circle)
+							const angle = (index / window.gameManager.agents.length) * 2 * Math.PI;
+							const radius = 15;
+							const x = Math.cos(angle) * radius;
+							const z = Math.sin(angle) * radius;
+							const y = 0.5;
+							
+							if (agent.mesh) {
+								agent.mesh.position.set(x, y, z);
+								agent.mesh.rotation.set(0, 0, 0);
+							}
+							
+							// Reset scores and state
+							if (agent.claimedCriticalPoints) {
+								agent.claimedCriticalPoints.clear();
+							}
+							if (agent.testScore !== undefined) {
+								agent.testScore = 0;
+							}
+							if (agent.velocity) {
+								agent.velocity.set(0, 0, 0);
+							}
+						});
+					}
+					
+					// Reset critical points
+					if (window.resetCriticalPointsUtil) {
+						window.resetCriticalPointsUtil();
+					}
+					
+					// Update UI
+					if (modeSpan) modeSpan.textContent = 'Random';
+					if (statusSpan) statusSpan.textContent = 'Environment reset';
+					
+					console.log('Environment reset complete');
+				};
+				
+				// Random Mode
+				document.getElementById('random-mode').onclick = () => {
+					console.log('Setting random mode');
+					window.gameManager.setAllAgentsMode('random');
+					if (modeSpan) modeSpan.textContent = 'Random';
+					if (statusSpan) statusSpan.textContent = 'Random mode active';
+				};
+				
+				console.log('Basic game controls connected successfully');
+			};
+			
+			setupControls();
+		});
+		
+		console.log('Basic game system initialized');
+	</script>
+
+	<script src="AgentTestMain.js" type="module" defer></script>
+	</body>
+</html>
+						}
+						
+						// Update UI
+						const modeSpan = document.getElementById('current-mode');
+						const statusSpan = document.getElementById('system-status');
+						if (modeSpan) modeSpan.textContent = 'Testing Episode';
+						if (statusSpan) statusSpan.textContent = 'Running test episode...';
+						document.getElementById('progress-text').textContent = 'Step 1: Testing episode structure';
+						
+						// Run single test episode (10 seconds)
+						console.log('Running test episode: 10 seconds');
+						
+						// Start progress updates
+						let progressInterval = setInterval(() => {
+							if (!episodeManager.isRunning) {
+								clearInterval(progressInterval);
+							}
+						}, 1000);
+						
+						// Call runSingleEpisode with correct parameters (episodeNumber, episodeLength)
+						const episodeResult = await episodeManager.runSingleEpisode(1, 10000);
+						
+						// Clear progress timer
+						clearInterval(progressInterval);
+						
+						if (episodeResult && typeof episodeResult === 'object') {
+							console.log('=== STEP 1 TEST EPISODE RESULTS ===');
+							console.log(`Episode completed successfully!`);
+							console.log(`Duration: ${(episodeResult.actualDuration/1000).toFixed(1)} seconds`);
+							console.log(`Experiences collected: ${episodeResult.experienceCount}`);
+							console.log(`Total reward: ${episodeResult.totalReward.toFixed(2)}`);
+							console.log(`Critical points captured: ${episodeResult.cpsCaptured}`);
+							console.log(`Agent count: ${episodeResult.agentCount}`);
+							
+							console.log('Step 1 complete! Episode structure is working.');
+							console.log('Environment reset successfully');
+							console.log('Experience data collection working');
+							console.log('Ready for Step 2 (Episode-based learning)!');
+							
+							// Update UI
+							if (modeSpan) modeSpan.textContent = 'Episode Test Complete';
+							if (statusSpan) statusSpan.textContent = 'Environment reset verified';
+							document.getElementById('progress-text').textContent = 'Step 1: Episode structure working!';
+							
+						} else {
+							throw new Error('Episode test failed: Invalid result from runSingleEpisode');
+						}
+						
+					} catch (error) {
+						console.error('Step 1 testing failed:', error);
+						const modeSpan = document.getElementById('current-mode');
+						const statusSpan = document.getElementById('system-status');
+						if (modeSpan) modeSpan.textContent = 'Episode Test Failed';
+						if (statusSpan) statusSpan.textContent = 'Error: ' + error.message;
+						document.getElementById('progress-text').textContent = 'Step 1 Failed: Episode test failed';
+						alert('Step 1 test failed: ' + error.message);
+					}
+				};
+				
+				// Reset Scene
+				document.getElementById('reset-scene').onclick = () => {
+					window.location.reload();
+				};
+				
+				// Random Mode
+				document.getElementById('random-mode').onclick = () => {
+					console.log('Setting random mode');
+					window.gameManager.setAllAgentsMode('random');
+					if (modeSpan) modeSpan.textContent = 'Random';
+					if (statusSpan) statusSpan.textContent = 'Random mode';
+				};
+				
+				// Test Training - Step 2: Episode-Based Learning Loop
+				document.getElementById('test-training').onclick = async () => {
+					console.log('=== TESTING STEP 2: EPISODE-BASED LEARNING ===');
+					console.log('Testing short training session with immediate learning');
+					
+					// Check TensorFlow.js
+					if (typeof tf === 'undefined') {
+						alert('TensorFlow.js is still loading. Please wait a moment and try again.');
+						return;
+					}
+					
+					try {
+						// Import new trainer
+						const { EpisodeBasedTrainer } = await import('./dqn_system.js');
+						const trainer = new EpisodeBasedTrainer();
+						
+						// Initialize trainer
+						console.log('Initializing Episode-Based Trainer...');
+						const initialized = await trainer.initialize(window.gameManager, dqnDataCollector);
+						
+						if (!initialized) {
+							throw new Error('Failed to initialize episode-based trainer');
+						}
+						
+						// Update UI
+						if (modeSpan) modeSpan.textContent = 'Testing Learning';
+						if (statusSpan) statusSpan.textContent = 'Running test training...';
+						document.getElementById('progress-text').textContent = 'Step 2: Testing episode-based learning';
+						
+						// Run short training session (3 episodes, 5 seconds each)
+						console.log('Running test training: 3 episodes × 5 seconds');
+						const success = await trainer.runEpisodeBasedTraining({
+							episodes: 3,
+							episodeLength: 5000, // 5 second episodes
+							onEpisodeComplete: async (episode, totalEpisodes, stats) => {
+								console.log(`Episode ${episode}/${totalEpisodes} Results:`);
+								console.log(`   Experiences: ${stats.experienceCount}, Reward: ${stats.totalReward.toFixed(2)}`);
+								console.log(`   CPs Captured: ${stats.cpsCaptured}, Loss: ${stats.loss ? stats.loss.toFixed(4) : 'N/A'}`);
+								
+								// Update UI
+								document.getElementById('progress-text').textContent = `Episode ${episode}/3 complete`;
+								if (stats.loss) {
+									document.getElementById('training-loss').textContent = stats.loss.toFixed(4);
+								}
+							},
+							onTrainingComplete: async (learningStats) => {
+								console.log('=== STEP 2 TEST COMPLETE ===');
+								console.log('Learning Statistics:');
+								console.log(`   Episodes completed: ${learningStats.episodeRewards.length}`);
+								console.log(`   Average reward: ${learningStats.averageReward.toFixed(3)}`);
+								console.log(`   Average loss: ${learningStats.averageLoss.toFixed(4)}`);
+								console.log(`   Best episode: ${learningStats.bestEpisodeReward.toFixed(2)}`);
+								console.log(`   Training time: ${(learningStats.totalTrainingTime/1000).toFixed(1)}s`);
+							}
+						});
+						
+						if (success) {
+							console.log('Step 2 testing complete! Episode-based learning is working.');
+							console.log('The network learned from each episode immediately');
+							console.log('Ready for Step 3 (Full Training)!');
+							
+							// Update UI
+							if (modeSpan) modeSpan.textContent = 'Learning Test Complete';
+							if (statusSpan) statusSpan.textContent = 'Network learned from episodes';
+							document.getElementById('progress-text').textContent = 'Step 2 Complete: Episode learning working!';
+							document.getElementById('network-status').textContent = 'Test Trained';
+							
+							// Store test network
+							window.testTrainer = trainer;
+							window.trainedNetwork = trainer.network;
+							
+						} else {
+							throw new Error('Episode-based learning test failed');
+						}
+						
+					} catch (error) {
+						console.error('Step 2 testing failed:', error);
+						if (modeSpan) modeSpan.textContent = 'Learning Test Failed';
+						if (statusSpan) statusSpan.textContent = 'Error: ' + error.message;
+						alert('Step 2 test failed: ' + error.message);
+					}
+				};
+				
+				// Full Training (Step 3) - Complete Episode-Based Training Session
+				document.getElementById('train-network').onclick = async () => {
+					console.log('=== STEP 3: FULL EPISODE-BASED TRAINING SESSION ===');
+					console.log('OpenAI Multi-Agent Style - Learn from actual gameplay');
+					
+					// Check TensorFlow.js
+					if (typeof tf === 'undefined') {
+						alert('TensorFlow.js is still loading. Please wait a moment and try again.');
+						return;
+					}
+					
+					// Training parameters - Increased for more comprehensive training
+					const episodeLength = 10000;  // 10 seconds per episode (good balance of training time and feedback)
+					const totalEpisodes = 30;     // 30 episodes = ~5 minutes of intensive training
+					const estimatedTime = (episodeLength * totalEpisodes) / 1000 / 60;
+					
+					console.log(`Training Plan: ${totalEpisodes} episodes × ${episodeLength/1000}s = ~${estimatedTime.toFixed(1)} minutes`);
+					console.log('Each episode: Reset -> Play -> Learn -> Repeat');
+					console.log('Watch for: Environment resets, agent movement, progress updates');
+					
+					// Confirm with user
+					const confirmed = confirm(`Start full training session (~${estimatedTime.toFixed(1)} minutes)?\n\nYou'll see:\n- Environment resets before each episode\n- Real-time progress updates\n- Loss improvements over time`);
+					if (!confirmed) {
+						console.log('Training cancelled by user');
+						return;
+					}
+					
+					try {
+						// Import and initialize trainer
+						const { EpisodeBasedTrainer } = await import('./dqn_system.js');
+						const trainer = new EpisodeBasedTrainer();
+						
+						// Store trainer globally for reset access
+						window.episodeTrainer = trainer;
+						
+						console.log('Initializing full training session...');
+						console.log('Setting up neural network and target network...');
+						await trainer.initialize(window.gameManager, dqnDataCollector);
+						
+						// Force environment reset before starting
+						console.log('Performing initial environment reset...');
+						if (window.gameManager && window.gameManager.agents) {
+							// Reset agent positions
+							window.gameManager.agents.forEach((agent, index) => {
+								const angle = (index / window.gameManager.agents.length) * 2 * Math.PI;
+								const radius = 15;
+								const x = Math.cos(angle) * radius;
+								const z = Math.sin(angle) * radius;
+								const y = 0.5;
+								
+								if (agent.mesh) {
+									agent.mesh.position.set(x, y, z);
+								}
+								
+								// Reset scores and claimed points
+								if (agent.claimedCriticalPoints) {
+									agent.claimedCriticalPoints.clear();
+								}
+								if (agent.testScore !== undefined) {
+									agent.testScore = 0;
+								}
+							});
+							
+							// Reset critical points
+							if (window.gameManager.criticalPointSystem) {
+								// Use comprehensive reset from RL system if available
+								if (window.episodeTrainer && typeof window.episodeTrainer.resetCriticalPointsCompletely === 'function') {
+									window.episodeTrainer.resetCriticalPointsCompletely();
+								} else {
+									// Use utility function fallback
+									window.resetCriticalPointsUtil();
+								}
+							}
+						}
+						
+						// Update UI with detailed initialization
+						if (modeSpan) modeSpan.textContent = 'Full Training';
+						if (statusSpan) statusSpan.textContent = 'Initializing networks...';
+						document.getElementById('progress-text').textContent = 'Setting up training session...';
+						document.getElementById('network-status').textContent = 'Initializing...';
+						
+						// Brief pause to show initialization
+						await new Promise(resolve => setTimeout(resolve, 1000));
+						
+						console.log('Training session initialized! Starting episodes...');
+						document.getElementById('progress-text').textContent = 'Starting episode-based training...';
+						
+						// Store trainer globally for potential stopping
+						window.currentTrainer = trainer;
+						
+						// Run full training session
+						const success = await trainer.runEpisodeBasedTraining({
+							episodes: totalEpisodes,
+							episodeLength: episodeLength,
+							onEpisodeStart: async (episode, totalEpisodes) => {
+								// Visual feedback when starting each episode
+								console.log(`\n=== EPISODE ${episode}/${totalEpisodes} STARTING ===`);
+								console.log(`Environment reset will happen automatically...`);
+								
+								// Update UI to show episode starting
+								document.getElementById('progress-text').textContent = `Episode ${episode}/${totalEpisodes} - Starting episode...`;
+								document.getElementById('network-status').textContent = `Starting Episode ${episode}`;
+								if (statusSpan) statusSpan.textContent = `Episode ${episode} - Starting`;
+								
+								// Brief pause to show episode start
+								await new Promise(resolve => setTimeout(resolve, 500));
+								
+								console.log(`Episode ${episode} will run for ${episodeLength/1000}s...`);
+								document.getElementById('progress-text').textContent = `Episode ${episode}/${totalEpisodes} - Environment resetting...`;
+								if (statusSpan) statusSpan.textContent = `Episode ${episode} - Environment reset`;
+								
+								// Wait a bit more to ensure reset is visible
+								await new Promise(resolve => setTimeout(resolve, 500));
+								
+								console.log(`Episode ${episode} now playing with reset agents...`);
+								document.getElementById('progress-text').textContent = `Episode ${episode}/${totalEpisodes} - Playing (${episodeLength/1000}s)...`;
+								if (statusSpan) statusSpan.textContent = `Episode ${episode} - Agents playing`;
+								
+								// Start countdown timer for this episode
+								let timeLeft = episodeLength / 1000;
+								const countdownTimer = setInterval(() => {
+									timeLeft--;
+									if (timeLeft > 0) {
+										document.getElementById('progress-text').textContent = 
+											`Episode ${episode}/${totalEpisodes} - ${timeLeft}s remaining`;
+									} else {
+										clearInterval(countdownTimer);
+										document.getElementById('progress-text').textContent = 
+											`Episode ${episode}/${totalEpisodes} - Learning from experiences...`;
+									}
+								}, 1000);
+								
+								// Store timer reference for cleanup
+								window.currentCountdown = countdownTimer;
+							},
+							onEpisodeComplete: async (episode, totalEpisodes, stats) => {
+								// Clear countdown timer
+								if (window.currentCountdown) {
+									clearInterval(window.currentCountdown);
+									window.currentCountdown = null;
+								}
+								
+								const lossSpan = document.getElementById('training-loss');
+								const networkSpan = document.getElementById('network-status');
+								const progressSpan = document.getElementById('progress-text');
+								
+								// Show learning completion
+								console.log(`Episode ${episode}/${totalEpisodes} Results:`);
+								console.log(`   Reward: ${stats.totalReward.toFixed(2)} | Loss: ${stats.loss ? stats.loss.toFixed(4) : 'N/A'}`);
+								console.log(`   CPs Captured: ${stats.cpsCaptured} | Experiences: ${stats.experienceCount}`);
+								console.log(`   Duration: ${(stats.actualDuration/1000).toFixed(1)}s`);
+								
+								// Update UI with detailed progress
+								if (lossSpan && stats.loss) lossSpan.textContent = stats.loss.toFixed(4);
+								if (networkSpan) networkSpan.textContent = `Episode ${episode}/${totalEpisodes} Complete`;
+								if (progressSpan) progressSpan.textContent = `${episode}/${totalEpisodes} - Loss: ${stats.loss ? stats.loss.toFixed(4) : 'N/A'}, CPs: ${stats.cpsCaptured}`;
+								
+								// Show progress percentage
+								const progress = ((episode / totalEpisodes) * 100).toFixed(1);
+								console.log(`Training Progress: ${progress}% (${episode}/${totalEpisodes} episodes)`);
+								
+								// Brief pause to show results
+								await new Promise(resolve => setTimeout(resolve, 800));
+							},
+							onTrainingComplete: async (learningStats) => {
+								console.log('=== FULL TRAINING SESSION COMPLETED ===');
+								console.log(`Final Statistics:`);
+								console.log(`   Total episodes: ${learningStats.episodeRewards.length}`);
+								console.log(`   Training time: ${(learningStats.totalTrainingTime/1000/60).toFixed(1)} minutes`);
+								console.log(`   Best episode reward: ${learningStats.bestEpisodeReward.toFixed(2)}`);
+								console.log(`   Final average loss: ${learningStats.averageLoss.toFixed(4)}`);
+								console.log(`   Average reward: ${learningStats.averageReward.toFixed(3)}`);
+								console.log('Network learned from real multi-agent gameplay!');
+							}
+						});
+						
+						// Clean up trainer reference
+						window.currentTrainer = null;
+						
+						if (success) {
+							console.log('\n=== FULL TRAINING SESSION COMPLETED SUCCESSFULLY! ===');
+							console.log('All episodes completed with learning');
+							console.log('Neural network has been trained on real gameplay');
+							console.log('Network ready for smart agent mode');
+							console.log('Use "Export Weights" to save this trained model');
+							console.log('Use "Enable DQN" to see smart agents in action');
+							
+							// Update UI with completion status
+							if (modeSpan) modeSpan.textContent = 'Training Complete';
+							if (statusSpan) statusSpan.textContent = 'Network fully trained';
+							document.getElementById('network-status').textContent = 'Ready for Smart Mode';
+							document.getElementById('progress-text').textContent = 'Training complete! Try "Enable DQN" to see smart agents';
+							
+							// Store trained network
+							window.trainedNetwork = trainer.network;
+							
+							// Return agents to random mode
+							console.log('Setting agents back to random mode');
+							window.gameManager.setAllAgentsMode('random');
+							
+							// Flash the DQN button to draw attention
+							const dqnButton = document.getElementById('dqn-mode');
+							if (dqnButton) {
+								let flashCount = 0;
+								const flashInterval = setInterval(() => {
+									dqnButton.style.backgroundColor = flashCount % 2 === 0 ? '#4CAF50' : '';
+									dqnButton.style.color = flashCount % 2 === 0 ? 'white' : '';
+									flashCount++;
+									if (flashCount >= 6) {
+										clearInterval(flashInterval);
+										dqnButton.style.backgroundColor = '';
+										dqnButton.style.color = '';
+									}
+								}, 500);
+							}
+							
+						} else {
+							throw new Error('Full training session failed');
+						}
+						
+					} catch (error) {
+						console.error('Full training failed:', error);
+						if (modeSpan) modeSpan.textContent = 'Training Failed';
+						if (statusSpan) statusSpan.textContent = 'Error: ' + error.message;
+						alert('Full training failed: ' + error.message);
+						window.gameManager.setAllAgentsMode('random');
+					}
+				};
+			
+			// Export Weights - Save trained network to file
+			document.getElementById('export-weights').onclick = async () => {
+				if (!window.trainedNetwork) {
+					alert('No trained network available. Train the network first.');
+					console.log('No trained network to export');
+					return;
+				}
+				
+				try {
+					console.log('=== EXPORTING TRAINED WEIGHTS ===');
+					
+					// Get weights from the trained network
+					const weights = await window.trainedNetwork.getWeights();
+					const exportData = {
+						weights: weights,
+						stateSize: 14,
+						actionSize: 4,
+						timestamp: new Date().toISOString(),
+						version: '1.0'
+					};
+					
+					// Create downloadable file
+					const dataStr = JSON.stringify(exportData, null, 2);
+					const dataBlob = new Blob([dataStr], {type: 'application/json'});
+					const url = URL.createObjectURL(dataBlob);
+					
+					// Create download link
+					const downloadLink = document.createElement('a');
+					downloadLink.href = url;
+					downloadLink.download = `dqn-weights-${Date.now()}.json`;
+					downloadLink.style.display = 'none';
+					
+					// Trigger download
+					document.body.appendChild(downloadLink);
+					downloadLink.click();
+					document.body.removeChild(downloadLink);
+					URL.revokeObjectURL(url);
+					
+					console.log('Weights exported successfully to file');
+					console.log(`File name: dqn-weights-${Date.now()}.json`);
+					
+					if (statusSpan) statusSpan.textContent = 'Weights exported';
+					
+				} catch (error) {
+					console.error('Failed to export weights:', error);
+					alert('Failed to export weights: ' + error.message);
+				}
+			};
+			
+			// Load Weights - Load trained network from file
+			document.getElementById('load-weights').onclick = () => {
+				console.log('=== LOADING WEIGHTS FROM FILE ===');
+				
+				// Create file input element
+				const fileInput = document.createElement('input');
+				fileInput.type = 'file';
+				fileInput.accept = '.json';
+				fileInput.style.display = 'none';
+				
+				fileInput.onchange = async (event) => {
+					const file = event.target.files[0];
+					if (!file) return;
+					
+					try {
+						console.log(`Reading file: ${file.name}`);
+						
+						// Read file content
+						const text = await file.text();
+						const weightData = JSON.parse(text);
+						
+						console.log('Parsed weight data:', weightData);
+						console.log('Weight data keys:', Object.keys(weightData));
+						
+						// Validate weight data
+						if (!weightData.weights || !weightData.stateSize || !weightData.actionSize) {
+							throw new Error('Invalid weight file format. Expected: weights, stateSize, actionSize');
+						}
+						
+						if (weightData.stateSize !== 14 || weightData.actionSize !== 4) {
+							throw new Error(`Incompatible network size. Expected 14 inputs, 4 outputs. Got ${weightData.stateSize} inputs, ${weightData.actionSize} outputs.`);
+						}
+						
+						console.log('Weight validation passed');
+						console.log(`Weights array length: ${weightData.weights.length}`);
+						
+						// Import weights into DQN system
+						const { SimpleDQNNetwork } = await import('./dqn_system.js');
+						const network = new SimpleDQNNetwork();
+						network.createModel();
+						
+						console.log('Created new network, attempting to load weights...');
+						
+						const loadResult = network.setWeights(weightData.weights);
+						console.log('Weight loading result:', loadResult);
+						
+						if (loadResult) {
+							window.trainedNetwork = network;
+							
+							console.log('Weights loaded successfully from file');
+							console.log(`File: ${file.name}`);
+							console.log(`Timestamp: ${weightData.timestamp || 'Unknown'}`);
+							console.log('Network is ready for smart agent mode');
+							
+							// Update UI
+							if (modeSpan) modeSpan.textContent = 'Weights Loaded';
+							if (statusSpan) statusSpan.textContent = 'Loaded from file';
+							document.getElementById('network-status').textContent = 'Loaded & Ready';
+							
+						} else {
+							throw new Error('Failed to load weights into neural network');
+						}
+						
+					} catch (error) {
+						console.error('Failed to load weights:', error);
+						console.error('Error details:', error.stack);
+						alert('Failed to load weights: ' + error.message);
+					}
+					
+					// Clean up
+					document.body.removeChild(fileInput);
+				};
+				
+				// Trigger file selection
+				document.body.appendChild(fileInput);
+				fileInput.click();
+			};
+			
+			// Enable DQN Mode
+			document.getElementById('dqn-mode').onclick = async () => {
+				if (!window.trainedNetwork) {
+					alert('No trained network available. Train the network first.');
+					console.log('No trained network found. Complete training first.');
+					return;
+				}
+				
+				console.log('=== ENABLING SMART AGENT MODE ===');
+				console.log('Creating DQN behavior for agents...');
+				
+				try {
+					// Import DQN behavior classes
+					const { DQNAgentBehavior } = await import('./dqn_system.js');
+					
+					// Create DQN behavior instance
+					const dqnBehavior = new DQNAgentBehavior();
+					
+					// Load the trained network into the behavior
+					const weightData = { 
+						weights: await window.trainedNetwork.getWeights(),
+						stateSize: 14,
+						actionSize: 4
+					};
+					
+					if (dqnBehavior.loadTrainedWeights(weightData)) {
+						dqnBehavior.enableSmartMode();
+						
+						// Set all agents to use DQN mode with the smart behavior
+						window.gameManager.setAllAgentsMode('dqn', null, dqnBehavior);
+						
+						// Update UI
+						if (modeSpan) modeSpan.textContent = 'DQN Smart Mode';
+						if (statusSpan) statusSpan.textContent = 'Smart agents active';
+						
+						console.log('Smart agent mode enabled successfully!');
+						console.log('Agents are now using the trained neural network for decisions');
+						console.log('Watch for:');
+						console.log('   - Agents should glow blue (visual indicator)');
+						console.log('   - More purposeful movement toward critical points');
+						console.log('   - Smart decision counter should increase');
+						console.log('   - Occasional debug messages in console');
+						
+						// Store globally for other functions
+						window.dqnBehavior = dqnBehavior;
+						
+					} else {
+						throw new Error('Failed to load trained weights into DQN behavior');
+					}
+					
+				} catch (error) {
+					console.error('Failed to enable DQN mode:', error);
+					alert('Failed to enable DQN mode: ' + error.message);
+				}
+			};
+			
+			// Epsilon Slider - Control exploration rate
+			document.getElementById('epsilon-slider').oninput = (event) => {
+				const epsilonValue = parseInt(event.target.value) / 100; // Convert to 0-1 range
+				document.getElementById('epsilon-value').textContent = `${event.target.value}%`;
+				
+				// Update DQN behavior if it exists
+				if (window.dqnBehavior) {
+					window.dqnBehavior.setExplorationRate(epsilonValue);
+					console.log(`Exploration rate set to ${(epsilonValue * 100).toFixed(1)}%`);
+				}
+			};
+				
+				// Update smart decision counter for DQN mode
+				setInterval(() => {
+					try {
+						if (window.dqnBehavior) {
+							const behaviorStats = window.dqnBehavior.getStatus();
+							const smartDecisionSpan = document.getElementById('smart-decisions');
+							if (smartDecisionSpan && behaviorStats.smartStats) {
+								let totalDecisions = 0;
+								Object.values(behaviorStats.smartStats.agentStats || {}).forEach(agentStats => {
+									totalDecisions += agentStats.decisions || 0;
+								});
+								smartDecisionSpan.textContent = totalDecisions;
+							}
+						}
+					} catch (error) {
+						console.warn('UI update error:', error);
+					}
+				}, 1000);
+				
+				console.log('DQN UI controls connected successfully');
+			};
+			
+			// Utility function to ensure agent positions are reset before training
+			function ensureAgentReset() {
+				console.log('Ensuring all agents are in initial positions...');
+				
+				if (!window.gameManager || !window.gameManager.agents) {
+					console.warn('Game manager or agents not available for reset');
+					return;
+				}
+				
+				window.gameManager.agents.forEach((agent, index) => {
+					// Calculate starting position (spread around circle)
+					const angle = (index / window.gameManager.agents.length) * 2 * Math.PI;
+					const radius = 15;
+					const x = Math.cos(angle) * radius;
+					const z = Math.sin(angle) * radius;
+					const y = 0.5;
+					
+					if (agent.mesh) {
+						// Check current position
+						const currentX = agent.mesh.position.x;
+						const currentZ = agent.mesh.position.z;
+						
+						// Only reset if not already at starting position
+						const distance = Math.sqrt((currentX - x) ** 2 + (currentZ - z) ** 2);
+						if (distance > 0.5) { // If more than 0.5 units away from start
+							console.log(`Agent ${index}: Moving from (${currentX.toFixed(1)},${currentZ.toFixed(1)}) to start (${x.toFixed(1)},${z.toFixed(1)})`);
+							agent.mesh.position.set(x, y, z);
+							agent.mesh.rotation.set(0, 0, 0);
+						}
+					}
+					
+					// Reset scores and state
+					if (agent.claimedCriticalPoints) {
+						agent.claimedCriticalPoints.clear();
+					}
+					if (agent.testScore !== undefined) {
+						agent.testScore = 0;
+					}
+					if (agent.velocity) {
+						agent.velocity.set(0, 0, 0);
+					}
+				});
+				
+				console.log('Agent positions verified/reset complete');
+			}
+			
+			setupControls();
+		});
+		
+		console.log('DQN system initialized');
+	</script>
+
+	<script src="AgentTestMain.js" type="module" defer></script>
+	</body>
+</html>
