@@ -1154,7 +1154,7 @@ class EpisodeManager {
             averageCPsCaptured: 0
         };
         
-        console.log('🎬 Episode Manager initialized for OpenAI-style training');
+        console.log('Episode Manager initialized for OpenAI-style training');
     }
     
     /**
@@ -1164,7 +1164,7 @@ class EpisodeManager {
         this.gameManager = gameManager;
         this.dataCollector = dataCollector;
         
-        console.log('🏗️  Episode Manager connected to game systems');
+        console.log('Episode Manager connected to game systems');
         console.log('   - Game Manager:', !!this.gameManager);
         console.log('   - Data Collector:', !!this.dataCollector);
         
@@ -1175,29 +1175,22 @@ class EpisodeManager {
      * Reset environment to initial state (Step 1a: Environment Reset)
      */
     async resetEnvironment() {
-        console.log('🔄 Resetting environment for new episode...');
+        console.log('=== ENVIRONMENT RESET STARTING ===');
         
         if (!this.gameManager) {
             throw new Error('Game manager not initialized');
         }
         
-        // Reset critical points to neutral state
+        // Reset critical points to neutral state FIRST
         if (this.gameManager.criticalPointSystem) {
-            // Reset all critical points to unclaimed
-            if (this.gameManager.criticalPointSystem.criticalPoints) {
-                this.gameManager.criticalPointSystem.criticalPoints.forEach(cpData => {
-                    if (cpData.cp && cpData.cp.material) {
-                        cpData.cp.material.color.setHex(cpData.originalColor || 0xff0000);
-                        cpData.cp.material.opacity = 0.8;
-                    }
-                    cpData.ownedBy = null;
-                    cpData.currentOwner = null;
-                });
-            }
+            console.log('Step 1: Resetting critical points...');
+            this.resetCriticalPointsCompletely();
+            console.log('Critical points reset completed');
         }
         
-        // Reset agent positions and states
+        // Reset agent positions and states SECOND
         if (this.gameManager.agents) {
+            console.log(`Step 2: Resetting ${this.gameManager.agents.length} agents to starting positions...`);
             this.gameManager.agents.forEach((agent, index) => {
                 // Reset to initial positions (spread around circle)
                 const angle = (index / this.gameManager.agents.length) * 2 * Math.PI;
@@ -1207,23 +1200,69 @@ class EpisodeManager {
                 const y = 0.5;
                 
                 if (agent.mesh) {
+                    // Store previous position for debugging
+                    const prevPos = { 
+                        x: agent.mesh.position.x, 
+                        z: agent.mesh.position.z 
+                    };
+                    
+                    // Force position reset
                     agent.mesh.position.set(x, y, z);
+                    agent.mesh.rotation.set(0, 0, 0);
+                    
+                    // Verify position was set
+                    const newPos = {
+                        x: agent.mesh.position.x,
+                        z: agent.mesh.position.z
+                    };
+                    
+                    console.log(`Agent ${index}: (${prevPos.x.toFixed(1)},${prevPos.z.toFixed(1)}) -> (${newPos.x.toFixed(1)},${newPos.z.toFixed(1)})`);
+                    
+                    // Double-check the reset worked
+                    const distance = Math.sqrt((newPos.x - x) ** 2 + (newPos.z - z) ** 2);
+                    if (distance > 0.1) {
+                        console.warn(`Agent ${index} position reset failed! Distance from target: ${distance.toFixed(2)}`);
+                        // Try again
+                        agent.mesh.position.set(x, y, z);
+                    }
                 }
                 
                 // Reset agent scores and claimed points
                 if (agent.claimedCriticalPoints) {
+                    const prevClaimedCount = agent.claimedCriticalPoints.size;
                     agent.claimedCriticalPoints.clear();
+                    if (prevClaimedCount > 0) {
+                        console.log(`Agent ${index}: Reset ${prevClaimedCount} claimed critical points`);
+                    }
                 }
                 if (agent.testScore !== undefined) {
+                    const prevScore = agent.testScore;
                     agent.testScore = 0;
+                    if (prevScore !== 0) {
+                        console.log(`Agent ${index}: Reset score from ${prevScore} to 0`);
+                    }
+                }
+                
+                // Reset any other agent state
+                if (agent.velocity) {
+                    agent.velocity.set(0, 0, 0);
+                }
+                
+                // Reset any action/decision state that might persist
+                if (agent.lastAction !== undefined) {
+                    agent.lastAction = null;
+                }
+                if (agent.actionHistory) {
+                    agent.actionHistory = [];
                 }
             });
+            console.log('All agents reset to starting positions confirmed');
         }
         
-        console.log('✅ Environment reset complete');
+        console.log('=== ENVIRONMENT RESET COMPLETE ===');
         
-        // Brief pause for environment to settle
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // Longer pause for environment to settle and become visually obvious
+        await new Promise(resolve => setTimeout(resolve, 800));
     }
     
     /**
@@ -1232,7 +1271,7 @@ class EpisodeManager {
     async runSingleEpisode(episodeNumber, episodeLength = null) {
         const length = episodeLength || this.episodeLength;
         
-        console.log(`\n🎬 Starting Episode ${episodeNumber}`);
+        console.log(`\n=== Starting Episode ${episodeNumber} ===`);
         console.log(`   Duration: ${length/1000} seconds`);
         console.log(`   Agents: ${this.gameManager.agents.length}`);
         
@@ -1252,7 +1291,7 @@ class EpisodeManager {
         this.episodeStartTime = Date.now();
         this.isRunning = true;
         
-        console.log(`⏱️  Episode ${episodeNumber} running...`);
+        console.log(`Episode ${episodeNumber} running...`);
         
         // Run episode for specified duration
         return new Promise((resolve) => {
@@ -1267,7 +1306,7 @@ class EpisodeManager {
                 // Collect episode results
                 const episodeData = await this.collectEpisodeResults(episodeNumber, length);
                 
-                console.log(`✅ Episode ${episodeNumber} completed:`);
+                console.log(`Episode ${episodeNumber} completed:`);
                 console.log(`   Duration: ${episodeData.actualDuration/1000}s`);
                 console.log(`   Experiences: ${episodeData.experienceCount}`);
                 console.log(`   CPs Captured: ${episodeData.cpsCaptured}`);
@@ -1366,13 +1405,89 @@ class EpisodeManager {
     }
     
     /**
-     * Stop current episode early
+     * Reset critical points to neutral state without duplicating them
      */
+    resetCriticalPointsCompletely() {
+        const cps = this.gameManager.criticalPointSystem;
+        
+        if (!cps) return;
+
+        console.log('=== CRITICAL POINTS RESET STARTING ===');
+        console.log(`Before reset: ${cps.criticalPoints ? cps.criticalPoints.length : 0} critical points exist`);
+
+        // Reset existing critical points to neutral state (don't regenerate!)
+        if (cps.criticalPoints && cps.criticalPoints.length > 0) {
+            console.log(`Resetting ${cps.criticalPoints.length} existing critical points to neutral state`);
+            
+            let resetCount = 0;
+            cps.criticalPoints.forEach((cpData, index) => {
+                if (cpData.cp && cpData.cp.material) {
+                    // Reset to original/neutral color
+                    const originalColor = cpData.originalColor || 0xffffff;
+                    cpData.cp.material.color.setHex(originalColor);
+                    cpData.cp.material.opacity = 0.8;
+                    
+                    // Reset any glow children
+                    if (cpData.cp.children && cpData.cp.children.length > 0) {
+                        cpData.cp.children.forEach(child => {
+                            if (child.material) {
+                                child.material.color.setHex(originalColor);
+                            }
+                        });
+                    }
+                    
+                    console.log(`CP ${index}: Reset to color 0x${originalColor.toString(16)}`);
+                    resetCount++;
+                }
+                
+                // Reset ownership and state
+                cpData.ownedBy = null;
+                cpData.currentOwner = null;
+                if (cpData.fillProgress !== undefined) {
+                    cpData.fillProgress = 0;
+                }
+                if (cpData.currentColor) {
+                    cpData.currentColor = cpData.originalColor || 0xffffff;
+                }
+            });
+            
+            console.log(`Successfully reset ${resetCount} critical points visually`);
+            
+            // Reset registry ownership but keep the critical points
+            if (cps.cpsByOwner) {
+                const prevOwnerCount = cps.cpsByOwner.size;
+                cps.cpsByOwner.clear();
+                console.log(`Cleared ${prevOwnerCount} ownership registries`);
+            }
+            
+            // Reset registry states but don't clear the points themselves
+            if (cps.cpRegistry) {
+                let registryResetCount = 0;
+                cps.cpRegistry.forEach((cpData, id) => {
+                    cpData.ownedBy = null;
+                    cpData.isActivelyClaimed = false;
+                    cpData.claimedBy = null;
+                    cpData.lastClaimedTime = 0;
+                    if (cpData.claimHistory) {
+                        cpData.claimHistory = [];
+                    }
+                    registryResetCount++;
+                });
+                console.log(`Reset ${registryResetCount} registry entries`);
+            }
+        } else {
+            console.log('No existing critical points found to reset');
+        }
+
+        console.log('=== CRITICAL POINTS RESET COMPLETE ===');
+        console.log(`After reset: ${cps.criticalPoints ? cps.criticalPoints.length : 0} critical points exist`);
+    }
+
     stopEpisode() {
         if (this.isRunning) {
             this.isRunning = false;
             this.dataCollector.stopCollection();
-            console.log('🛑 Episode stopped early by user');
+            console.log('Episode stopped early by user');
         }
     }
 }
@@ -1417,14 +1532,14 @@ class EpisodeBasedTrainer {
             totalTrainingTime: 0
         };
         
-        console.log('🎓 Episode-Based Trainer initialized (OpenAI Style)');
+        console.log('Episode-Based Trainer initialized (OpenAI Style)');
     }
     
     /**
      * Initialize the trainer with necessary components
      */
     async initialize(gameManager, dataCollector) {
-        console.log('🏗️  Initializing Episode-Based Trainer...');
+        console.log('Initializing Episode-Based Trainer...');
         
         // Create fresh neural network
         this.network = new SimpleDQNNetwork();
@@ -1441,11 +1556,11 @@ class EpisodeBasedTrainer {
         
         this.dataCollector = dataCollector;
         
-        console.log('✅ Episode-Based Trainer ready:');
-        console.log('   - Neural Network: ✅');
-        console.log('   - Target Network: ✅');
-        console.log('   - Episode Manager: ✅');
-        console.log('   - Data Collector: ✅');
+        console.log('Episode-Based Trainer ready:');
+        console.log('   - Neural Network: Ready');
+        console.log('   - Target Network: Ready');
+        console.log('   - Episode Manager: Ready');
+        console.log('   - Data Collector: Ready');
         
         return true;
     }
@@ -1457,7 +1572,7 @@ class EpisodeBasedTrainer {
         if (this.network && this.targetNetwork && this.network.model && this.targetNetwork.model) {
             const weights = this.network.model.getWeights();
             this.targetNetwork.model.setWeights(weights);
-            console.log('🎯 Target network updated for stable learning');
+            console.log('Target network updated for stable learning');
         }
     }
     
@@ -1468,13 +1583,14 @@ class EpisodeBasedTrainer {
         const {
             episodes = 20,           // Fewer episodes for faster iteration
             episodeLength = 10000,   // 10 seconds per episode (faster)
+            onEpisodeStart,          // Callback when episode starts
             onEpisodeComplete,
             onTrainingComplete
         } = config;
         
-        console.log('🎮 === STARTING EPISODE-BASED TRAINING (STEP 2) ===');
-        console.log('🧠 Learning after each episode - no experience replay!');
-        console.log(`📊 Plan: ${episodes} episodes × ${episodeLength/1000}s = ${(episodes*episodeLength/1000/60).toFixed(1)} minutes`);
+        console.log('=== STARTING EPISODE-BASED TRAINING (STEP 2) ===');
+        console.log('Learning after each episode - no experience replay!');
+        console.log(`Training Plan: ${episodes} episodes × ${episodeLength/1000}s = ${(episodes*episodeLength/1000/60).toFixed(1)} minutes`);
         
         this.isTraining = true;
         this.totalEpisodesRun = 0;
@@ -1483,27 +1599,32 @@ class EpisodeBasedTrainer {
         try {
             for (let episode = 1; episode <= episodes; episode++) {
                 if (!this.isTraining) {
-                    console.log('🛑 Training stopped early');
+                    console.log('Training stopped early');
                     break;
                 }
                 
-                console.log(`\n🎬 Episode ${episode}/${episodes} - Learn & Play Cycle`);
+                console.log(`\nEpisode ${episode}/${episodes} - Learn & Play Cycle`);
                 
-                // Step 2a: Run single episode
+                // Step 2a: Episode start callback
+                if (onEpisodeStart) {
+                    await onEpisodeStart(episode, episodes);
+                }
+                
+                // Step 2b: Run single episode
                 const episodeData = await this.episodeManager.runSingleEpisode(episode, episodeLength);
                 
-                // Step 2b: Learn immediately from this episode
+                // Step 2c: Learn immediately from this episode
                 const learningResult = await this.learnFromEpisode(episodeData, episode);
                 
-                // Step 2c: Update target network periodically
+                // Step 2d: Update target network periodically
                 if (episode % this.targetUpdateFreq === 0) {
                     this.updateTargetNetwork();
                 }
                 
-                // Step 2d: Track learning progress
+                // Step 2e: Track learning progress
                 this.updateLearningStats(episodeData, learningResult);
                 
-                // Step 2e: Report progress
+                // Step 2f: Report progress
                 if (onEpisodeComplete) {
                     await onEpisodeComplete(episode, episodes, {
                         ...episodeData,
@@ -1521,12 +1642,12 @@ class EpisodeBasedTrainer {
             const trainingTime = Date.now() - trainingStartTime;
             this.learningStats.totalTrainingTime = trainingTime;
             
-            console.log('🏁 === EPISODE-BASED TRAINING COMPLETED ===');
-            console.log(`⏱️  Total time: ${(trainingTime/1000/60).toFixed(1)} minutes`);
-            console.log(`📊 Episodes completed: ${this.totalEpisodesRun}`);
-            console.log(`🏆 Best episode reward: ${this.learningStats.bestEpisodeReward.toFixed(2)}`);
-            console.log(`📈 Final average loss: ${this.learningStats.averageLoss.toFixed(4)}`);
-            console.log('🎯 Network learned from real gameplay episodes!');
+            console.log('=== EPISODE-BASED TRAINING COMPLETED ===');
+            console.log(`Total time: ${(trainingTime/1000/60).toFixed(1)} minutes`);
+            console.log(`Episodes completed: ${this.totalEpisodesRun}`);
+            console.log(`Best episode reward: ${this.learningStats.bestEpisodeReward.toFixed(2)}`);
+            console.log(`Final average loss: ${this.learningStats.averageLoss.toFixed(4)}`);
+            console.log('Network learned from real gameplay episodes!');
             
             if (onTrainingComplete) {
                 await onTrainingComplete(this.learningStats);
@@ -1535,7 +1656,7 @@ class EpisodeBasedTrainer {
             return true;
             
         } catch (error) {
-            console.error('❌ Episode-based training failed:', error);
+            console.error('Episode-based training failed:', error);
             return false;
         } finally {
             this.isTraining = false;
@@ -1549,11 +1670,11 @@ class EpisodeBasedTrainer {
         const experiences = episodeData.experiences;
         
         if (experiences.length < 10) {
-            console.log(`⚠️  Episode ${episodeNumber}: Only ${experiences.length} experiences, skipping learning`);
+            console.log(`Warning - Episode ${episodeNumber}: Only ${experiences.length} experiences, skipping learning`);
             return { loss: 0, learned: false };
         }
         
-        console.log(`🧠 Learning from Episode ${episodeNumber}: ${experiences.length} experiences`);
+        console.log(`Learning from Episode ${episodeNumber}: ${experiences.length} experiences`);
         
         try {
             // Prepare training data from episode experiences
@@ -1573,22 +1694,28 @@ class EpisodeBasedTrainer {
             const currentQValues = this.network.model.predict(stateTensor);
             const nextQValues = this.targetNetwork.model.predict(nextStateTensor);
             
-            // Create targets
-            const targets = currentQValues.clone();
+            // Create targets by getting current Q-values and updating them
+            const targetsData = await currentQValues.data();
+            const targetsArray = Array.from(targetsData);
+            const numActions = currentQValues.shape[1];
             
-            // Update Q-values for taken actions
+            // Update Q-values for taken actions using Bellman equation
             const gamma = 0.95; // Discount factor
             for (let i = 0; i < experiences.length; i++) {
-                const maxNextQ = await nextQValues.slice([i, 0], [1, -1]).max(1).data();
+                const nextQSlice = nextQValues.slice([i, 0], [1, -1]);
+                const maxNextQ = await nextQSlice.max(1).data();
                 const target = rewards[i] + gamma * maxNextQ[0];
                 
-                // Update the Q-value for the action taken
-                const targetArray = await targets.slice([i, 0], [1, -1]).data();
-                targetArray[actions[i]] = target;
+                // Update the Q-value for the action taken in this experience
+                const targetIndex = i * numActions + actions[i];
+                targetsArray[targetIndex] = target;
                 
-                // Set the updated values back
-                targets.slice([i, 0], [1, -1]).assign(tf.tensor1d(targetArray));
+                // Clean up slice tensor
+                nextQSlice.dispose();
             }
+            
+            // Create targets tensor from updated array
+            const targets = tf.tensor2d(targetsArray, currentQValues.shape);
             
             // Train the network
             const history = await this.network.model.fit(stateTensor, targets, {
@@ -1608,12 +1735,12 @@ class EpisodeBasedTrainer {
             nextQValues.dispose();
             targets.dispose();
             
-            console.log(`✅ Episode ${episodeNumber} learning complete: Loss = ${loss.toFixed(4)}`);
+            console.log(`Episode ${episodeNumber} learning complete: Loss = ${loss.toFixed(4)}`);
             
             return { loss, learned: true };
             
         } catch (error) {
-            console.error(`❌ Episode ${episodeNumber} learning failed:`, error);
+            console.error(`Episode ${episodeNumber} learning failed:`, error);
             return { loss: 999, learned: false };
         }
     }
@@ -1649,7 +1776,7 @@ class EpisodeBasedTrainer {
         if (this.episodeManager) {
             this.episodeManager.stopEpisode();
         }
-        console.log('🛑 Episode-based training stopped');
+        console.log('Episode-based training stopped');
     }
     
     /**
@@ -1666,12 +1793,293 @@ class EpisodeBasedTrainer {
     }
 }
 
+/**
+ * STEP 3: Simplified Advanced Episode Management - OpenAI Style
+ * 
+ * This adds advanced features to episode-based training:
+ * 1. Curriculum Learning: Start easy, increase difficulty
+ * 2. Population Training: Multiple learning strategies
+ * 3. Self-Evaluation: Adaptive learning based on performance
+ * 
+ * Simplified version inspired by OpenAI's multi-agent emergence
+ */
+class AdvancedEpisodeManager {
+    constructor() {
+        this.episodeBasedTrainer = null;
+        
+        // Curriculum Learning
+        this.curriculumLevel = 1;
+        this.maxCurriculumLevel = 3;
+        this.episodesPerLevel = 8; // Episodes before advancing curriculum
+        this.levelEpisodeCount = 0;
+        
+        // Population Training
+        this.populationSize = 1; // Start with 1, can expand
+        this.populations = [];
+        
+        // Self-Evaluation
+        this.performanceHistory = [];
+        this.adaptiveParameters = {
+            episodeLength: 10000,  // Start at 10 seconds
+            learningRate: 0.0001,
+            explorationRate: 0.1
+        };
+        
+        // Learning objectives
+        this.objectives = {
+            minRewardThreshold: 0.5,
+            minCPsPerEpisode: 1,
+            consistencyWindow: 5  // Episodes to check consistency
+        };
+        
+        console.log('Advanced Episode Manager initialized (Simplified)');
+    }
+    
+    /**
+     * Initialize with episode-based trainer
+     */
+    async initialize(gameManager, dataCollector) {
+        console.log('Initializing Advanced Episode Management...');
+        
+        // Create episode-based trainer
+        this.episodeBasedTrainer = new EpisodeBasedTrainer();
+        await this.episodeBasedTrainer.initialize(gameManager, dataCollector);
+        
+        // Initialize curriculum
+        this.setCurriculumLevel(1);
+        
+        console.log('Advanced Episode Manager ready:');
+        console.log('   - Curriculum Learning: Ready (3 levels)');
+        console.log('   - Population Training: Ready (adaptive)');
+        console.log('   - Self-Evaluation: Ready (performance tracking)');
+        
+        return true;
+    }
+    
+    /**
+     * Set curriculum difficulty level (1 = easy, 3 = hard)
+     */
+    setCurriculumLevel(level) {
+        this.curriculumLevel = Math.min(level, this.maxCurriculumLevel);
+        
+        switch (this.curriculumLevel) {
+            case 1: // Easy: Short episodes, more reward
+                this.adaptiveParameters.episodeLength = 8000;   // 8 seconds
+                this.objectives.minRewardThreshold = 0.3;
+                this.objectives.minCPsPerEpisode = 1;
+                console.log('📚 Curriculum Level 1: Easy mode (8s episodes, low thresholds)');
+                break;
+                
+            case 2: // Medium: Normal episodes, balanced reward
+                this.adaptiveParameters.episodeLength = 12000;  // 12 seconds
+                this.objectives.minRewardThreshold = 0.6;
+                this.objectives.minCPsPerEpisode = 2;
+                console.log('📚 Curriculum Level 2: Medium mode (12s episodes, balanced)');
+                break;
+                
+            case 3: // Hard: Long episodes, high reward requirements
+                this.adaptiveParameters.episodeLength = 15000;  // 15 seconds
+                this.objectives.minRewardThreshold = 0.8;
+                this.objectives.minCPsPerEpisode = 3;
+                console.log('📚 Curriculum Level 3: Hard mode (15s episodes, high thresholds)');
+                break;
+        }
+        
+        this.levelEpisodeCount = 0;
+    }
+    
+    /**
+     * Evaluate if agent should advance curriculum
+     */
+    evaluateCurriculumProgress(episodeData) {
+        this.levelEpisodeCount++;
+        
+        // Check if agent meets objectives for current level
+        const meetsReward = episodeData.averageReward >= this.objectives.minRewardThreshold;
+        const meetsCPs = episodeData.cpsCaptured >= this.objectives.minCPsPerEpisode;
+        
+        console.log(`Curriculum Progress (Level ${this.curriculumLevel}):`);
+        console.log(`   Episodes at this level: ${this.levelEpisodeCount}/${this.episodesPerLevel}`);
+        console.log(`   Reward: ${episodeData.averageReward.toFixed(3)} (need ${this.objectives.minRewardThreshold})`);
+        console.log(`   CPs: ${episodeData.cpsCaptured} (need ${this.objectives.minCPsPerEpisode})`);
+        
+        // Advance if objectives met for enough episodes
+        if (meetsReward && meetsCPs && this.levelEpisodeCount >= this.episodesPerLevel) {
+            if (this.curriculumLevel < this.maxCurriculumLevel) {
+                this.setCurriculumLevel(this.curriculumLevel + 1);
+                console.log(`Advanced to Curriculum Level ${this.curriculumLevel}!`);
+                return true;
+            } else {
+                console.log('Maximum curriculum level reached!');
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Self-evaluate performance and adapt parameters
+     */
+    selfEvaluateAndAdapt(episodeData) {
+        // Add to performance history
+        this.performanceHistory.push({
+            episode: episodeData.episode,
+            reward: episodeData.averageReward,
+            cps: episodeData.cpsCaptured,
+            experiences: episodeData.experienceCount,
+            level: this.curriculumLevel
+        });
+        
+        // Keep only recent history
+        if (this.performanceHistory.length > 20) {
+            this.performanceHistory.shift();
+        }
+        
+        // Analyze recent performance
+        if (this.performanceHistory.length >= this.objectives.consistencyWindow) {
+            const recentPerformance = this.performanceHistory.slice(-this.objectives.consistencyWindow);
+            const avgReward = recentPerformance.reduce((sum, p) => sum + p.reward, 0) / recentPerformance.length;
+            const avgCPs = recentPerformance.reduce((sum, p) => sum + p.cps, 0) / recentPerformance.length;
+            
+            console.log(`Self-Evaluation (last ${this.objectives.consistencyWindow} episodes):`);
+            console.log(`   Average Reward: ${avgReward.toFixed(3)}`);
+            console.log(`   Average CPs: ${avgCPs.toFixed(1)}`);
+            
+            // Adapt parameters based on performance
+            if (avgReward < 0.2) {
+                // Poor performance - make it easier
+                this.adaptiveParameters.episodeLength = Math.max(6000, this.adaptiveParameters.episodeLength - 1000);
+                console.log(`📉 Poor performance detected - reducing episode length to ${this.adaptiveParameters.episodeLength/1000}s`);
+            } else if (avgReward > 0.8 && avgCPs > 2) {
+                // Great performance - can handle more challenge
+                this.adaptiveParameters.episodeLength = Math.min(18000, this.adaptiveParameters.episodeLength + 500);
+                console.log(`Great performance detected - increasing episode length to ${this.adaptiveParameters.episodeLength/1000}s`);
+            }
+        }
+    }
+    
+    /**
+     * Run advanced episode-based training with curriculum and adaptation
+     */
+    async runAdvancedTraining(config) {
+        const {
+            totalEpisodes = 20,
+            onEpisodeComplete,
+            onCurriculumAdvance,
+            onTrainingComplete
+        } = config;
+        
+        console.log('=== ADVANCED EPISODE-BASED TRAINING ===');
+        console.log('Curriculum Learning + Self-Adaptation + Population Training');
+        console.log(`Training Plan: ${totalEpisodes} episodes with adaptive curriculum`);
+        
+        let episodeCount = 0;
+        let curriculumAdvances = 0;
+        
+        try {
+            while (episodeCount < totalEpisodes && this.episodeBasedTrainer.isTraining !== false) {
+                episodeCount++;
+                
+                console.log(`\nAdvanced Episode ${episodeCount}/${totalEpisodes}`);
+                console.log(`📚 Curriculum Level: ${this.curriculumLevel}`);
+                console.log(`Episode Length: ${this.adaptiveParameters.episodeLength/1000}s`);
+                
+                // Run episode with current parameters
+                const success = await this.episodeBasedTrainer.runEpisodeBasedTraining({
+                    episodes: 1, // One episode at a time for fine control
+                    episodeLength: this.adaptiveParameters.episodeLength,
+                    onEpisodeComplete: async (episode, totalEpisodes, episodeData) => {
+                        // Evaluate curriculum progress
+                        const advanced = this.evaluateCurriculumProgress(episodeData);
+                        if (advanced) {
+                            curriculumAdvances++;
+                            if (onCurriculumAdvance) {
+                                await onCurriculumAdvance(this.curriculumLevel, episodeData);
+                            }
+                        }
+                        
+                        // Self-evaluate and adapt
+                        this.selfEvaluateAndAdapt(episodeData);
+                        
+                        // Report to parent callback
+                        if (onEpisodeComplete) {
+                            await onEpisodeComplete(episodeCount, totalEpisodes, {
+                                ...episodeData,
+                                curriculumLevel: this.curriculumLevel,
+                                adaptiveLength: this.adaptiveParameters.episodeLength,
+                                performanceHistory: this.performanceHistory.slice(-5) // Recent 5
+                            });
+                        }
+                    }
+                });
+                
+                if (!success) {
+                    throw new Error(`Episode ${episodeCount} failed`);
+                }
+                
+                // Brief pause between episodes
+                await new Promise(resolve => setTimeout(resolve, 200));
+            }
+            
+            console.log('=== ADVANCED TRAINING COMPLETED ===');
+            console.log(`Episodes completed: ${episodeCount}`);
+            console.log(`Curriculum advances: ${curriculumAdvances}`);
+            console.log(`Final curriculum level: ${this.curriculumLevel}/${this.maxCurriculumLevel}`);
+            
+            if (onTrainingComplete) {
+                const finalStats = {
+                    episodesCompleted: episodeCount,
+                    curriculumAdvances: curriculumAdvances,
+                    finalCurriculumLevel: this.curriculumLevel,
+                    performanceHistory: [...this.performanceHistory],
+                    adaptiveParameters: { ...this.adaptiveParameters },
+                    trainerStats: this.episodeBasedTrainer.getStats().learningStats
+                };
+                
+                await onTrainingComplete(finalStats);
+            }
+            
+            return true;
+            
+        } catch (error) {
+            console.error('Advanced training failed:', error);
+            return false;
+        }
+    }
+    
+    /**
+     * Stop advanced training
+     */
+    stopTraining() {
+        if (this.episodeBasedTrainer) {
+            this.episodeBasedTrainer.stopTraining();
+        }
+        console.log('Advanced training stopped');
+    }
+    
+    /**
+     * Get comprehensive status
+     */
+    getStatus() {
+        return {
+            curriculumLevel: this.curriculumLevel,
+            maxCurriculumLevel: this.maxCurriculumLevel,
+            levelEpisodeCount: this.levelEpisodeCount,
+            episodesPerLevel: this.episodesPerLevel,
+            adaptiveParameters: { ...this.adaptiveParameters },
+            objectives: { ...this.objectives },
+            performanceHistory: this.performanceHistory.slice(-10), // Recent 10
+            trainerStatus: this.episodeBasedTrainer ? this.episodeBasedTrainer.getStats() : null
+        };
+    }
+}
+
 // Export classes for use in other files
 export { 
     DQNDataCollector, StateObserver, ActionRecorder, RewardCalculator, ExperienceBuffer,
     SimpleDQNNetwork, SimpleDQNTrainer, CompleteDQNSystem,
     ActionExecutor, SmartAgentController, DQNAgentBehavior, FullDQNSystem,
-    EpisodeManager, EpisodeBasedTrainer
+    EpisodeManager, EpisodeBasedTrainer, AdvancedEpisodeManager
 };
 
 // Create global instances
@@ -1685,6 +2093,7 @@ window.SmartAgentController = SmartAgentController;
 window.DQNAgentBehavior = DQNAgentBehavior;
 window.FullDQNSystem = FullDQNSystem;
 window.EpisodeBasedTrainer = EpisodeBasedTrainer;
+window.AdvancedEpisodeManager = AdvancedEpisodeManager;
 
 /**
  * SimpleDQNTrainer - DEPRECATED: Use EpisodeBasedTrainer instead
