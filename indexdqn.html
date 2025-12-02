@@ -2,7 +2,10 @@
 <html>
 	<head>
 		<link rel="stylesheet" href="./style.css" />
-		<title>Agent Test Environment</title>
+		<title>DQN Training Environment</title>
+		
+		<!-- TensorFlow.js -->
+		<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
 	</head>
 
 	<body>
@@ -10,11 +13,12 @@
 		
 		<!-- Game Info Display - Fixed Overlay -->
 		<div id="losUI" style="position: fixed; top: 10px; left: 10px; background: rgba(255,255,255,0.9); padding: 8px; border: 1px solid black; font-size: 12px; z-index: 1000;">
-			<strong>Agent Test Environment</strong>
+			<strong>DQN Training Environment</strong>
 			<div id="agentScores">Loading scores...</div>
 			<div id="testTimer">Timer: 0</div>
 			<div style="font-size: 11px;">
-				Camera: Mouse look, Scroll zoom
+				Camera: Mouse look, Scroll zoom<br>
+				DQN: Deep Q-Network training
 			</div>
 		</div>
 
@@ -27,6 +31,18 @@
 			<div style="margin: 3px 0;">
 				<button id="reset-scene">Reset Environment</button>
 				<button id="random-mode">Random Mode</button>
+			</div>
+			
+			<div style="margin-top: 6px; border-top: 1px solid #ccc; padding-top: 4px;">
+				<h5 style="margin: 0 0 3px 0;">DQN Controls</h5>
+				<div style="margin: 2px 0;">
+					<button id="init-dqn" style="font-size: 10px;">Initialize DQN</button>
+					<button id="start-dqn" style="font-size: 10px;">Start Training</button>
+				</div>
+				<div style="margin: 2px 0;">
+					<button id="stop-dqn" style="font-size: 10px;">Stop Training</button>
+					<button id="save-dqn" style="font-size: 10px;">Save Model</button>
+				</div>
 			</div>
 		</div>
 
@@ -73,6 +89,7 @@
 		import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 		import { CriticalPointSystem, CP_COLORS } from './critical-point-system.js';
 		import { gameStateExtractor } from './dqn/game-state-extractor.js';
+		import { dqnIntegration } from './dqn/dqn-integration.js';
 		
 		// Expose Three.js and related systems to global scope
 		window.THREE = THREE;
@@ -81,6 +98,7 @@
 		window.CriticalPointSystem = CriticalPointSystem;
 		window.CP_COLORS = CP_COLORS;
 		window.gameStateExtractor = gameStateExtractor;
+		window.dqnIntegration = dqnIntegration;
 
 		// Red Agent State Display Update
 		function updateRedAgentStateDisplay() {
@@ -151,7 +169,7 @@
 		
 		// Setup basic game controls when page loads
 		window.addEventListener('load', () => {
-			console.log('Setting up basic game controls');
+			console.log('Setting up DQN environment controls');
 			
 			const setupControls = () => {
 				if (!window.gameManager) {
@@ -159,7 +177,7 @@
 					return;
 				}
 				
-				console.log('Game manager ready, connecting basic controls');
+				console.log('Game manager ready, connecting DQN controls');
 				
 				// Start red agent state display updates
 				startRedAgentStateUpdates();
@@ -313,13 +331,70 @@
 					if (statusSpan) statusSpan.textContent = 'Random mode active';
 				};
 				
-				console.log('Basic game controls connected successfully');
+				// DQN Controls
+				document.getElementById('init-dqn').onclick = async () => {
+					console.log('Initializing DQN...');
+					if (statusSpan) statusSpan.textContent = 'Initializing DQN...';
+					
+					try {
+						await dqnIntegration.initialize(window.gameManager, {
+							scene: window.scene,
+							collisionWorld: window.collisionWorld,
+							criticalPointSystem: window.globalCPSystem,
+							mapLayout: window.mapLayout
+						});
+						
+						if (statusSpan) statusSpan.textContent = 'DQN Ready';
+						console.log('DQN initialized successfully');
+					} catch (error) {
+						if (statusSpan) statusSpan.textContent = 'DQN Init Error';
+						console.error('DQN initialization error:', error);
+					}
+				};
+				
+				document.getElementById('start-dqn').onclick = async () => {
+					console.log('Starting DQN training...');
+					if (statusSpan) statusSpan.textContent = 'Starting DQN training...';
+					
+					try {
+						await dqnIntegration.startTraining(0); // Train red agent
+						if (modeSpan) modeSpan.textContent = 'DQN Training';
+						if (statusSpan) statusSpan.textContent = 'DQN training active';
+					} catch (error) {
+						if (statusSpan) statusSpan.textContent = 'DQN Start Error';
+						console.error('DQN training start error:', error);
+					}
+				};
+				
+				document.getElementById('stop-dqn').onclick = () => {
+					console.log('Stopping DQN training...');
+					dqnIntegration.stopTraining();
+					if (statusSpan) statusSpan.textContent = 'DQN training stopped';
+				};
+				
+				document.getElementById('save-dqn').onclick = async () => {
+					console.log('Saving DQN model...');
+					if (statusSpan) statusSpan.textContent = 'Saving model...';
+					
+					try {
+						const modelName = 'dqn_model_' + new Date().toISOString().slice(0, 16).replace(/[:-]/g, '');
+						const success = await dqnIntegration.saveModel(modelName);
+						if (statusSpan) {
+							statusSpan.textContent = success ? 'Model saved' : 'Save failed';
+						}
+					} catch (error) {
+						if (statusSpan) statusSpan.textContent = 'Save error';
+						console.error('Model save error:', error);
+					}
+				};
+				
+				console.log('DQN game controls connected successfully');
 			};
 			
 			setupControls();
 		});
 		
-		console.log('Basic game system initialized');
+		console.log('DQN training system initialized');
 	</script>
 
 	<script src="AgentTestMain.js" type="module" defer></script>

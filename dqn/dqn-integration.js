@@ -1,0 +1,369 @@
+/**
+ * DQN Integration
+ * Connects the DQN training system to the existing game environment
+ * 
+ * This module provides a simple interface to:
+ * - Initialize DQN training
+ * - Start/stop training sessions  
+ * - Monitor training progress
+ * - Switch agents between manual/random/DQN modes
+ */
+
+import { dqnTrainer } from './dqn-trainer.js';
+
+export class DQNIntegration {
+    constructor() {
+        // Integration state
+        this.isInitialized = false;
+        this.trainingAgent = null;
+        this.gameManager = null;
+        this.gameEnvironment = null;
+        
+        // UI elements for monitoring
+        this.statusElements = {
+            status: null,
+            episode: null,
+            reward: null,
+            epsilon: null,
+            loss: null
+        };
+        
+        console.log('DQN Integration initialized');
+    }
+
+    /**
+     * Initialize DQN integration with game environment
+     * @param {Object} gameManager - The game's agent manager
+     * @param {Object} gameEnvironment - Game environment objects
+     */
+    async initialize(gameManager, gameEnvironment) {
+        console.log('Initializing DQN integration...');
+        
+        // Store references
+        this.gameManager = gameManager;
+        this.gameEnvironment = {
+            scene: gameEnvironment.scene,
+            collisionWorld: gameEnvironment.collisionWorld,
+            criticalPointSystem: gameEnvironment.criticalPointSystem,
+            mapLayout: gameEnvironment.mapLayout || window.mapLayout
+        };
+        
+        // Wait for TensorFlow.js to be available
+        if (typeof tf === 'undefined') {
+            console.log('Waiting for TensorFlow.js to load...');
+            await this.waitForTensorFlow();
+        }
+        
+        // Initialize DQN trainer
+        await dqnTrainer.initialize();
+        
+        // Set up UI monitoring
+        this.setupUIMonitoring();
+        
+        this.isInitialized = true;
+        console.log('DQN integration initialized successfully');
+    }
+
+    /**
+     * Wait for TensorFlow.js to load
+     */
+    async waitForTensorFlow() {
+        let attempts = 0;
+        const maxAttempts = 100; // 10 seconds
+        
+        while (typeof tf === 'undefined' && attempts < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            attempts++;
+        }
+        
+        if (typeof tf === 'undefined') {
+            throw new Error('TensorFlow.js failed to load within timeout');
+        }
+        
+        console.log('TensorFlow.js loaded successfully');
+    }
+
+    /**
+     * Start DQN training for a specific agent
+     * @param {number} agentIndex - Index of agent to train (0 = red, 1 = green, 2 = blue)
+     */
+    async startTraining(agentIndex = 0) {
+        if (!this.isInitialized) {
+            throw new Error('DQN integration not initialized');
+        }
+        
+        if (!this.gameManager.agents || this.gameManager.agents.length <= agentIndex) {
+            throw new Error(`Agent ${agentIndex} not found`);
+        }
+        
+        this.trainingAgent = this.gameManager.agents[agentIndex];
+        
+        console.log(`Starting DQN training for agent ${agentIndex} (${this.getAgentColorName(agentIndex)})`);
+        
+        // Set agent to DQN mode (if applicable)
+        if (this.trainingAgent.setMode) {
+            this.trainingAgent.setMode('dqn');
+        }
+        
+        // Update UI
+        this.updateStatus('Training Started');
+        
+        // Start training (non-blocking)
+        dqnTrainer.startTraining(this.trainingAgent, this.gameManager, this.gameEnvironment)
+            .then(() => {
+                this.updateStatus('Training Complete');
+                console.log('DQN training completed');
+            })
+            .catch((error) => {
+                this.updateStatus('Training Error');
+                console.error('DQN training error:', error);
+            });
+    }
+
+    /**
+     * Stop DQN training
+     */
+    stopTraining() {
+        if (!this.isInitialized) {
+            console.warn('DQN integration not initialized');
+            return;
+        }
+        
+        dqnTrainer.stopTraining();
+        this.updateStatus('Training Stopped');
+        console.log('DQN training stopped');
+    }
+
+    /**
+     * Get training statistics
+     */
+    getTrainingStats() {
+        if (!this.isInitialized) {
+            return null;
+        }
+        
+        return dqnTrainer.getTrainingStats();
+    }
+
+    /**
+     * Save the trained model
+     */
+    async saveModel(name) {
+        if (!this.isInitialized) {
+            throw new Error('DQN integration not initialized');
+        }
+        
+        const success = await dqnTrainer.saveModel(name);
+        if (success) {
+            console.log('Model saved successfully');
+            this.updateStatus('Model Saved');
+        } else {
+            console.error('Failed to save model');
+            this.updateStatus('Save Failed');
+        }
+        return success;
+    }
+
+    /**
+     * Load a trained model
+     */
+    async loadModel(name) {
+        if (!this.isInitialized) {
+            throw new Error('DQN integration not initialized');
+        }
+        
+        const success = await dqnTrainer.loadModel(name);
+        if (success) {
+            console.log('Model loaded successfully');
+            this.updateStatus('Model Loaded');
+        } else {
+            console.error('Failed to load model');
+            this.updateStatus('Load Failed');
+        }
+        return success;
+    }
+
+    /**
+     * Set up UI monitoring elements
+     */
+    setupUIMonitoring() {
+        // Create DQN status display if it doesn't exist
+        this.createDQNStatusDisplay();
+        
+        // Start monitoring loop
+        this.startMonitoringLoop();
+    }
+
+    /**
+     * Create DQN status display UI
+     */
+    createDQNStatusDisplay() {
+        // Check if display already exists
+        if (document.getElementById('dqn-status-display')) {
+            this.connectStatusElements();
+            return;
+        }
+        
+        // Create new status display
+        const statusDiv = document.createElement('div');
+        statusDiv.id = 'dqn-status-display';
+        statusDiv.style.cssText = `
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(240, 240, 240, 0.95);
+            border: 1px solid #ccc;
+            padding: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 10px;
+            z-index: 1000;
+            max-width: 300px;
+            color: #333;
+        `;
+        
+        statusDiv.innerHTML = `
+            <div style="margin: 0 0 6px 0; font-weight: bold; font-size: 11px;">DQN Training Status</div>
+            <div>Status: <span id="dqn-status">Not Started</span></div>
+            <div>Episode: <span id="dqn-episode">0</span></div>
+            <div>Avg Reward: <span id="dqn-reward">0.000</span></div>
+            <div>Epsilon: <span id="dqn-epsilon">1.000</span></div>
+            <div>Loss: <span id="dqn-loss">0.000</span></div>
+            <div style="margin-top: 4px; font-size: 9px;">
+                <button id="dqn-start-btn" style="font-size: 9px; margin-right: 4px;">Start Training</button>
+                <button id="dqn-stop-btn" style="font-size: 9px; margin-right: 4px;">Stop</button>
+                <button id="dqn-save-btn" style="font-size: 9px;">Save Model</button>
+            </div>
+        `;
+        
+        document.body.appendChild(statusDiv);
+        
+        // Connect elements and event handlers
+        this.connectStatusElements();
+        this.setupUIEventHandlers();
+    }
+
+    /**
+     * Connect to status UI elements
+     */
+    connectStatusElements() {
+        this.statusElements = {
+            status: document.getElementById('dqn-status'),
+            episode: document.getElementById('dqn-episode'),
+            reward: document.getElementById('dqn-reward'),
+            epsilon: document.getElementById('dqn-epsilon'),
+            loss: document.getElementById('dqn-loss')
+        };
+    }
+
+    /**
+     * Set up UI event handlers
+     */
+    setupUIEventHandlers() {
+        const startBtn = document.getElementById('dqn-start-btn');
+        const stopBtn = document.getElementById('dqn-stop-btn');
+        const saveBtn = document.getElementById('dqn-save-btn');
+        
+        if (startBtn) {
+            startBtn.onclick = () => {
+                this.startTraining(0); // Train red agent by default
+            };
+        }
+        
+        if (stopBtn) {
+            stopBtn.onclick = () => {
+                this.stopTraining();
+            };
+        }
+        
+        if (saveBtn) {
+            saveBtn.onclick = () => {
+                this.saveModel('dqn_model_' + Date.now());
+            };
+        }
+    }
+
+    /**
+     * Start monitoring loop to update UI
+     */
+    startMonitoringLoop() {
+        setInterval(() => {
+            if (this.isInitialized) {
+                this.updateUIDisplay();
+            }
+        }, 1000); // Update every second
+    }
+
+    /**
+     * Update UI display with current training stats
+     */
+    updateUIDisplay() {
+        const stats = this.getTrainingStats();
+        if (!stats) return;
+        
+        // Update status elements
+        if (this.statusElements.episode) {
+            this.statusElements.episode.textContent = stats.episode.toString();
+        }
+        
+        if (this.statusElements.reward) {
+            const recentRewards = stats.episodeRewards.slice(-10);
+            const avgReward = recentRewards.length > 0 
+                ? recentRewards.reduce((a, b) => a + b, 0) / recentRewards.length 
+                : 0;
+            this.statusElements.reward.textContent = avgReward.toFixed(3);
+        }
+        
+        if (this.statusElements.epsilon) {
+            this.statusElements.epsilon.textContent = stats.currentEpsilon.toFixed(3);
+        }
+        
+        if (this.statusElements.loss) {
+            const recentLosses = stats.losses.slice(-10);
+            const avgLoss = recentLosses.length > 0
+                ? recentLosses.reduce((a, b) => a + b, 0) / recentLosses.length
+                : 0;
+            this.statusElements.loss.textContent = avgLoss.toFixed(3);
+        }
+    }
+
+    /**
+     * Update status message
+     */
+    updateStatus(message) {
+        if (this.statusElements.status) {
+            this.statusElements.status.textContent = message;
+        }
+        console.log(`DQN Status: ${message}`);
+    }
+
+    /**
+     * Get agent color name for display
+     */
+    getAgentColorName(agentIndex) {
+        const colors = ['Red', 'Green', 'Blue', 'Yellow'];
+        return colors[agentIndex] || `Agent ${agentIndex}`;
+    }
+
+    /**
+     * Dispose of resources
+     */
+    dispose() {
+        if (this.isInitialized) {
+            dqnTrainer.dispose();
+        }
+        
+        // Remove UI
+        const statusDisplay = document.getElementById('dqn-status-display');
+        if (statusDisplay) {
+            statusDisplay.remove();
+        }
+        
+        console.log('DQN integration disposed');
+    }
+}
+
+// Global instance for easy access
+export const dqnIntegration = new DQNIntegration();
+
+// Export for direct use
+export default DQNIntegration;
