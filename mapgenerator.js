@@ -58,7 +58,8 @@ export function createWalls(scene, width, depth, height) {
     }
     
     const walls = [];
-    const wallThickness = 0.3; // 围墙厚度（增加到0.3，之前是0.1太细了）
+    const wallThickness = 1; // 围墙厚度
+    console.log(`MapGenerator: Creating walls with thickness = ${wallThickness}`);
     const wallMaterial = new THREE.MeshStandardMaterial({
         color: 0x666666, // 深灰色
         roughness: 0.7,
@@ -66,75 +67,58 @@ export function createWalls(scene, width, depth, height) {
     });
     
     // 计算围墙位置（地图边界）
+    // 为了确保墙围住的内部空间正好是 width x depth，墙应该放置在边界外侧
+    // 墙的内边缘应该正好在边界上，这样墙的厚度不会侵占内部空间
     const halfWidth = width / 2;
     const halfDepth = depth / 2;
+    const halfWallThickness = wallThickness / 2;
     
     // 创建四面墙
-    // 前墙（z = -halfDepth）
+    // 前墙：内边缘在 z = -halfDepth，所以中心在 z = -halfDepth - halfWallThickness（向外偏移）
     const frontWall = new THREE.Mesh(
-        new THREE.BoxGeometry(width, height, wallThickness),
+        new THREE.BoxGeometry(width + wallThickness * 2, height, wallThickness),
         wallMaterial
     );
-    frontWall.position.set(0, height / 2, -halfDepth);
+    frontWall.position.set(0, height / 2, -halfDepth - halfWallThickness);
     frontWall.castShadow = true;
     frontWall.receiveShadow = true;
-    // 分类面：前墙的内面是+Z方向，外面是-Z方向
-    frontWall.userData.faceClassification = {
-        isBoundaryWall: true,
-        inwardFaces: [4], // +Z face (南面，面向内部)
-        outwardFaces: [5] // -Z face (北面，面向外部)
-    };
     scene.add(frontWall);
     walls.push(frontWall);
     
-    // 后墙（z = halfDepth）
+    // 后墙：内边缘在 z = halfDepth，所以中心在 z = halfDepth + halfWallThickness（向外偏移）
     const backWall = new THREE.Mesh(
-        new THREE.BoxGeometry(width, height, wallThickness),
+        new THREE.BoxGeometry(width + wallThickness * 2, height, wallThickness),
         wallMaterial
     );
-    backWall.position.set(0, height / 2, halfDepth);
+    backWall.position.set(0, height / 2, halfDepth + halfWallThickness);
     backWall.castShadow = true;
     backWall.receiveShadow = true;
-    // 分类面：后墙的内面是-Z方向，外面是+Z方向
-    backWall.userData.faceClassification = {
-        isBoundaryWall: true,
-        inwardFaces: [5], // -Z face (北面，面向内部)
-        outwardFaces: [4] // +Z face (南面，面向外部)
-    };
     scene.add(backWall);
     walls.push(backWall);
     
-    // 左墙（x = -halfWidth）
+    // 左墙：内边缘在 x = -halfWidth，所以中心在 x = -halfWidth - halfWallThickness（向外偏移）
+    // 深度需要扩展到 depth + wallThickness * 2 以覆盖前后墙的厚度
     const leftWall = new THREE.Mesh(
-        new THREE.BoxGeometry(wallThickness, height, depth),
+        new THREE.BoxGeometry(wallThickness, height, depth + wallThickness * 2),
         wallMaterial
     );
-    leftWall.position.set(-halfWidth, height / 2, 0);
+    console.log(`MapGenerator: Left wall geometry: width=${wallThickness}, height=${height}, depth=${depth + wallThickness * 2}`);
+    leftWall.position.set(-halfWidth - halfWallThickness, height / 2, 0);
     leftWall.castShadow = true;
     leftWall.receiveShadow = true;
-    // 分类面：左墙的内面是+X方向，外面是-X方向
-    leftWall.userData.faceClassification = {
-        isBoundaryWall: true,
-        inwardFaces: [0], // +X face (东面，面向内部)
-        outwardFaces: [1] // -X face (西面，面向外部)
-    };
     scene.add(leftWall);
     walls.push(leftWall);
     
-    // 右墙（x = halfWidth）
+    // 右墙：内边缘在 x = halfWidth，所以中心在 x = halfWidth + halfWallThickness（向外偏移）
+    // 深度需要扩展到 depth + wallThickness * 2 以覆盖前后墙的厚度
     const rightWall = new THREE.Mesh(
-        new THREE.BoxGeometry(wallThickness, height, depth),
+        new THREE.BoxGeometry(wallThickness, height, depth + wallThickness * 2),
         wallMaterial
     );
-    rightWall.position.set(halfWidth, height / 2, 0);
+    console.log(`MapGenerator: Right wall geometry: width=${wallThickness}, height=${height}, depth=${depth + wallThickness * 2}`);
+    rightWall.position.set(halfWidth + halfWallThickness, height / 2, 0);
     rightWall.castShadow = true;
     rightWall.receiveShadow = true;
-    // 分类面：右墙的内面是-X方向，外面是+X方向
-    rightWall.userData.faceClassification = {
-        isBoundaryWall: true,
-        inwardFaces: [1], // -X face (西面，面向内部)
-        outwardFaces: [0] // +X face (东面，面向外部)
-    };
     scene.add(rightWall);
     walls.push(rightWall);
     
@@ -170,16 +154,10 @@ export function createBlock(scene, x, z, height) {
     const block = new THREE.Mesh(blockGeometry, blockMaterial);
     
     // 设置位置
-    // 地图坐标系统：地图中心在(0, 0, 0)，模型会被居中到原点
-    // x 和 z 是网格坐标（从1开始，因为0是围墙）
-    // 由于模型会被居中，我们需要将网格坐标转换为相对于模型中心的坐标
-    // 假设地图是 mapWidth x mapDepth，中心在 (0,0,0)
-    // 网格坐标 (1,1) 在世界坐标中是 (-mapWidth/2 + 0.5, -mapDepth/2 + 0.5)
-    // 但由于模型会被居中，这些坐标会相对于模型中心
-    // 为了简化，我们假设传入的 x 和 z 已经是相对于模型中心的世界坐标
-    // 实际上，由于模型会通过偏移来居中，我们直接使用传入的坐标即可
+    // 地图坐标系统：地图中心在(0, 0, 0)
+    // 传入的 x 和 z 参数已经是方块中心的世界坐标
     // 方块应该在 y=height/2 的位置（底部在地面上）
-    block.position.set(x - 0.5, height / 2, z - 0.5);
+    block.position.set(x, height / 2, z);
     
     // 投射和接收阴影
     block.castShadow = true;
