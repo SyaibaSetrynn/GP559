@@ -23,6 +23,7 @@ class LevelContent3D {
         
         // 相机动画
         this.cameraAnimationState = null;
+        this.cameraMoveToMazeAnimation = null; // 相机移动到迷宫随机位置的动画
         
         // 关卡灯
         this.levelLight = null;
@@ -31,6 +32,7 @@ class LevelContent3D {
         // 迷宫相关
         this.mazeBlocks = {}; // 每个level的迷宫障碍物 { level: [blocks...] }
         this.emptyPositions = {}; // 每个level的空闲位置 { level: [{x, z}, ...] }
+        this.blockAnimations = {}; // 方块生长动画 { level: { isAnimating, startTime, duration, blocks: [{ block, startHeight, targetHeight }, ...] } }
         
         // 时间管理
         this.lastUpdateTime = null;
@@ -64,17 +66,25 @@ class LevelContent3D {
         
         console.log(`LevelContent3D: Entering level ${level}`);
         
-        // 生成迷宫
-        await this.generateMaze(level);
+        // 设置全局ESC键监听（不依赖玩家是否创建）
+        this.setupGlobalKeyboardControls();
         
-        // 添加关卡灯
-        this.addLevelLight(level);
+        // 检查迷宫是否已经生成
+        const mazeAlreadyGenerated = this.mazeBlocks[level] && this.mazeBlocks[level].length > 0;
         
-        // 创建碰撞检测世界
-        await this.setupCollisionWorld(level);
+        if (!mazeAlreadyGenerated) {
+            // 生成迷宫
+            await this.generateMaze(level);
+            
+            // 添加关卡灯
+            this.addLevelLight(level);
+        } else {
+            console.log(`LevelContent3D: Maze already generated for level ${level}, skipping generation`);
+        }
         
-        // 创建玩家并放置在空闲位置
-        await this.createPlayer(level);
+        // 注意：不创建碰撞检测世界和玩家，相机动画不依赖这些
+        // await this.setupCollisionWorld(level);
+        // await this.createPlayer(level);
     }
     
     // 退出关卡：清理关卡内容
@@ -133,6 +143,12 @@ class LevelContent3D {
             this.playerKeyupHandler = null;
         }
         
+        // 移除全局ESC键监听器
+        if (this.globalKeydownHandler) {
+            document.removeEventListener('keydown', this.globalKeydownHandler);
+            this.globalKeydownHandler = null;
+        }
+        
         // 移除PointerLockControls事件监听器
         if (this.pointerLockClickHandler && this.renderer && this.renderer.domElement) {
             this.renderer.domElement.removeEventListener('click', this.pointerLockClickHandler);
@@ -148,10 +164,14 @@ class LevelContent3D {
         
         // 重置动画状态
         this.cameraAnimationState = null;
+        this.cameraMoveToMazeAnimation = null;
         this.playerMovementLocked = false;
         this.lastUpdateTime = null;
         this.floorSurfaceY = null;
         this.playerInitialPosition = null;
+        
+        // 清除方块动画
+        this.blockAnimations = {};
         
         console.log('LevelContent3D: Exited level, cleaned up all resources');
     }
@@ -227,12 +247,18 @@ class LevelContent3D {
                     const actualX = -halfWidth + x + 1.0;
                     const actualZ = -halfDepth + z + 1.0;
                     
+                    // 初始高度为0，稍后通过动画增长到2
                     const tempScene = new THREE.Scene();
-                    const block = createBlock(tempScene, actualX, actualZ, 2);
+                    const block = createBlock(tempScene, actualX, actualZ, 0);
                     tempScene.remove(block);
+                    
+                    // 确保方块可见（即使高度为0，也应该能看到）
+                    block.visible = true;
                     
                     model.add(block);
                     mazeBlocks.push(block);
+                    
+                    console.log(`Created block at (${actualX.toFixed(2)}, ${actualZ.toFixed(2)}) with initial height 0`);
                 }
             }
         }
@@ -256,6 +282,450 @@ class LevelContent3D {
         this.emptyPositions[level] = emptyPositions;
         
         console.log(`LevelContent3D: Generated maze for level ${level} (${mapWidth}x${mapDepth}): ${wallCount} walls, ${emptyCount} empty`);
+        console.log(`LevelContent3D: Added ${mazeBlocks.length} blocks to model, model has ${model.children.length} children`);
+        
+        // 启动方块生长动画（0.5秒内从高度0增长到2）
+        this.startBlockGrowthAnimation(level);
+    }
+    
+    // 启动方块生长动画
+    startBlockGrowthAnimation(level) {
+        const blocks = this.mazeBlocks[level];
+        if (!blocks || blocks.length === 0) {
+            console.warn(`LevelContent3D: No blocks found for level ${level}, cannot start animation`);
+            return;
+        }
+        
+        const THREE = window.THREE;
+        if (!THREE) {
+            console.error('LevelContent3D: THREE is not available');
+            return;
+        }
+        
+        // 为每个方块保存动画信息
+        const animatedBlocks = blocks.map(block => {
+            // 保存方块的原始位置（x, z）
+            const x = block.position.x;
+            const z = block.position.z;
+            // 确保方块初始高度为0
+            if (block.geometry) {
+                block.geometry.dispose();
+            }
+            const blockSize = 1;
+            block.geometry = new THREE.BoxGeometry(blockSize, 0, blockSize);
+            block.position.set(x, 0, z);
+            block.visible = true;
+            
+            return {
+                block: block,
+                startHeight: 0,
+                targetHeight: 2,
+                x: x,
+                z: z
+            };
+        });
+        
+        this.blockAnimations[level] = {
+            isAnimating: true,
+            startTime: Date.now(),
+            duration: 500, // 0.5秒
+            blocks: animatedBlocks
+        };
+        
+        console.log(`LevelContent3D: Started block growth animation for level ${level} with ${animatedBlocks.length} blocks at ${new Date().toISOString()}`);
+        console.log(`LevelContent3D: Animation state:`, {
+            level: level,
+            isAnimating: this.blockAnimations[level].isAnimating,
+            startTime: this.blockAnimations[level].startTime,
+            duration: this.blockAnimations[level].duration,
+            blockCount: animatedBlocks.length
+        });
+    }
+    
+    // 更新方块生长动画
+    updateBlockGrowthAnimation() {
+        const THREE = window.THREE;
+        if (!THREE) {
+            console.warn('LevelContent3D: updateBlockGrowthAnimation called but THREE is not available');
+            return;
+        }
+        
+        // 调试：检查是否有动画
+        const animCount = Object.keys(this.blockAnimations).length;
+        if (animCount > 0) {
+            if (!this._lastAnimCount || this._lastAnimCount !== animCount) {
+                console.log(`LevelContent3D: updateBlockGrowthAnimation called, found ${animCount} animation(s)`);
+                this._lastAnimCount = animCount;
+            }
+        } else {
+            // 如果没有动画，也输出一次（避免日志过多）
+            if (this._lastAnimCount !== 0) {
+                console.log(`LevelContent3D: updateBlockGrowthAnimation called, no animations found`);
+                this._lastAnimCount = 0;
+            }
+        }
+        
+        // 检查是否有方块需要强制设置为高度2（如果动画已经过期或没有启动）
+        for (const levelKey in this.mazeBlocks) {
+            const level = parseInt(levelKey);
+            const blocks = this.mazeBlocks[level];
+            if (!blocks || blocks.length === 0) continue;
+            
+            // 检查是否有动画，如果没有或已过期，强制设置高度为2
+            const anim = this.blockAnimations[level];
+            if (!anim || !anim.isAnimating) {
+                // 检查动画是否已过期（超过0.5秒）
+                if (anim && anim.startTime) {
+                    const elapsed = Date.now() - anim.startTime;
+                    if (elapsed > anim.duration) {
+                        // 动画已过期，强制设置所有方块为高度2
+                        for (const block of blocks) {
+                            if (block.geometry) {
+                                const currentHeight = block.geometry.parameters.height;
+                                if (currentHeight !== 2) {
+                                    block.geometry.dispose();
+                                    const blockSize = 1;
+                                    block.geometry = new THREE.BoxGeometry(blockSize, 2, blockSize);
+                                    block.position.y = 1; // 高度2，所以y = 2/2 = 1
+                                    block.visible = true;
+                                }
+                            }
+                        }
+                        // 清除过期的动画
+                        delete this.blockAnimations[level];
+                        console.log(`LevelContent3D: Force set all blocks to height 2 for level ${level} (animation expired)`);
+                    }
+                } else if (!anim) {
+                    // 没有动画，直接设置所有方块为高度2
+                    for (const block of blocks) {
+                        if (block.geometry) {
+                            const currentHeight = block.geometry.parameters.height;
+                            if (currentHeight !== 2) {
+                                block.geometry.dispose();
+                                const blockSize = 1;
+                                block.geometry = new THREE.BoxGeometry(blockSize, 2, blockSize);
+                                block.position.y = 1; // 高度2，所以y = 2/2 = 1
+                                block.visible = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        for (const levelKey in this.blockAnimations) {
+            const anim = this.blockAnimations[levelKey];
+            if (!anim.isAnimating) {
+                if (!this._skippedAnimLog || this._skippedAnimLog !== levelKey) {
+                    console.log(`LevelContent3D: Animation for level ${levelKey} is not animating, skipping`);
+                    this._skippedAnimLog = levelKey;
+                }
+                continue;
+            }
+            
+            const elapsed = Date.now() - anim.startTime;
+            const progress = Math.min(elapsed / anim.duration, 1);
+            
+            // 使用easeOut缓动（从快到慢，更自然的生长效果）
+            const easedProgress = 1 - Math.pow(1 - progress, 3); // cubic ease-out
+            
+            // 更新每个方块的高度
+            for (const blockInfo of anim.blocks) {
+                const block = blockInfo.block;
+                const startHeight = blockInfo.startHeight;
+                const targetHeight = blockInfo.targetHeight;
+                const currentHeight = startHeight + (targetHeight - startHeight) * easedProgress;
+                
+                // 更新几何体高度
+                if (block.geometry) {
+                    block.geometry.dispose();
+                }
+                const blockSize = 1;
+                block.geometry = new THREE.BoxGeometry(blockSize, currentHeight, blockSize);
+                
+                // 更新位置：方块底部在地面上，所以 y = currentHeight / 2
+                // 保持 x 和 z 位置不变
+                block.position.set(blockInfo.x, currentHeight / 2, blockInfo.z);
+            }
+            
+            if (progress >= 1) {
+                // 动画完成，强制设置所有方块到最终高度2
+                for (const blockInfo of anim.blocks) {
+                    const block = blockInfo.block;
+                    const targetHeight = blockInfo.targetHeight;
+                    
+                    if (block.geometry) {
+                        block.geometry.dispose();
+                    }
+                    const blockSize = 1;
+                    block.geometry = new THREE.BoxGeometry(blockSize, targetHeight, blockSize);
+                    // 保持 x 和 z 位置不变，y = targetHeight / 2（底部在地面上）
+                    block.position.set(blockInfo.x, targetHeight / 2, blockInfo.z);
+                    block.visible = true;
+                    
+                    // 确保方块材质正确
+                    if (!block.material) {
+                        const THREE = window.THREE;
+                        block.material = new THREE.MeshStandardMaterial({
+                            color: 0x555555,
+                            roughness: 0.7,
+                            metalness: 0.1
+                        });
+                    }
+                }
+                
+                anim.isAnimating = false;
+                console.log(`LevelContent3D: Block growth animation completed for level ${levelKey}, all blocks set to height 2`);
+                
+                // 方块动画完成后，等待0.3秒，然后启动相机移动到随机位置的动画
+                setTimeout(() => {
+                    this.startCameraMoveToRandomMazePosition(parseInt(levelKey));
+                }, 300);
+            }
+        }
+    }
+    
+    // 启动相机移动到迷宫随机位置的动画
+    startCameraMoveToRandomMazePosition(level) {
+        const THREE = window.THREE;
+        if (!THREE || !this.camera) {
+            console.warn('LevelContent3D: Camera not available for move animation');
+            return;
+        }
+        
+        // 获取非障碍位置列表
+        const emptyPositions = this.emptyPositions[level];
+        if (!emptyPositions || emptyPositions.length === 0) {
+            console.warn(`LevelContent3D: No empty positions available for level ${level}, cannot move camera`);
+            return;
+        }
+        
+        // 随机选择一个非障碍位置
+        const randomPos = emptyPositions[Math.floor(Math.random() * emptyPositions.length)];
+        
+        // 获取模型，用于计算世界坐标
+        const model = this.models[level];
+        if (!model) {
+            console.warn(`LevelContent3D: Model not found for level ${level}, cannot move camera`);
+            return;
+        }
+        
+        // 计算目标位置
+        // 注意：emptyPositions 中的坐标是相对于模型中心的局部坐标
+        // 需要转换为世界坐标
+        const localPos = new THREE.Vector3(randomPos.x, 0, randomPos.z);
+        model.updateMatrixWorld(true);
+        localPos.applyMatrix4(model.matrixWorld);
+        
+        // 获取所有block的位置列表
+        const blocks = this.mazeBlocks[level] || [];
+        const blockPositions = blocks.map(block => ({
+            x: block.position.x.toFixed(2),
+            y: block.position.y.toFixed(2),
+            z: block.position.z.toFixed(2)
+        }));
+        
+        console.log(`LevelContent3D: All block positions for level ${level} (${blocks.length} blocks):`, blockPositions);
+        
+        // 验证选中的位置确实在emptyPositions中（双重检查）
+        const isInEmptyPositions = emptyPositions.some(pos => 
+            Math.abs(pos.x - randomPos.x) < 0.01 && Math.abs(pos.z - randomPos.z) < 0.01
+        );
+        if (!isInEmptyPositions) {
+            console.warn(`LevelContent3D: Selected position (${randomPos.x.toFixed(2)}, ${randomPos.z.toFixed(2)}) is not in emptyPositions, but continuing anyway`);
+        }
+        
+        // 验证世界坐标位置不会与方块重叠（更严格的检查）
+        let isOverlapping = false;
+        let closestBlockDistance = Infinity;
+        let closestBlockPos = null;
+        
+        for (const block of blocks) {
+            const blockPos = block.position;
+            const distance = Math.sqrt(
+                Math.pow(localPos.x - blockPos.x, 2) + 
+                Math.pow(localPos.z - blockPos.z, 2)
+            );
+            
+            if (distance < closestBlockDistance) {
+                closestBlockDistance = distance;
+                closestBlockPos = blockPos;
+            }
+            
+            // 方块大小是1x1，所以距离小于0.6就认为重叠（留一些安全边距）
+            if (distance < 0.6) {
+                isOverlapping = true;
+                console.warn(`LevelContent3D: Selected position (${localPos.x.toFixed(2)}, ${localPos.z.toFixed(2)}) is too close to a block at (${blockPos.x.toFixed(2)}, ${blockPos.y.toFixed(2)}, ${blockPos.z.toFixed(2)}), distance: ${distance.toFixed(2)}`);
+            }
+        }
+        
+        // 如果位置与block重叠，重新选择一个位置
+        if (isOverlapping) {
+            console.warn(`LevelContent3D: Selected position overlaps with a block, finding a new position...`);
+            // 尝试找到距离所有block都足够远的位置
+            let attempts = 0;
+            let foundSafePosition = false;
+            while (attempts < 10 && !foundSafePosition) {
+                const newRandomPos = emptyPositions[Math.floor(Math.random() * emptyPositions.length)];
+                const newLocalPos = new THREE.Vector3(newRandomPos.x, 0, newRandomPos.z);
+                newLocalPos.applyMatrix4(model.matrixWorld);
+                
+                let safe = true;
+                for (const block of blocks) {
+                    const blockPos = block.position;
+                    const distance = Math.sqrt(
+                        Math.pow(newLocalPos.x - blockPos.x, 2) + 
+                        Math.pow(newLocalPos.z - blockPos.z, 2)
+                    );
+                    if (distance < 0.6) {
+                        safe = false;
+                        break;
+                    }
+                }
+                
+                if (safe) {
+                    randomPos.x = newRandomPos.x;
+                    randomPos.z = newRandomPos.z;
+                    localPos.copy(newLocalPos);
+                    foundSafePosition = true;
+                    console.log(`LevelContent3D: Found safe position at (${localPos.x.toFixed(2)}, ${localPos.z.toFixed(2)}) after ${attempts + 1} attempts`);
+                }
+                attempts++;
+            }
+            
+            if (!foundSafePosition) {
+                console.error(`LevelContent3D: Could not find a safe position after ${attempts} attempts, using original position`);
+            }
+        }
+        
+        if (closestBlockPos) {
+            console.log(`LevelContent3D: Closest block to selected position: (${closestBlockPos.x.toFixed(2)}, ${closestBlockPos.y.toFixed(2)}, ${closestBlockPos.z.toFixed(2)}), distance: ${closestBlockDistance.toFixed(2)}`);
+        }
+        
+        // 相机高度设置为0.12（在地面上方）
+        const cameraY = 0.12;
+        const targetPos = new THREE.Vector3(
+            localPos.x,
+            cameraY,
+            localPos.z
+        );
+        
+        // 计算lookAt目标（x轴正方向，相对于模型）
+        const localLookAt = new THREE.Vector3(randomPos.x + 5, 0, randomPos.z);
+        localLookAt.applyMatrix4(model.matrixWorld);
+        const lookAtTarget = new THREE.Vector3(
+            localLookAt.x,
+            cameraY,
+            localLookAt.z
+        );
+        
+        // 获取当前相机位置和目标
+        const startPos = this.camera.position.clone();
+        const startLookAt = this.controls ? this.controls.target.clone() : 
+                           startPos.clone().add(new THREE.Vector3(0, 0, -5));
+        
+        console.log(`LevelContent3D: Starting camera move animation to random maze position:`, {
+            randomLocalPos: { x: randomPos.x.toFixed(2), z: randomPos.z.toFixed(2) },
+            worldPos: { x: localPos.x.toFixed(2), y: localPos.y.toFixed(2), z: localPos.z.toFixed(2) },
+            targetPos: { x: targetPos.x.toFixed(2), y: targetPos.y.toFixed(2), z: targetPos.z.toFixed(2) },
+            lookAtTarget: { x: lookAtTarget.x.toFixed(2), y: lookAtTarget.y.toFixed(2), z: lookAtTarget.z.toFixed(2) },
+            startPos: { x: startPos.x.toFixed(2), y: startPos.y.toFixed(2), z: startPos.z.toFixed(2) },
+            isEmptyPosition: isInEmptyPositions,
+            isOverlapping: isOverlapping,
+            totalEmptyPositions: emptyPositions.length
+        });
+        
+        this.cameraMoveToMazeAnimation = {
+            isAnimating: true,
+            completed: false,
+            startTime: null, // 将在第一次update时设置，确保从第一次更新开始计时
+            duration: 700, // 0.7秒
+            startPos: startPos,
+            targetPos: targetPos,
+            startLookAt: startLookAt,
+            targetLookAt: lookAtTarget
+        };
+    }
+    
+    // 更新相机移动到迷宫位置的动画
+    updateCameraMoveToMazeAnimation() {
+        if (!this.cameraMoveToMazeAnimation || !this.cameraMoveToMazeAnimation.isAnimating) {
+            return;
+        }
+        
+        const THREE = window.THREE;
+        if (!THREE || !this.camera) {
+            console.warn('LevelContent3D: updateCameraMoveToMazeAnimation - THREE or camera not available');
+            return;
+        }
+        
+        const anim = this.cameraMoveToMazeAnimation;
+        
+        // 如果startTime还没有设置，现在设置它（确保从第一次update开始计时）
+        if (anim.startTime === null) {
+            anim.startTime = Date.now();
+            console.log(`LevelContent3D: Camera move animation started at ${anim.startTime}`);
+        }
+        
+        const elapsed = Date.now() - anim.startTime;
+        const progress = Math.min(elapsed / anim.duration, 1);
+        
+        // 使用easeInOut缓动
+        const easedProgress = progress < 0.5 
+            ? 2 * progress * progress 
+            : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+        
+        // 插值位置
+        const currentPos = anim.startPos.clone().lerp(anim.targetPos, easedProgress);
+        
+        // 记录更新前的相机位置（用于调试）
+        const prevPos = this.camera.position.clone();
+        
+        // 更新相机位置
+        this.camera.position.copy(currentPos);
+        
+        // 插值lookAt目标
+        const currentLookAt = anim.startLookAt.clone().lerp(anim.targetLookAt, easedProgress);
+        if (this.controls) {
+            this.controls.target.copy(currentLookAt);
+            this.controls.update();
+        } else {
+            this.camera.lookAt(currentLookAt);
+        }
+        
+        // 计算lookAt方向向量
+        const lookAtDirection = new THREE.Vector3();
+        lookAtDirection.subVectors(currentLookAt, currentPos).normalize();
+        
+        // 检查位置是否真的更新了
+        const posChanged = prevPos.distanceTo(currentPos) > 0.001;
+        
+        // 每10%进度输出一次日志（避免日志过多）
+        const progressPercent = Math.floor(progress * 10);
+        if (!this._lastCameraMoveProgressPercent) {
+            this._lastCameraMoveProgressPercent = {};
+        }
+        const lastProgressPercent = this._lastCameraMoveProgressPercent[anim.startTime] || -1;
+        
+        if (progressPercent !== lastProgressPercent) {
+            this._lastCameraMoveProgressPercent[anim.startTime] = progressPercent;
+            console.log(`LevelContent3D: Camera update - position: (${currentPos.x.toFixed(3)}, ${currentPos.y.toFixed(3)}, ${currentPos.z.toFixed(3)}), lookAt: (${currentLookAt.x.toFixed(3)}, ${currentLookAt.y.toFixed(3)}, ${currentLookAt.z.toFixed(3)}), direction: (${lookAtDirection.x.toFixed(3)}, ${lookAtDirection.y.toFixed(3)}, ${lookAtDirection.z.toFixed(3)}), progress: ${(progress * 100).toFixed(1)}%, elapsed: ${elapsed}ms, posChanged: ${posChanged}`);
+        }
+        
+        if (progress >= 1) {
+            // 动画完成
+            this.camera.position.copy(anim.targetPos);
+            if (this.controls) {
+                this.controls.target.copy(anim.targetLookAt);
+                this.controls.update();
+            } else {
+                this.camera.lookAt(anim.targetLookAt);
+            }
+            
+            anim.isAnimating = false;
+            anim.completed = true;
+            console.log(`LevelContent3D: Camera move animation completed, camera at (${anim.targetPos.x.toFixed(2)}, ${anim.targetPos.y.toFixed(2)}, ${anim.targetPos.z.toFixed(2)}), looking at x+ direction`);
+        }
     }
     
     // 使用递归回溯算法生成完全连通的迷宫
@@ -807,15 +1277,35 @@ class LevelContent3D {
         }
         
         this.playerKeydownHandler = (event) => {
-            // ESC 键处理：进入暂停界面
+            // ESC 键处理：进入暂停界面（如果未暂停）或关闭暂停界面（如果已暂停）
             if (event.key === 'Escape' || event.key === 'Esc') {
-                if (this.uiInstance && typeof this.uiInstance.handlePauseClick === 'function') {
+                console.log(`LevelContent3D: ESC key pressed, isPaused: ${this.uiInstance ? this.uiInstance.isPaused : 'N/A'}`);
+                
+                if (this.uiInstance) {
                     // 如果 PointerLockControls 已锁定，先解锁
                     if (this.player && this.player.controls && this.player.controls.isLocked) {
+                        console.log('LevelContent3D: Unlocking PointerLockControls due to ESC key');
                         this.player.controls.unlock();
                     }
-                    this.uiInstance.handlePauseClick();
+                    
+                    // 如果已经暂停，按 ESC 应该关闭暂停界面（恢复游戏）
+                    if (this.uiInstance.isPaused) {
+                        console.log('LevelContent3D: ESC key - closing pause menu (resuming game)');
+                        if (typeof this.uiInstance.handleResumeClick === 'function') {
+                            this.uiInstance.handleResumeClick();
+                        }
+                    } else {
+                        // 如果未暂停，按 ESC 应该打开暂停界面
+                        console.log('LevelContent3D: ESC key - opening pause menu');
+                        if (typeof this.uiInstance.handlePauseClick === 'function') {
+                            this.uiInstance.handlePauseClick();
+                        }
+                    }
+                } else {
+                    console.warn('LevelContent3D: ESC key pressed but uiInstance is not available');
                 }
+                // 阻止默认行为（防止浏览器退出全屏等）
+                event.preventDefault();
                 return;
             }
             
@@ -1173,10 +1663,62 @@ class LevelContent3D {
             this.lastUpdateTime = currentTime;
         }
         
+        // 更新方块生长动画
+        this.updateBlockGrowthAnimation();
+        
+        // 更新相机移动到迷宫位置的动画
+        this.updateCameraMoveToMazeAnimation();
+        
         if (this.player) {
             this.updatePlayer(deltaTime);
             this.updateCameraAnimation();
         }
+    }
+    
+    // 添加全局ESC键监听（不依赖玩家是否创建）
+    setupGlobalKeyboardControls() {
+        // 如果已经有全局监听器，先移除
+        if (this.globalKeydownHandler) {
+            document.removeEventListener('keydown', this.globalKeydownHandler);
+        }
+        
+        this.globalKeydownHandler = (event) => {
+            // ESC 键处理：进入暂停界面（如果未暂停）或关闭暂停界面（如果已暂停）
+            if (event.key === 'Escape' || event.key === 'Esc') {
+                console.log(`LevelContent3D: ESC key pressed (global handler), isPaused: ${this.uiInstance ? this.uiInstance.isPaused : 'N/A'}`);
+                
+                if (this.uiInstance) {
+                    // 如果 PointerLockControls 已锁定，先解锁
+                    if (this.player && this.player.controls && this.player.controls.isLocked) {
+                        console.log('LevelContent3D: Unlocking PointerLockControls due to ESC key');
+                        this.player.controls.unlock();
+                    }
+                    
+                    // 如果已经暂停，按 ESC 应该关闭暂停界面（恢复游戏）
+                    if (this.uiInstance.isPaused) {
+                        console.log('LevelContent3D: ESC key - closing pause menu (resuming game)');
+                        if (typeof this.uiInstance.handleResumeClick === 'function') {
+                            this.uiInstance.handleResumeClick();
+                        }
+                    } else {
+                        // 如果未暂停，按 ESC 应该打开暂停界面
+                        console.log('LevelContent3D: ESC key - opening pause menu');
+                        if (typeof this.uiInstance.handlePauseClick === 'function') {
+                            this.uiInstance.handlePauseClick();
+                        }
+                    }
+                } else {
+                    console.warn('LevelContent3D: ESC key pressed but uiInstance is not available');
+                }
+                // 阻止默认行为（防止浏览器退出全屏等）
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
+        };
+        
+        document.addEventListener('keydown', this.globalKeydownHandler);
+        console.log('LevelContent3D: Global keyboard controls set up (ESC key)');
     }
     
     // 获取玩家对象（供外部访问）
@@ -1201,7 +1743,13 @@ class LevelContent3D {
 }
 
 // 导出到全局
-if (typeof window !== 'undefined') {
-    window.LevelContent3D = LevelContent3D;
-}
+// 使用立即执行函数确保在脚本加载时立即执行
+(function() {
+    if (typeof window !== 'undefined') {
+        window.LevelContent3D = LevelContent3D;
+        console.log('LevelContent3D.js: Class exported to window.LevelContent3D at', new Date().toISOString());
+    } else {
+        console.error('LevelContent3D.js: window is not defined, cannot export class');
+    }
+})();
 

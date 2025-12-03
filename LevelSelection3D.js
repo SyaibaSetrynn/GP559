@@ -25,6 +25,7 @@ class LevelSelection3D {
         this.levelLight = null; // 关卡灯（用于照亮关卡）
         // 关卡内容管理（使用 LevelContent3D）
         this.levelContent = null; // LevelContent3D 实例
+        this.levelContentInitializing = false; // 是否正在初始化 LevelContent3D
         this.lastPlayerCamY = null; // 用于调试：记录上一次 player.camera 的 y 坐标
         this.lastCameraY = null; // 用于调试：记录上一次关卡相机的 y 坐标
         this.scene = null;
@@ -130,78 +131,150 @@ class LevelSelection3D {
     
     // 初始化 LevelContent3D
     async initLevelContent() {
-        // 等待 LevelContent3D 类可用（最多等待5秒）
-        let waitCount = 0;
-        const maxWait = 100; // 最多等待5秒 (100 * 50ms)
+        // 如果已经初始化，直接返回
+        if (this.levelContent) {
+            console.log('LevelContent3D already initialized');
+            return;
+        }
         
-        while (typeof window.LevelContent3D === 'undefined' && waitCount < maxWait) {
-            await new Promise(resolve => setTimeout(resolve, 50));
-            waitCount++;
-            if (waitCount % 20 === 0) {
-                console.log(`Waiting for LevelContent3D... (${waitCount * 50}ms)`);
+        // 如果正在初始化，等待完成
+        if (this.levelContentInitializing) {
+            console.log('LevelContent3D is being initialized, waiting...');
+            let waitCount = 0;
+            const maxWait = 100; // 最多等待5秒
+            while (this.levelContentInitializing && !this.levelContent && waitCount < maxWait) {
+                await new Promise(resolve => setTimeout(resolve, 50));
+                waitCount++;
+            }
+            if (this.levelContent) {
+                console.log('LevelContent3D initialization completed');
+                return;
             }
         }
         
-        if (typeof window.LevelContent3D === 'undefined') {
-            console.error('LevelContent3D not found after waiting. Please ensure LevelContent3D.js is loaded before LevelSelection3D.js in the HTML file.');
-            return;
+        this.levelContentInitializing = true;
+        
+        try {
+            // 等待 LevelContent3D 类可用（最多等待5秒）
+            let waitCount = 0;
+            const maxWait = 100; // 最多等待5秒 (100 * 50ms)
+            
+            console.log(`LevelSelection3D: Checking for window.LevelContent3D, current value: ${typeof window.LevelContent3D}`);
+            
+            while (typeof window.LevelContent3D === 'undefined' && waitCount < maxWait) {
+                await new Promise(resolve => setTimeout(resolve, 50));
+                waitCount++;
+                if (waitCount % 20 === 0) {
+                    console.log(`Waiting for LevelContent3D... (${waitCount * 50}ms), window.LevelContent3D: ${typeof window.LevelContent3D}`);
+                }
+            }
+            
+            if (typeof window.LevelContent3D === 'undefined') {
+                console.error('LevelContent3D not found after waiting. Please ensure LevelContent3D.js is loaded before LevelSelection3D.js in the HTML file.');
+                console.error('Current window.LevelContent3D:', window.LevelContent3D);
+                this.levelContentInitializing = false;
+                return;
+            }
+            
+            console.log(`LevelSelection3D: LevelContent3D found! Type: ${typeof window.LevelContent3D}`);
+            
+            // 确保 Three.js 和 controls 已经初始化
+            if (!this.scene || !this.camera || !this.renderer) {
+                console.warn('LevelContent3D: Scene, camera, or renderer not ready, retrying...');
+                this.levelContentInitializing = false;
+                setTimeout(() => this.initLevelContent(), 100);
+                return;
+            }
+            
+            // 等待 controls 初始化（如果没有则使用 null）
+            let controlsToUse = this.controls;
+            if (!controlsToUse) {
+                // 如果 controls 还没初始化，等待一下
+                await new Promise(resolve => setTimeout(resolve, 100));
+                controlsToUse = this.controls || null;
+            }
+            
+            this.levelContent = new window.LevelContent3D(
+                this.scene,
+                this.camera,
+                this.renderer,
+                controlsToUse
+            );
+            
+            // 设置模型引用
+            this.levelContent.setModels(this.models, this.modelGroups);
+            
+            // 设置 UI 实例引用（用于暂停功能）
+            if (this.uiInstance) {
+                this.levelContent.setUIInstance(this.uiInstance);
+            }
+            
+            console.log('LevelContent3D initialized successfully');
+        } finally {
+            this.levelContentInitializing = false;
         }
-        
-        // 确保 Three.js 和 controls 已经初始化
-        if (!this.scene || !this.camera || !this.renderer) {
-            console.warn('LevelContent3D: Scene, camera, or renderer not ready, retrying...');
-            setTimeout(() => this.initLevelContent(), 100);
-            return;
-        }
-        
-        // 等待 controls 初始化（如果没有则使用 null）
-        let controlsToUse = this.controls;
-        if (!controlsToUse) {
-            // 如果 controls 还没初始化，等待一下
-            await new Promise(resolve => setTimeout(resolve, 100));
-            controlsToUse = this.controls || null;
-        }
-        
-        this.levelContent = new window.LevelContent3D(
-            this.scene,
-            this.camera,
-            this.renderer,
-            controlsToUse
-        );
-        
-        // 设置模型引用
-        this.levelContent.setModels(this.models, this.modelGroups);
-        
-        // 设置 UI 实例引用（用于暂停功能）
-        if (this.uiInstance) {
-            this.levelContent.setUIInstance(this.uiInstance);
-        }
-        
-        console.log('LevelContent3D initialized successfully');
     }
     
-    // 初始化 OrbitControls
+    // 初始化 OrbitControls（已禁用）
     async initOrbitControls() {
-        const THREE = window.THREE;
-        if (!THREE) return;
+        // OrbitControls 已禁用，不创建controls
+        console.log('OrbitControls disabled');
+        this.controls = null;
         
-        // 尝试动态导入 OrbitControls
-        try {
-            // 使用动态导入加载 OrbitControls
-            const { OrbitControls } = await import('https://unpkg.com/three@0.161.0/examples/jsm/controls/OrbitControls.js');
-            
-            this.controls = new OrbitControls(this.camera, this.threeCanvas);
-            
-            // 设置控制参数
-            this.controls.target.set(0, 1.5, 0); // 看向中心点（与相机 lookAt 一致）
-            this.controls.enableDamping = true; // 启用阻尼效果，让旋转更平滑
-            this.controls.dampingFactor = 0.05;
-            this.controls.update(); // 应用初始设置
-            
-            console.log('OrbitControls initialized');
-        } catch (error) {
-            console.warn('Failed to load OrbitControls:', error);
-            // 如果加载失败，不影响其他功能
+        // 之前的代码已注释：
+        // const THREE = window.THREE;
+        // if (!THREE) return;
+        // 
+        // try {
+        //     const { OrbitControls } = await import('https://unpkg.com/three@0.161.0/examples/jsm/controls/OrbitControls.js');
+        //     this.controls = new OrbitControls(this.camera, this.threeCanvas);
+        //     this.controls.target.set(0, 1.5, 0);
+        //     this.controls.enableDamping = true;
+        //     this.controls.dampingFactor = 0.05;
+        //     this.controls.update();
+        //     console.log('OrbitControls initialized');
+        // } catch (error) {
+        //     console.warn('Failed to load OrbitControls:', error);
+        // }
+    }
+    
+    // 清除模型缓存（用于强制重新加载）
+    clearModelCache(level = null) {
+        if (level !== null) {
+            // 清除指定level的缓存
+            if (this.models[level]) {
+                // 从场景中移除
+                if (this.modelGroups[level] && this.scene) {
+                    this.scene.remove(this.modelGroups[level]);
+                }
+                // 清理资源
+                const model = this.models[level];
+                if (model) {
+                    model.traverse((child) => {
+                        if (child.geometry) child.geometry.dispose();
+                        if (child.material) {
+                            if (Array.isArray(child.material)) {
+                                child.material.forEach(m => m.dispose());
+                            } else {
+                                child.material.dispose();
+                            }
+                        }
+                    });
+                }
+                delete this.models[level];
+                delete this.modelGroups[level];
+                delete this.modelLights[level];
+                delete this.modelCenters[level];
+                delete this.modelScales[level];
+                delete this.modelBaseScales[level];
+                delete this.modelScaleAnimations[level];
+                console.log(`LevelSelection3D: Cleared cache for level ${level}`);
+            }
+        } else {
+            // 清除所有level的缓存
+            for (const levelKey in this.models) {
+                this.clearModelCache(parseInt(levelKey));
+            }
         }
     }
     
@@ -213,8 +286,10 @@ class LevelSelection3D {
         
         // 如果模型已加载，直接返回
         if (this.models[level]) {
+            console.log(`LevelSelection3D: Model for level ${level} already loaded, skipping (cache hit)`);
             return;
         }
+        console.log(`LevelSelection3D: Loading model for level ${level} (cache miss)`);
         
         try {
             const THREE = window.THREE;
@@ -238,7 +313,7 @@ class LevelSelection3D {
             console.log(`Generating map for level ${level}: ${mapWidth}x${mapDepth}`);
             
             // 动态导入 MapGenerator
-            const { createFloor, createWalls } = await import('./mapgenerator.js');
+            const { createFloor, createWalls } = await import('./MapGenerator.js');
             
             // 创建一个临时场景用于生成地图（不添加到主场景）
             const tempScene = new THREE.Scene();
@@ -249,7 +324,9 @@ class LevelSelection3D {
             
             // 生成围墙（会添加到tempScene，我们需要手动移除并添加到model group）
             // 围墙高度统一为2，无论地图大小如何
+            console.log(`LevelSelection3D: About to create walls for level ${level} with map size ${mapWidth}x${mapDepth}`);
             const walls = createWalls(tempScene, mapWidth, mapDepth, 2);
+            console.log(`LevelSelection3D: Created ${walls.length} walls for level ${level}`);
             walls.forEach(wall => tempScene.remove(wall));
             
             // 将所有元素组合到一个Group中
@@ -1069,18 +1146,23 @@ class LevelSelection3D {
                     if (parseInt(level) === this.currentLevel) {
                         console.log(`Clicked model level ${level}, phase: ${currentPhase}`);
                         
-                        // 点击动画：scale降到0.95
-                        this.startScaleAnimation(parseInt(level), 0.95);
+                        const clickedLevel = parseInt(level);
                         
-                        // 延迟后恢复并跳转
+                        // 点击动画：scale降到0.95
+                        this.startScaleAnimation(clickedLevel, 0.95);
+                        
+                        // 立即开始准备关卡（生成迷宫，启动方块生长动画）
+                        // 这样方块可以在前0.5秒内从0长到2
+                        this.prepareLevel(clickedLevel);
+                        
+                        // 延迟后恢复并跳转（1.5秒后真正进入关卡）
                         setTimeout(() => {
-                            this.startScaleAnimation(parseInt(level), 1.0);
+                            this.startScaleAnimation(clickedLevel, 1.0);
                             
                             // 跳转到对应phase并进入关卡模式
                             if (typeof StateManager !== 'undefined') {
                                 if (currentPhase === 1) {
                                     // Phase 1: Level Selection界面，点击模型进入关卡
-                                    const clickedLevel = parseInt(level);
                                     this.enterLevel(clickedLevel);
                                     
                                     // 跳转到对应phase
@@ -1093,7 +1175,6 @@ class LevelSelection3D {
                                     }
                                 } else if (currentPhase >= 10 && currentPhase <= 15) {
                                     // Phase 10-15: 主界面，点击模型进入关卡
-                                    const clickedLevel = parseInt(level);
                                     this.enterLevel(clickedLevel);
                                     
                                     // 跳转到对应关卡
@@ -1104,7 +1185,7 @@ class LevelSelection3D {
                                     }
                                 }
                             }
-                        }, 150);
+                        }, 1500);
                         break;
                     }
                 }
@@ -1174,24 +1255,37 @@ class LevelSelection3D {
         }
     }
     
-    // 进入关卡模式：隐藏其他模型，聚焦相机，生成迷宫
-    async enterLevel(level) {
+    // 准备关卡：立即生成迷宫并启动方块生长动画（在点击后立即调用）
+    async prepareLevel(level) {
         const THREE = window.THREE;
         if (!THREE) return;
         
-        console.log(`Entering level ${level}`);
+        console.log(`Preparing level ${level} - generating maze and starting block animation`);
         
-        // 保存进入关卡前的相机状态
-        if (!this.inLevelMode) {
-            this.previousCameraPosition = this.camera.position.clone();
-            if (this.controls) {
-                this.previousCameraTarget = this.controls.target.clone();
-            } else {
-                // 如果没有controls，计算lookAt目标
-                const direction = new THREE.Vector3();
-                this.camera.getWorldDirection(direction);
-                this.previousCameraTarget = this.camera.position.clone().add(direction.multiplyScalar(5));
+        // 确保 LevelContent3D 已经初始化
+        if (!this.levelContent) {
+            console.log('LevelSelection3D: LevelContent3D not initialized yet, waiting...');
+            // 等待 LevelContent3D 初始化（最多等待5秒）
+            let waitCount = 0;
+            const maxWait = 100; // 最多等待5秒 (100 * 50ms)
+            
+            while (!this.levelContent && waitCount < maxWait) {
+                await new Promise(resolve => setTimeout(resolve, 50));
+                waitCount++;
+                if (waitCount % 20 === 0) {
+                    console.log(`LevelSelection3D: Still waiting for LevelContent3D... (${waitCount * 50}ms)`);
+                }
             }
+            
+            if (!this.levelContent) {
+                console.error('LevelSelection3D: LevelContent3D not initialized after waiting. Attempting to initialize...');
+                await this.initLevelContent();
+            }
+        }
+        
+        if (!this.levelContent) {
+            console.error('LevelSelection3D: LevelContent3D still not initialized, cannot prepare level');
+            return;
         }
         
         // 隐藏其他模型
@@ -1212,15 +1306,108 @@ class LevelSelection3D {
             this.currentLevelModel = this.models[level];
         }
         
-        // 聚焦相机到当前模型
-        this.focusCameraOnModel(level);
-        
-        // 使用 LevelContent3D 管理关卡内容
-        if (this.levelContent) {
-            await this.levelContent.enterLevel(level);
-        } else {
-            console.error('LevelContent3D not initialized');
+        // 保存进入关卡前的相机状态（如果还没保存）
+        if (!this.previousCameraPosition) {
+            this.previousCameraPosition = this.camera.position.clone();
+            if (this.controls) {
+                this.previousCameraTarget = this.controls.target.clone();
+            } else {
+                // 如果没有controls，计算lookAt目标
+                const direction = new THREE.Vector3();
+                this.camera.getWorldDirection(direction);
+                this.previousCameraTarget = this.camera.position.clone().add(direction.multiplyScalar(5));
+            }
+            console.log(`Saved camera position before entering level:`, {
+                position: this.previousCameraPosition,
+                target: this.previousCameraTarget
+            });
         }
+        
+        // 注意：不在这里移动相机，保持相机在原位置
+        // 相机将在1.5秒后（在 enterLevel 中）移动到新位置
+        
+        // 使用 LevelContent3D 生成迷宫（这会启动方块生长动画）
+        console.log(`LevelSelection3D: Calling generateMaze for level ${level}`);
+        // 只生成迷宫，不创建玩家等其他内容
+        await this.levelContent.generateMaze(level);
+        console.log(`LevelSelection3D: generateMaze completed for level ${level}`);
+        // 添加关卡灯
+        this.levelContent.addLevelLight(level);
+        
+        // 标记为准备状态（但不完全进入关卡模式）
+        // this.inLevelMode 会在 enterLevel 中设置为 true
+    }
+    
+    // 进入关卡模式：隐藏其他模型，聚焦相机，生成迷宫
+    async enterLevel(level) {
+        const THREE = window.THREE;
+        if (!THREE) return;
+        
+        console.log(`Entering level ${level}`);
+        
+        // 确保 LevelContent3D 已经初始化
+        if (!this.levelContent) {
+            console.log('LevelSelection3D: LevelContent3D not initialized yet, waiting...');
+            // 等待 LevelContent3D 初始化（最多等待5秒）
+            let waitCount = 0;
+            const maxWait = 100; // 最多等待5秒 (100 * 50ms)
+            
+            while (!this.levelContent && waitCount < maxWait) {
+                await new Promise(resolve => setTimeout(resolve, 50));
+                waitCount++;
+                if (waitCount % 20 === 0) {
+                    console.log(`LevelSelection3D: Still waiting for LevelContent3D... (${waitCount * 50}ms)`);
+                }
+            }
+            
+            if (!this.levelContent) {
+                console.error('LevelSelection3D: LevelContent3D not initialized after waiting. Attempting to initialize...');
+                await this.initLevelContent();
+            }
+        }
+        
+        if (!this.levelContent) {
+            console.error('LevelSelection3D: LevelContent3D still not initialized, cannot enter level');
+            return;
+        }
+        
+        // 检查迷宫是否已经生成（在 prepareLevel 中）
+        const mazeAlreadyGenerated = this.levelContent.mazeBlocks[level] && 
+                                     this.levelContent.mazeBlocks[level].length > 0;
+        
+        if (!mazeAlreadyGenerated) {
+            // 如果迷宫还没生成，执行完整的准备流程
+            // 隐藏其他模型
+            for (const levelKey in this.modelGroups) {
+                const modelLevel = parseInt(levelKey);
+                if (modelLevel !== level) {
+                    const modelGroup = this.modelGroups[modelLevel];
+                    if (modelGroup) {
+                        modelGroup.visible = false;
+                    }
+                }
+            }
+            
+            // 显示当前关卡模型
+            const currentModelGroup = this.modelGroups[level];
+            if (currentModelGroup) {
+                currentModelGroup.visible = true;
+                this.currentLevelModel = this.models[level];
+            }
+            
+            // 使用 LevelContent3D 管理关卡内容
+            if (this.levelContent) {
+                await this.levelContent.enterLevel(level);
+            } else {
+                console.error('LevelContent3D not initialized');
+            }
+        } else {
+            // 迷宫已经生成，跳过玩家创建和碰撞世界设置
+            console.log(`LevelSelection3D: Maze already generated for level ${level}, skipping player creation and collision world setup`);
+        }
+        
+        // 注意：相机移动动画已经在方块动画完成后自动启动（在LevelContent3D中）
+        // 不需要在这里调用focusCameraOnModel，因为相机动画会处理移动
         
         this.inLevelMode = true;
     }
@@ -1303,19 +1490,32 @@ class LevelSelection3D {
             }
         }
         
-        // 重置相机位置到初始状态（而不是恢复到进入关卡前的位置）
-        // 这样可以确保退出后再进入时相机位置正确
-        this.camera.position.set(0, 2, -3); // 初始相机位置（下移1单位）
+        // 恢复相机位置到进入关卡前的位置
+        if (this.previousCameraPosition) {
+            this.camera.position.copy(this.previousCameraPosition);
+            console.log(`Restored camera position:`, this.previousCameraPosition);
+            
+            if (this.controls && this.previousCameraTarget) {
+                this.controls.target.copy(this.previousCameraTarget);
+                this.controls.update();
+                console.log(`Restored camera target:`, this.previousCameraTarget);
+            } else if (this.previousCameraTarget) {
+                this.camera.lookAt(this.previousCameraTarget);
+            }
+        } else {
+            // 如果没有保存的位置，使用默认位置
+            this.camera.position.set(0, 5, -8);
             if (this.controls) {
-            this.controls.target.set(0, -0.5, 0); // 初始目标位置（下移1单位）
+                this.controls.target.set(0, 1.5, 0);
                 this.controls.update();
             } else {
-            this.camera.lookAt(0, -0.5, 0);
+                this.camera.lookAt(0, 0.5, 2);
+            }
+            console.log(`No saved camera position, using default`);
         }
         
-        // 清除保存的相机位置，以便下次进入时重新保存
-        this.previousCameraPosition = null;
-        this.previousCameraTarget = null;
+        // 注意：不清除保存的相机位置，以便下次进入时使用相同位置
+        // 只有在重新进入 level selection 时才清除（如果需要的话）
         
         this.inLevelMode = false;
         this.currentLevelModel = null;
@@ -1356,8 +1556,16 @@ class LevelSelection3D {
             this.updateScaleAnimations();
             
             // 在关卡模式下，更新关卡内容
-            if (this.inLevelMode && this.levelContent) {
-                this.levelContent.update();
+            // 注意：即使在准备阶段（prepareLevel），也需要更新动画
+            if (this.levelContent) {
+                // 检查是否有方块动画需要更新（即使不在关卡模式）
+                const hasBlockAnimations = this.levelContent.blockAnimations && 
+                                          Object.keys(this.levelContent.blockAnimations).length > 0;
+                
+                // 如果在关卡模式，或者有方块动画需要更新，都调用 update
+                if (this.inLevelMode || hasBlockAnimations) {
+                    this.levelContent.update();
+                }
             }
 
             // Update critical points (if enabled)

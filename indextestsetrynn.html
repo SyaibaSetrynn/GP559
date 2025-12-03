@@ -66,8 +66,9 @@
     </script>
     <script src="StateManager.js"></script>
     <script src="Player.js" type="module"></script>
-    <script src="LevelContent3D.js"></script>
-    <script src="LevelSelection3D.js"></script>
+    <!-- LevelContent3D.js 必须在 LevelSelection3D.js 之前加载 -->
+    <script src="LevelContent3D.js" defer></script>
+    <script src="LevelSelection3D.js" defer></script>
     <script src="UI.js"></script>
 </body>
 </html>

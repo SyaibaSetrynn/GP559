@@ -45,6 +45,7 @@ class Player {
         this.onGround = false;
         this.worldCollide = collisionWorld;
 
+        this.color = window.CP_COLORS.ORANGE;
         this.laserFire = false;
         this.laser = this.initLaser();
         this.gunTip.add(this.laser);
@@ -53,7 +54,7 @@ class Player {
         if(isFirstPerson == 0)
             this.controls = new P.PointerLockControls(this.camera, renderer.domElement);
     
-        // might need some other variables for colors and shooting
+        this.score = 0;
 
     }
 
@@ -110,13 +111,13 @@ class Player {
 
     initLaser() {
         const laserGeo = new T.CylinderGeometry(0.01, 0.01, 1, 16);
-        const laserMat = new T.MeshStandardMaterial({color: "rgb(255, 255, 255)"});
+        const laserMat = new T.MeshStandardMaterial({color: this.color});
         const laserMesh = new T.Mesh(laserGeo, laserMat);
         laserMesh.visible = false;
         return laserMesh;
     }
 
-    updateLaser(objectsInScene) {
+    updateLaser(objectsInScene, criticalPoints) {
 
         const direction = new T.Vector3();
         const startPoint = new T.Vector3();
@@ -149,12 +150,32 @@ class Player {
         this.laser.quaternion.copy(quat.premultiply(parentQuatInverse));
 
         this.laser.visible = true;
+        
+        // check if hit crit point
+        for (let point of criticalPoints) {
+            let distX = Math.abs(endPoint.x - point.cp.position.x);
+            let distY = Math.abs(endPoint.y - point.cp.position.y);
+            let distZ = Math.abs(endPoint.z - point.cp.position.z);
+            if(distX < 0.05 && distY < 0.05 && distZ < 0.05) {
+                if (point.cp && point.cp.material) {
+                    point.cp.material.color.setHex(this.color);
+                    // Also color the glow if it exists
+                    if (point.cp.children && point.cp.children.length > 0) {
+                        point.cp.children.forEach(child => {
+                            if (child.material) {
+                                child.material.color.setHex(this.color);
+                            }
+                        });
+                    }
+                }
+            }
+        }
     }
 
     /**
      * updates position of the player, needs to be called in animate()
      */
-    update(objectsInScene) {
+    update(objectsInScene, criticalPoints) {
 
         // // update player position
         let moved = false;
@@ -189,10 +210,18 @@ class Player {
         }
 
         if(this.laserFire) {
-            this.updateLaser(objectsInScene);
+            this.updateLaser(objectsInScene, criticalPoints);
         }
         else
             this.laser.visible = false;
+
+        // update score
+        this.score = 0;
+        for (let point of criticalPoints) {
+            if(point.cp.material.color.getHex() === this.color) {
+                this.score ++;
+            }
+        }
 
         // // update jump
         // if(this.movement.spaceHold || !this.onGround) {
@@ -274,11 +303,11 @@ renderer.domElement.id = "canvas";
 let scene = new T.Scene();
 
 // perspective camera for debugging
-let perspCam = new T.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-perspCam.position.set(20, 5, 0);
-let controls = new OrbitControls(perspCam, renderer.domElement);
-controls.target.set(0, 5, 0);
-controls.update();
+// let perspCam = new T.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+// perspCam.position.set(20, 5, 0);
+// let controls = new OrbitControls(perspCam, renderer.domElement);
+// controls.target.set(0, 5, 0);
+// controls.update();
 
 // add an ambient light
 scene.add(new T.AmbientLight("white"));
@@ -591,7 +620,7 @@ function animate(timestamp) {
         previousTime = timestamp;
     let delta = (timestamp - previousTime) / 1000;
 
-    player1.update(objectsInScene);
+    player1.update(objectsInScene, criticalPointSystem.criticalPoints);
     
     // Update all agents and their line of sight
     agentManager.update();
@@ -636,9 +665,12 @@ function updateScoreDisplay() {
             scoreDiv.innerHTML = scores.map(s => 
                 `<div style="color: #${s.color.toString(16).padStart(6, '0')};">Agent ${s.agentId}: ${s.score} points</div>`
             ).join('');
+            scoreDiv.innerHTML += `<div style="color: #${player1.color.toString(16).padStart(6, '0')};"> Player: ${player1.score} points</div>`
+            console.log(player1.score);
         } else {
             scoreDiv.innerHTML = '<div>No agents found</div>';
         }
+
     }
 }
 
