@@ -285,6 +285,79 @@ export class DQNIntegration {
     }
 
     /**
+     * Get available pretraining phases
+     */
+    getPretrainingPhases() {
+        if (!this.isInitialized) {
+            return [];
+        }
+        return dqnTrainer.getPretrainingPhases();
+    }
+
+    /**
+     * Start pretraining for a specific agent
+     * @param {number} agentIndex - Index of agent to pretrain
+     * @param {number} startPhase - Phase to start from (optional)
+     */
+    async startPretraining(agentIndex = 0, startPhase = 0) {
+        if (!this.isInitialized) {
+            throw new Error('DQN integration not initialized');
+        }
+        
+        if (!this.gameManager.agents || this.gameManager.agents.length <= agentIndex) {
+            throw new Error(`Agent ${agentIndex} not found`);
+        }
+        
+        this.trainingAgent = this.gameManager.agents[agentIndex];
+        
+        console.log(`Starting DQN pretraining for agent ${agentIndex} (${this.getAgentColorName(agentIndex)}) from phase ${startPhase}`);
+        
+        // Set agent to DQN mode
+        if (this.trainingAgent.setMode) {
+            this.trainingAgent.setMode('dqn');
+        }
+        
+        // Update UI
+        this.updateStatus('Pretraining Started');
+        
+        // Start pretraining (non-blocking)
+        dqnTrainer.startPretraining(this.trainingAgent, this.gameManager, this.gameEnvironment, startPhase)
+            .then(() => {
+                this.updateStatus('Pretraining Complete');
+                console.log('DQN pretraining completed');
+            })
+            .catch((error) => {
+                this.updateStatus('Pretraining Error');
+                console.error('DQN pretraining error:', error);
+            });
+    }
+
+    /**
+     * Stop pretraining
+     */
+    stopPretraining() {
+        if (!this.isInitialized) {
+            console.warn('DQN integration not initialized');
+            return;
+        }
+        
+        dqnTrainer.stopPretraining();
+        this.updateStatus('Pretraining Stopped');
+        console.log('DQN pretraining stopped');
+    }
+
+    /**
+     * Get pretraining statistics
+     */
+    getPretrainingStats() {
+        if (!this.isInitialized) {
+            return null;
+        }
+        
+        return dqnTrainer.getPretrainingStats();
+    }
+
+    /**
      * Set up UI monitoring elements
      */
     setupUIMonitoring() {
@@ -326,10 +399,24 @@ export class DQNIntegration {
             <div style="margin: 0 0 6px 0; font-weight: bold; font-size: 11px;">DQN Training Status</div>
             <div>Status: <span id="dqn-status">Not Started</span></div>
             <div>Episode: <span id="dqn-episode">0</span></div>
+            <div>Phase: <span id="dqn-phase">-</span></div>
             <div>Avg Reward: <span id="dqn-reward">0.000</span></div>
             <div>Epsilon: <span id="dqn-epsilon">1.000</span></div>
             <div>Loss: <span id="dqn-loss">0.000</span></div>
-            <div style="margin-top: 4px; font-size: 9px;">
+            <div style="margin-top: 6px; font-size: 9px; border-top: 1px solid #ccc; padding-top: 4px;">
+                <div style="margin-bottom: 2px; font-weight: bold;">Pretraining:</div>
+                <button id="dqn-pretrain-btn" style="font-size: 9px; margin-right: 4px;">Start Pretraining</button>
+                <button id="dqn-pretrain-stop-btn" style="font-size: 9px; margin-right: 4px;">Stop Pretrain</button>
+                <select id="dqn-phase-select" style="font-size: 9px; margin-right: 4px;">
+                    <option value="0">Phase 1: Basic Movement</option>
+                    <option value="1">Phase 2: Map Exploration</option>
+                    <option value="2">Phase 3: Critical Points</option>
+                    <option value="3">Phase 4: Basic Competition</option>
+                    <option value="4">Phase 5: Multi-Agent</option>
+                </select>
+            </div>
+            <div style="margin-top: 4px; font-size: 9px; border-top: 1px solid #ccc; padding-top: 4px;">
+                <div style="margin-bottom: 2px; font-weight: bold;">Training:</div>
                 <button id="dqn-start-btn" style="font-size: 9px; margin-right: 4px;">Start Training</button>
                 <button id="dqn-stop-btn" style="font-size: 9px; margin-right: 4px;">Stop</button>
                 <button id="dqn-save-btn" style="font-size: 9px;">Save Model</button>
@@ -350,6 +437,7 @@ export class DQNIntegration {
         this.statusElements = {
             status: document.getElementById('dqn-status'),
             episode: document.getElementById('dqn-episode'),
+            phase: document.getElementById('dqn-phase'),
             reward: document.getElementById('dqn-reward'),
             epsilon: document.getElementById('dqn-epsilon'),
             loss: document.getElementById('dqn-loss')
@@ -360,9 +448,28 @@ export class DQNIntegration {
      * Set up UI event handlers
      */
     setupUIEventHandlers() {
+        // Pretraining controls
+        const pretrainBtn = document.getElementById('dqn-pretrain-btn');
+        const pretrainStopBtn = document.getElementById('dqn-pretrain-stop-btn');
+        const phaseSelect = document.getElementById('dqn-phase-select');
+        
+        // Training controls
         const startBtn = document.getElementById('dqn-start-btn');
         const stopBtn = document.getElementById('dqn-stop-btn');
         const saveBtn = document.getElementById('dqn-save-btn');
+        
+        if (pretrainBtn) {
+            pretrainBtn.onclick = () => {
+                const startPhase = parseInt(phaseSelect.value) || 0;
+                this.startPretraining(0, startPhase); // Pretrain red agent
+            };
+        }
+        
+        if (pretrainStopBtn) {
+            pretrainStopBtn.onclick = () => {
+                this.stopPretraining();
+            };
+        }
         
         if (startBtn) {
             startBtn.onclick = () => {
@@ -398,12 +505,24 @@ export class DQNIntegration {
      * Update UI display with current training stats
      */
     updateUIDisplay() {
+        // Check for pretraining stats first
+        const pretrainingStats = this.getPretrainingStats();
+        if (pretrainingStats && pretrainingStats.isActive) {
+            this.updatePretrainingDisplay(pretrainingStats);
+            return;
+        }
+        
+        // Regular training stats
         const stats = this.getTrainingStats();
         if (!stats) return;
         
         // Update status elements
         if (this.statusElements.episode) {
             this.statusElements.episode.textContent = stats.episode.toString();
+        }
+        
+        if (this.statusElements.phase) {
+            this.statusElements.phase.textContent = 'Training';
         }
         
         if (this.statusElements.reward) {
@@ -424,6 +543,34 @@ export class DQNIntegration {
                 ? recentLosses.reduce((a, b) => a + b, 0) / recentLosses.length
                 : 0;
             this.statusElements.loss.textContent = avgLoss.toFixed(3);
+        }
+    }
+
+    /**
+     * Update UI display with pretraining information
+     */
+    updatePretrainingDisplay(pretrainingStats) {
+        if (this.statusElements.episode) {
+            this.statusElements.episode.textContent = `${pretrainingStats.currentPhase + 1}/${pretrainingStats.totalPhases}`;
+        }
+        
+        if (this.statusElements.phase) {
+            const progress = (pretrainingStats.phaseProgress * 100).toFixed(0);
+            this.statusElements.phase.textContent = `${pretrainingStats.currentPhaseName} (${progress}%)`;
+        }
+        
+        if (this.statusElements.reward) {
+            const recentRewards = pretrainingStats.phaseRewards.slice(-1);
+            const avgReward = recentRewards.length > 0 ? recentRewards[0] : 0;
+            this.statusElements.reward.textContent = avgReward.toFixed(3);
+        }
+        
+        if (this.statusElements.epsilon) {
+            this.statusElements.epsilon.textContent = '0.500'; // Pretraining uses moderate exploration
+        }
+        
+        if (this.statusElements.loss) {
+            this.statusElements.loss.textContent = 'Pretrain';
         }
     }
 

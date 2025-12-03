@@ -15,6 +15,7 @@ import { experienceReplay } from './experience-replay.js';
 import { actionSpace } from './action-space.js';
 import { rewardSystem } from './reward-system.js';
 import { gameStateExtractor } from './game-state-extractor.js';
+import { pretrainingSystem } from './pretraining-system.js';
 
 export class DQNTrainer {
     constructor(config = {}) {
@@ -53,12 +54,16 @@ export class DQNTrainer {
         this.gameStateExtractor = gameStateExtractor;
         
         // Training state
-        this.currentEpsilon = this.config.epsilonStart;
         this.episode = 0;
-        this.totalSteps = 0;
+        this.step = 0;
+        this.currentEpsilon = this.config.epsilonStart;
         this.isTraining = false;
         this.isInitialized = false;
         
+        // Pretraining state
+        this.isPretraining = false;
+        this.pretrainingAgent = null;
+
         // Statistics
         this.stats = {
             episodeRewards: [],
@@ -466,14 +471,109 @@ export class DQNTrainer {
      */
     getTrainingStats() {
         return {
-            ...this.stats,
-            config: this.config,
             episode: this.episode,
-            totalSteps: this.totalSteps,
+            step: this.step,
             currentEpsilon: this.currentEpsilon,
+            episodeRewards: this.stats.episodeRewards,
+            episodeLengths: this.stats.episodeLengths,
+            losses: this.stats.losses,
+            epsilonHistory: this.stats.epsilonHistory,
             isTraining: this.isTraining,
             experienceBufferSize: this.experienceReplay.getBufferSize()
         };
+    }
+
+    /**
+     * Start pretraining process with curriculum learning
+     * @param {Agent} agent - The agent to pretrain
+     * @param {Object} gameManager - Game manager instance
+     * @param {Object} gameEnvironment - Game environment
+     * @param {number} startPhase - Phase to start from (default: 0)
+     */
+    async startPretraining(agent, gameManager, gameEnvironment, startPhase = 0) {
+        if (!this.isInitialized) {
+            throw new Error('DQN trainer not initialized. Call initialize() first.');
+        }
+        
+        console.log('Starting DQN pretraining...');
+        this.isPretraining = true;
+        this.pretrainingAgent = agent;
+        
+        // Override pretraining system's getAgentAction method to use our DQN
+        const originalGetAgentAction = pretrainingSystem.getAgentAction.bind(pretrainingSystem);
+        pretrainingSystem.getAgentAction = async (agent, state) => {
+            return this.selectAction(state, true); // Use current epsilon for exploration
+        };
+        
+        try {
+            await pretrainingSystem.startPretraining(agent, gameManager, gameEnvironment, startPhase, this);
+        } catch (error) {
+            console.error('Pretraining error:', error);
+        } finally {
+            // Restore original method
+            pretrainingSystem.getAgentAction = originalGetAgentAction;
+            this.isPretraining = false;
+            this.pretrainingAgent = null;
+        }
+    }
+
+    /**
+     * Stop pretraining
+     */
+    stopPretraining() {
+        if (this.isPretraining) {
+            pretrainingSystem.stopPretraining();
+            this.isPretraining = false;
+            this.pretrainingAgent = null;
+            console.log('Pretraining stopped');
+        }
+    }
+
+    /**
+     * Get pretraining statistics
+     */
+    getPretrainingStats() {
+        if (this.isPretraining) {
+            return pretrainingSystem.getPretrainingStats();
+        }
+        return null;
+    }
+
+    /**
+     * Get available pretraining phases
+     */
+    getPretrainingPhases() {
+        return pretrainingSystem.getAllPhases();
+    }
+
+    /**
+     * Train during pretraining episodes (called from pretraining system)
+     */
+    async trainDuringPretraining(state, action, reward, nextState, done) {
+        // Store experience
+        this.experienceReplay.store({
+            state: state,
+            action: action,
+            reward: reward,
+            nextState: nextState,
+            done: done
+        });
+
+        // Train if we have enough experiences
+        if (this.experienceReplay.getSize() > this.config.trainingStartSize && 
+            this.step % this.config.trainingFreq === 0) {
+            await this.trainNetwork();
+        }
+
+        this.step++;
+        
+        // Update epsilon during pretraining (slower decay)
+        if (this.step % 100 === 0) {
+            this.currentEpsilon = Math.max(
+                this.config.epsilonEnd,
+                this.currentEpsilon * 0.999  // Slower decay for pretraining
+            );
+        }
     }
 
     /**

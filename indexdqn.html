@@ -458,6 +458,46 @@
 				};
 				
 				console.log('DQN game controls connected successfully');
+				
+				// Add console helper functions for pretraining
+				window.pretrainHelpers = {
+					startPretraining: (phase = 0) => {
+						console.log(`Starting pretraining from phase ${phase}...`);
+						if (window.dqnIntegration && window.dqnIntegration.isInitialized) {
+							window.dqnIntegration.startPretraining(0, phase);
+						} else {
+							console.error('DQN integration not ready');
+						}
+					},
+					
+					stopPretraining: () => {
+						console.log('Stopping pretraining...');
+						if (window.dqnIntegration && window.dqnIntegration.isInitialized) {
+							window.dqnIntegration.stopPretraining();
+						}
+					},
+					
+					getPretrainingStats: () => {
+						if (window.dqnIntegration && window.dqnIntegration.isInitialized) {
+							const stats = window.dqnIntegration.getPretrainingStats();
+							console.log('Pretraining stats:', stats);
+							return stats;
+						}
+						return null;
+					},
+					
+					getPhases: () => {
+						if (window.dqnIntegration && window.dqnIntegration.isInitialized) {
+							const phases = window.dqnIntegration.getPretrainingPhases();
+							console.log('Available phases:', phases);
+							return phases;
+						}
+						return [];
+					}
+				};
+				
+				console.log('Pretraining console helpers available: window.pretrainHelpers');
+				console.log('Usage: pretrainHelpers.startPretraining(0) // Start from phase 0');
 			};
 			
 			setupControls();
@@ -466,6 +506,7 @@
 		console.log('DQN training system initialized');
 	</script>
 
+	<script src="test-pretraining.js" type="module" defer></script>
 	<script src="AgentTestMain.js" type="module" defer></script>
 	</body>
 </html>
