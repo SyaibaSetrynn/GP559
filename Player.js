@@ -8,7 +8,6 @@ import { Capsule } from "https://unpkg.com/three@0.165.0/examples/jsm/math/Capsu
 import Agent from "./Agent.js";
 import AgentManager from "./AgentManager.js";
 import * as M from "./MapTextures.js";
-import { Sky } from "./Sky.js";
 
 /**
  * Some references: https://www.youtube.com/watch?v=oqKzxPMLWxo
