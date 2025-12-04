@@ -7,6 +7,8 @@ import { OctreeHelper } from "https://unpkg.com/three@0.165.0/examples/jsm/helpe
 import { Capsule } from "https://unpkg.com/three@0.165.0/examples/jsm/math/Capsule.js";
 import Agent from "./Agent.js";
 import AgentManager from "./AgentManager.js";
+import * as M from "./MapTextures.js";
+import { Sky } from "./Sky.js";
 
 /**
  * Some references: https://www.youtube.com/watch?v=oqKzxPMLWxo
@@ -426,6 +428,11 @@ if (useMapGenerator) {
         }
     });
     
+    // set up textures
+    M.setMapTexture(1, mazeBlocks, walls, mapWidth, mapDepth, floor);
+    console.log(walls);
+
+    
 } else {
     // Original OBJ loading code
     const levelLoader = new O.OBJLoader();
@@ -462,6 +469,8 @@ if (useMapGenerator) {
         }
     });
 }
+
+M.setSkyTexture(1, scene);
 
 scene.add(levelObj);
 
