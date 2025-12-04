@@ -86,6 +86,53 @@
 				<div id="red-state-vector" style="font-family: monospace; word-break: break-all; line-height: 1.1;">[Loading...]</div>
 			</div>
 		</div>
+
+		<!-- Movement Tuning Panel - Fixed Overlay -->
+		<div id="movement-tuning" style="position: fixed; top: 50%; right: 20px; transform: translateY(-50%); background: rgba(240,240,240,0.9); border: 1px solid #ccc; padding: 8px; font-size: 10px; z-index: 1000; max-width: 200px;">
+			<div style="margin: 0 0 6px 0; font-weight: bold; color: #333; text-align: left; border-bottom: 1px solid #bbb; padding-bottom: 2px;">Movement Settings</div>
+			
+			<!-- Movement Speed -->
+			<div style="margin: 4px 0;">
+				<label style="display: block; margin-bottom: 1px;">Speed:</label>
+				<input type="range" id="movement-speed" min="0.01" max="0.15" step="0.005" value="0.05" style="width: 120px;">
+				<span id="speed-value" style="margin-left: 4px; font-family: monospace; font-size: 9px;">0.05</span>
+			</div>
+			
+			<!-- Direction Change Frequency -->
+			<div style="margin: 4px 0;">
+				<label style="display: block; margin-bottom: 1px;">Direction Freq:</label>
+				<input type="range" id="direction-freq" min="20" max="120" step="5" value="60" style="width: 120px;">
+				<span id="freq-value" style="margin-left: 4px; font-family: monospace; font-size: 9px;">60</span>
+			</div>
+			
+			<!-- CP Seeking Tendency -->
+			<div style="margin: 4px 0;">
+				<label style="display: block; margin-bottom: 1px;">CP Seeking:</label>
+				<input type="range" id="cp-seeking" min="0" max="100" step="5" value="20" style="width: 120px;">
+				<span id="cp-seeking-value" style="margin-left: 4px; font-family: monospace; font-size: 9px;">20%</span>
+			</div>
+			
+			<!-- Exploration Bonus -->
+			<div style="margin: 4px 0;">
+				<label style="display: block; margin-bottom: 1px;">Exploration:</label>
+				<input type="range" id="exploration-bonus" min="0" max="0.5" step="0.05" value="0.1" style="width: 120px;">
+				<span id="exploration-value" style="margin-left: 4px; font-family: monospace; font-size: 9px;">0.10</span>
+			</div>
+			
+			<!-- Diagonal Movement -->
+			<div style="margin: 4px 0;">
+				<label style="display: block; margin-bottom: 1px;">Diagonal:</label>
+				<input type="range" id="diagonal-movement" min="0" max="50" step="5" value="20" style="width: 120px;">
+				<span id="diagonal-value" style="margin-left: 4px; font-family: monospace; font-size: 9px;">20%</span>
+			</div>
+			
+			<!-- Control Buttons -->
+			<div style="margin: 6px 0 2px 0; text-align: left; border-top: 1px solid #bbb; padding-top: 4px;">
+				<button id="apply-movement-settings" style="font-size: 9px; margin: 1px; padding: 2px 6px; background: #666; color: white; border: 1px solid #333;">Apply</button>
+				<button id="reset-movement-settings" style="font-size: 9px; margin: 1px; padding: 2px 6px; background: #999; color: white; border: 1px solid #333;">Reset</button>
+				<button id="toggle-movement-panel" style="font-size: 9px; margin: 1px; padding: 2px 6px; background: #aaa; color: black; border: 1px solid #333;">Hide</button>
+			</div>
+		</div>
 		
 		<script>
 			// Simple timer to show the page is working
@@ -283,6 +330,9 @@
 				const statusSpan = document.getElementById('system-status');
 				
 				console.log('Basic game controls ready');
+				
+				// Setup Movement Tuning Controls
+				setupMovementTuningControls();
 				
 				// Reset Scene
 				document.getElementById('reset-scene').onclick = () => {
@@ -624,7 +674,127 @@
 						event.target.value = '';
 					}
 				};
-						console.log('DQN game controls connected successfully');
+				console.log('DQN game controls connected successfully');
+				
+				// Movement Tuning Control Functions
+				function setupMovementTuningControls() {
+					console.log('Setting up movement tuning controls...');
+					
+					// Update display values when sliders change
+					const updateSliderDisplay = (sliderId, displayId, suffix = '') => {
+						const slider = document.getElementById(sliderId);
+						const display = document.getElementById(displayId);
+						if (slider && display) {
+							slider.addEventListener('input', (e) => {
+								display.textContent = parseFloat(e.target.value).toFixed(2) + suffix;
+							});
+						}
+					};
+					
+					// Setup all slider displays
+					updateSliderDisplay('movement-speed', 'speed-value');
+					updateSliderDisplay('direction-freq', 'freq-value');
+					updateSliderDisplay('cp-seeking', 'cp-seeking-value', '%');
+					updateSliderDisplay('exploration-bonus', 'exploration-value');
+					updateSliderDisplay('diagonal-movement', 'diagonal-value', '%');
+					
+					// Apply Movement Settings Button
+					document.getElementById('apply-movement-settings').onclick = () => {
+						console.log('Applying movement settings...');
+						
+						const settings = {
+							movementSpeed: parseFloat(document.getElementById('movement-speed').value),
+							directionChangeFreq: parseInt(document.getElementById('direction-freq').value),
+							cpSeekingChance: parseInt(document.getElementById('cp-seeking').value) / 100,
+							explorationBonus: parseFloat(document.getElementById('exploration-bonus').value),
+							diagonalChance: parseInt(document.getElementById('diagonal-movement').value) / 100
+						};
+						
+						console.log('New movement settings:', settings);
+						
+						// Apply settings to all agents
+						if (window.gameManager && window.gameManager.agents) {
+							window.gameManager.agents.forEach((agent, index) => {
+								// Update agent movement speed
+								if (agent.movementSpeed !== undefined) {
+									agent.movementSpeed = settings.movementSpeed;
+								}
+								
+								// Update movement parameters (these will be read by the agent's movement logic)
+								agent.movementTuning = {
+									directionChangeFreq: settings.directionChangeFreq,
+									cpSeekingChance: settings.cpSeekingChance,
+									explorationBonus: settings.explorationBonus,
+									diagonalChance: settings.diagonalChance
+								};
+								
+								console.log(`Applied settings to Agent ${agent.agentId || index}`);
+							});
+						}
+						
+						// Store settings globally for new agents
+						window.globalMovementSettings = settings;
+						
+						if (statusSpan) statusSpan.textContent = 'Movement settings applied';
+						setTimeout(() => {
+							if (statusSpan) statusSpan.textContent = 'Ready';
+						}, 2000);
+					};
+					
+					// Reset Movement Settings Button
+					document.getElementById('reset-movement-settings').onclick = () => {
+						console.log('Resetting movement settings to defaults...');
+						
+						// Reset sliders to default values
+						document.getElementById('movement-speed').value = 0.05;
+						document.getElementById('direction-freq').value = 60;
+						document.getElementById('cp-seeking').value = 20;
+						document.getElementById('exploration-bonus').value = 0.1;
+						document.getElementById('diagonal-movement').value = 20;
+						
+						// Update displays
+						document.getElementById('speed-value').textContent = '0.05';
+						document.getElementById('freq-value').textContent = '60';
+						document.getElementById('cp-seeking-value').textContent = '20%';
+						document.getElementById('exploration-value').textContent = '0.10';
+						document.getElementById('diagonal-value').textContent = '20%';
+						
+						// Apply default settings
+						document.getElementById('apply-movement-settings').click();
+						
+						console.log('Movement settings reset to defaults');
+					};
+					
+					// Toggle Movement Panel Button
+					document.getElementById('toggle-movement-panel').onclick = () => {
+						const panel = document.getElementById('movement-tuning');
+						const button = document.getElementById('toggle-movement-panel');
+						
+						if (panel.style.display === 'none') {
+							panel.style.display = 'block';
+							button.textContent = 'Hide Panel';
+						} else {
+							panel.style.display = 'none';
+							button.textContent = 'Show Movement Tuning';
+							
+							// Create a small show button if panel is hidden
+							if (!document.getElementById('show-movement-btn')) {
+								const showBtn = document.createElement('button');
+								showBtn.id = 'show-movement-btn';
+								showBtn.textContent = 'Movement';
+								showBtn.style.cssText = 'position: fixed; top: 50%; right: 5px; transform: translateY(-50%); z-index: 1001; font-size: 8px; padding: 2px 4px; background: #ccc; color: black; border: 1px solid #999;';
+								showBtn.onclick = () => {
+									panel.style.display = 'block';
+									button.textContent = 'Hide';
+									document.body.removeChild(showBtn);
+								};
+								document.body.appendChild(showBtn);
+							}
+						}
+					};
+					
+					console.log('Movement tuning controls ready');
+				}
 			};
 			
 			setupControls();

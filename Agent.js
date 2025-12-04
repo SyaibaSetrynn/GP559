@@ -197,17 +197,26 @@ class Agent {
         // Update last position
         this.lastPosition.copy(currentPos);
         
+        // Get movement tuning settings (from UI or defaults)
+        const tuning = this.movementTuning || window.globalMovementSettings || {};
+        const directionChangeFreq = tuning.directionChangeFreq || 60;
+        const cpSeekingChance = tuning.cpSeekingChance || 0.2;
+        
         // Force direction change if stuck or at regular intervals
-        const changeInterval = this.mode === 'training' ? (40 + Math.random() * 30) : (60 + Math.random() * 60);
+        const baseInterval = this.mode === 'training' ? (40 + Math.random() * 30) : directionChangeFreq;
+        const changeInterval = baseInterval + (Math.random() - 0.5) * 20; // Add some variation
         const isStuck = this.stuckTimer > 10; // Stuck for more than 10 frames
         const shouldChangeDirection = this.randomMoveTimer > changeInterval || isStuck || !this.currentDirection;
+        
+        // Check for CP seeking behavior
+        const shouldSeekCP = Math.random() < cpSeekingChance && window.globalCPSystem;
         
         if (shouldChangeDirection) {
             this.randomMoveTimer = 0;
             this.stuckTimer = 0;
             
-            // Choose a new random direction
-            this.selectNewRandomDirection(isStuck);
+            // Choose a new random direction (might be influenced by CP seeking)
+            this.selectNewRandomDirection(isStuck, shouldSeekCP);
         }
         
         // Apply the current movement
@@ -220,14 +229,51 @@ class Agent {
     /**
      * Select a new random direction for movement
      */
-    selectNewRandomDirection(isStuck = false) {
+    selectNewRandomDirection(isStuck = false, shouldSeekCP = false) {
         // Reset all movement flags
         this.movement.w = false;
         this.movement.a = false;
         this.movement.s = false;
         this.movement.d = false;
         
+        // Get movement tuning settings
+        const tuning = this.movementTuning || window.globalMovementSettings || {};
+        const diagonalChance = tuning.diagonalChance || 0.2;
+        const explorationBonus = tuning.explorationBonus || 0.1;
+        
         let availableDirections = ['w', 's', 'a', 'd'];
+        let preferredDirection = null;
+        
+        // If seeking CPs, try to find direction towards nearest unclaimed CP
+        if (shouldSeekCP && window.globalCPSystem && window.globalCPSystem.criticalPoints) {
+            const currentPos = this.getPosition();
+            let nearestCP = null;
+            let nearestDistance = Infinity;
+            
+            // Find nearest unclaimed CP
+            window.globalCPSystem.criticalPoints.forEach(cpData => {
+                if (!cpData.ownedBy || cpData.ownedBy === null) {
+                    const distance = currentPos.distanceTo(cpData.cp.position);
+                    if (distance < nearestDistance) {
+                        nearestDistance = distance;
+                        nearestCP = cpData.cp.position;
+                    }
+                }
+            });
+            
+            // If we found a CP, bias movement towards it
+            if (nearestCP) {
+                const dx = nearestCP.x - currentPos.x;
+                const dz = nearestCP.z - currentPos.z;
+                
+                // Determine preferred directions based on distance to CP
+                if (Math.abs(dx) > Math.abs(dz)) {
+                    preferredDirection = dx > 0 ? 'd' : 'a'; // East or West
+                } else {
+                    preferredDirection = dz > 0 ? 's' : 'w'; // South or North
+                }
+            }
+        }
         
         // If stuck, avoid the opposite of current direction and try something different
         if (isStuck && this.currentDirection) {
@@ -237,15 +283,24 @@ class Agent {
         }
         
         // Enhanced direction selection for more natural movement
-        const numDirections = Math.random() < 0.7 ? 1 : (Math.random() < 0.8 ? 2 : 1); // Mostly single direction, sometimes diagonal
+        const baseDiagonalChance = Math.random() < 0.7 ? 0 : (Math.random() < 0.8 ? 1 : 0);
+        const finalDiagonalChance = Math.random() < diagonalChance ? 1 : baseDiagonalChance;
+        const numDirections = finalDiagonalChance ? 2 : 1;
         
         for (let i = 0; i < numDirections && availableDirections.length > 0; i++) {
-            const dirIndex = Math.floor(Math.random() * availableDirections.length);
-            const selectedDir = availableDirections[dirIndex];
-            this.movement[selectedDir] = true;
+            let selectedDir;
             
-            // Remove selected direction to avoid duplicates
-            availableDirections.splice(dirIndex, 1);
+            // On first direction selection, prefer the CP-seeking direction if available
+            if (i === 0 && preferredDirection && availableDirections.includes(preferredDirection)) {
+                selectedDir = preferredDirection;
+                availableDirections = availableDirections.filter(dir => dir !== preferredDirection);
+            } else {
+                const dirIndex = Math.floor(Math.random() * availableDirections.length);
+                selectedDir = availableDirections[dirIndex];
+                availableDirections.splice(dirIndex, 1);
+            }
+            
+            this.movement[selectedDir] = true;
             
             // Track primary direction for stuck detection
             if (i === 0) {
@@ -260,11 +315,7 @@ class Agent {
             this.currentDirection = fallbackDir;
         }
         
-        // Add occasional jumping, especially when stuck
-        if (isStuck || Math.random() < 0.05) { // 5% chance normally, 100% when stuck
-            this.movement.space = true;
-            this.movement.spaceHold = true;
-        }
+        // Remove jumping - agents will navigate around obstacles instead
     }
     
     /**
@@ -282,22 +333,26 @@ class Agent {
         // Apply movement based on current movement flags
         let moved = false;
         const moveVector = new T.Vector3(0, 0, 0);
+        
+        // Get current movement speed (from tuning or default)
+        const tuning = this.movementTuning || window.globalMovementSettings || {};
+        const currentSpeed = tuning.movementSpeed !== undefined ? tuning.movementSpeed : this.movementSpeed;
 
         // Use world directions for consistent movement
         if(this.movement.w) {
-            moveVector.z -= this.movementSpeed; // Forward is negative Z
+            moveVector.z -= currentSpeed; // Forward is negative Z
             moved = true;
         }
         if(this.movement.a){
-            moveVector.x -= this.movementSpeed; // Left is negative X
+            moveVector.x -= currentSpeed; // Left is negative X
             moved = true;
         }
         if(this.movement.s) {
-            moveVector.z += this.movementSpeed; // Backward is positive Z
+            moveVector.z += currentSpeed; // Backward is positive Z
             moved = true;
         }
         if(this.movement.d) {
-            moveVector.x += this.movementSpeed; // Right is positive X
+            moveVector.x += currentSpeed; // Right is positive X
             moved = true;
         }
         
