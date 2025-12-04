@@ -47,7 +47,7 @@ class Player {
         this.onGround = false;
         this.worldCollide = collisionWorld;
 
-        this.color = window.CP_COLORS.ORANGE;
+        this.color = window.CP_COLORS.BLUE;
         this.laserFire = false;
         this.laser = this.initLaser();
         this.gunTip.add(this.laser);
@@ -153,21 +153,33 @@ class Player {
 
         this.laser.visible = true;
         
-        // check if hit crit point
+        // check if hit crit point - use new registry system
         for (let point of criticalPoints) {
             let distX = Math.abs(endPoint.x - point.cp.position.x);
             let distY = Math.abs(endPoint.y - point.cp.position.y);
             let distZ = Math.abs(endPoint.z - point.cp.position.z);
             if(distX < 0.05 && distY < 0.05 && distZ < 0.05) {
-                if (point.cp && point.cp.material) {
-                    point.cp.material.color.setHex(this.color);
-                    // Also color the glow if it exists
-                    if (point.cp.children && point.cp.children.length > 0) {
-                        point.cp.children.forEach(child => {
-                            if (child.material) {
-                                child.material.color.setHex(this.color);
-                            }
-                        });
+                // Use the new critical point registry system if available
+                if (criticalPointSystem && point.cp && point.cp.userData.cpId !== undefined) {
+                    const cpId = point.cp.userData.cpId;
+                    
+                    // Claim the CP in the registry (line drawn to it)
+                    criticalPointSystem.claimCriticalPoint(cpId, this.color, 'Player');
+                    
+                    // Capture the CP (change ownership/color)
+                    criticalPointSystem.captureCriticalPoint(cpId, this.color, 'Player');
+                } else {
+                    // Fallback to old color system if registry not available
+                    if (point.cp && point.cp.material) {
+                        point.cp.material.color.setHex(this.color);
+                        // Also color the glow if it exists
+                        if (point.cp.children && point.cp.children.length > 0) {
+                            point.cp.children.forEach(child => {
+                                if (child.material) {
+                                    child.material.color.setHex(this.color);
+                                }
+                            });
+                        }
                     }
                 }
             }
@@ -217,11 +229,17 @@ class Player {
         else
             this.laser.visible = false;
 
-        // update score
+        // update score using new registry system
         this.score = 0;
-        for (let point of criticalPoints) {
-            if(point.cp.material.color.getHex() === this.color) {
-                this.score ++;
+        if (criticalPointSystem && criticalPointSystem.cpsByOwner) {
+            const playerOwnedCPs = criticalPointSystem.cpsByOwner.get(this.color);
+            this.score = playerOwnedCPs ? playerOwnedCPs.length : 0;
+        } else {
+            // Fallback to old color-based scoring
+            for (let point of criticalPoints) {
+                if(point.cp.material.color.getHex() === this.color) {
+                    this.score ++;
+                }
             }
         }
 
@@ -325,7 +343,11 @@ const criticalPointSystem = new window.CriticalPointSystem(scene);
 let criticalPointsEnabled = true; // Toggle for critical points
 
 // Initialize Agent Manager
-const agentManager = new AgentManager(scene, collisionWorld);
+const agentManager = new AgentManager(scene, collisionWorld, criticalPointSystem);
+
+// Expose globals for consistency with DQN version
+window.globalCPSystem = criticalPointSystem;
+window.gameManager = agentManager;
 
 // loading terrain
 let levelObj = null;
@@ -478,15 +500,24 @@ scene.add(levelObj);
 let player1 = new Player(0, renderer, collisionWorld);
 scene.add(player1.object);
 
-// Create multiple agents using the agent manager
-const agent1 = agentManager.createAgent(new T.Vector3(5, 1, 5));   // Red agent
-const agent2 = agentManager.createAgent(new T.Vector3(-5, 1, -5)); // Green agent
-const agent3 = agentManager.createAgent(new T.Vector3(8, 1, -3));  // Blue agent
+// Create multiple agents using the agent manager (inside the maze walls)
+const agent1 = agentManager.createAgent(new T.Vector3(-4, 1, -4));  // Red agent - back left corner
+const agent2 = agentManager.createAgent(new T.Vector3(4, 1, -4));   // Green agent - back right corner
 
-// Agents should remain stationary - no targets set
-// agent1.setTarget(new T.Vector3(-2, 1, 3));
-// agent2.setTarget(new T.Vector3(3, 1, -2));
-// agent3.setTarget(new T.Vector3(-6, 1, 4));
+// Debug summary after agent creation
+console.log('=== AGENT CREATION SUMMARY ===');
+console.log(`Created ${agentManager.agents.length} agents`);
+agentManager.agents.forEach((agent, i) => {
+    const pos = agent.getPosition();
+    console.log(`Agent ${i} (ID: ${agent.agentId}): Position (${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)}), Mode: ${agent.getMode()}`);
+});
+console.log(`AgentManager has ${agentManager.criticalPoints.length} critical points`);
+console.log(`Critical Point System has ${criticalPointSystem.cpRegistry.size} CPs in registry`);
+
+// Ensure agents are in random mode (they default to random, but let's be explicit)
+agentManager.setAllAgentsMode('random');
+console.log('All agents set to random mode');
+console.log('===============================');
 
 // Initialize score display
 setTimeout(() => {
@@ -640,12 +671,11 @@ function animate(timestamp) {
     }
 
     renderer.render(scene, player1.camera);
+    
+    // Update UI every frame for real-time feedback
+    updateScoreDisplay();
+    
     previousTime = timestamp;
-    // Update scores display more frequently
-    if (Math.floor(timestamp / 500) !== Math.floor(previousTime / 500)) {
-        updateScoreDisplay();
-    }
-
     window.requestAnimationFrame(animate);
 }
 
@@ -668,19 +698,59 @@ document.addEventListener('keydown', function(event) {
 // Function to update score display
 function updateScoreDisplay() {
     const scoreDiv = document.getElementById('agentScores');
-    if (scoreDiv && agentManager) {
-        const scores = agentManager.getScores();
-        if (scores && scores.length > 0) {
-            scoreDiv.innerHTML = scores.map(s => 
-                `<div style="color: #${s.color.toString(16).padStart(6, '0')};">Agent ${s.agentId}: ${s.score} points</div>`
-            ).join('');
-            scoreDiv.innerHTML += `<div style="color: #${player1.color.toString(16).padStart(6, '0')};"> Player: ${player1.score} points</div>`
-            console.log(player1.score);
-        } else {
-            scoreDiv.innerHTML = '<div>No agents found</div>';
+    if (!scoreDiv) return;
+    
+    let text = '';
+    
+    // Show critical point info
+    if (criticalPointSystem && criticalPointSystem.cpRegistry) {
+        const cpScoring = criticalPointSystem.getScoring();
+        
+        text += `Critical Points:\n`;
+        text += `Total: ${criticalPointSystem.cpRegistry.size}\n`;
+        text += `Neutral: ${cpScoring.neutral}\n`;
+        text += `Claimed: ${cpScoring.activelyClaimed}\n\n`;
+        
+        // Show owner breakdown
+        if (Object.keys(cpScoring.byOwner).length > 0) {
+            text += `Owned by agents:\n`;
+            for (const [owner, data] of Object.entries(cpScoring.byOwner)) {
+                const colorName = getColorName(owner);
+                text += `  ${colorName}: ${data.owned} owned\n`;
+            }
+            text += `\n`;
         }
-
+    } else {
+        text += `Critical Points: Not initialized\n\n`;
     }
+    
+    // Show agent info
+    if (agentManager && agentManager.agents) {
+        text += `Agents (${agentManager.agents.length}):\n`;
+        agentManager.agents.forEach((agent, i) => {
+            try {
+                const pos = agent.getPosition();
+                const score = agent.getScore();
+                const hexColor = agent.agentColor.toString(16);
+                const colorName = getColorName(hexColor);
+                text += `${colorName} Agent ${agent.agentId}: Score ${score}, Pos (${pos.x.toFixed(1)}, ${pos.z.toFixed(1)})\n`;
+            } catch (e) {
+                text += `Agent ${i}: Error getting data\n`;
+            }
+        });
+    } else {
+        text += `Agents: Not found\n`;
+    }
+    
+    // Show player info
+    if (player1) {
+        const playerColor = player1.color.toString(16);
+        const playerColorName = getColorName(playerColor);
+        text += `\n${playerColorName} Player: ${player1.score} points\n`;
+    }
+    
+    // Update display
+    scoreDiv.innerHTML = text.replace(/\n/g, '<br>');
 }
 
 // Show LOS UI when game starts
@@ -796,3 +866,25 @@ window.MapPathfinding = {
         return bestDir;
     }
 };
+
+// Function to convert hex color codes to readable names
+function getColorName(hexColor) {
+    // Convert to string and pad with zeros to ensure 6 digits
+    let cleanHex = hexColor.toString().replace('#', '').toLowerCase();
+    cleanHex = cleanHex.padStart(6, '0'); // Ensure it's always 6 digits
+    
+    const colorMap = {
+        'ff0000': 'Red',
+        '00ff00': 'Green', 
+        'ffff00': 'Yellow',
+        'ff00ff': 'Magenta',
+        '00ffff': 'Cyan',
+        'ff8000': 'Orange',
+        '8000ff': 'Purple',
+        '80ff00': 'Lime',
+        'ff0080': 'Pink',
+        '0000ff': 'Blue'  // Added blue for player
+    };
+    
+    return colorMap[cleanHex] || `Color ${cleanHex}`;
+}

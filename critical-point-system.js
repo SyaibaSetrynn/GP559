@@ -37,6 +37,12 @@ export class CriticalPointSystem {
             ...options
         };
         
+        // Skip outer boundary walls completely
+        const isOuterBoundaryWall = Math.abs(targetObject.position.x) > 4.5 || Math.abs(targetObject.position.z) > 4.5;
+        if (isOuterBoundaryWall) {
+            return [];
+        }
+        
         // Get the bounding box of the target object
         const bbox = new THREE.Box3().setFromObject(targetObject);
         const size = bbox.getSize(new THREE.Vector3());
@@ -297,18 +303,10 @@ export class CriticalPointSystem {
 
         const accessibleFaces = [];
         
-        // Use face classification for boundary walls
-        if (targetObject.userData && targetObject.userData.faceClassification && targetObject.userData.faceClassification.isBoundaryWall) {
-            // Boundary wall - only allow inward-facing faces
-            targetObject.userData.faceClassification.inwardFaces.forEach(faceId => {
-                accessibleFaces.push(faceId);
-            });
-        } else {
-            // No classification (inner maze blocks) - allow all vertical faces
-            faces.forEach(face => {
-                accessibleFaces.push(face.id);
-            });
-        }
+        // Allow all vertical faces for inner objects (boundary walls already filtered out)
+        faces.forEach(face => {
+            accessibleFaces.push(face.id);
+        });
 
         return accessibleFaces;
     }

@@ -497,7 +497,6 @@ export class RewardSystem {
         const startingPositions = [
             { x: -4, z: -4 }, // Red agent - back left corner
             { x: 4, z: -4 },  // Green agent - back right corner  
-            { x: -4, z: 4 },  // Blue agent - front left corner
             { x: 4, z: 4 }    // Extra corner - front right corner
         ];
         

@@ -85,9 +85,10 @@ export class DQNIntegration {
 
     /**
      * Start DQN training for a specific agent
-     * @param {number} agentIndex - Index of agent to train (0 = red, 1 = green, 2 = blue)
+     * @param {number} agentIndex - Index of agent to train (0 = red, 1 = green)
+     * @param {boolean} useSimplePretraining - Whether to run simple pretraining first
      */
-    async startTraining(agentIndex = 0) {
+    async startTraining(agentIndex = 0, useSimplePretraining = false) {
         if (!this.isInitialized) {
             throw new Error('DQN integration not initialized');
         }
@@ -98,7 +99,7 @@ export class DQNIntegration {
         
         this.trainingAgent = this.gameManager.agents[agentIndex];
         
-        console.log(`Starting DQN training for agent ${agentIndex} (${this.getAgentColorName(agentIndex)})`);
+        console.log(`Starting DQN training for agent ${agentIndex} (${this.getAgentColorName(agentIndex)})${useSimplePretraining ? ' with pretraining' : ''}`);
         
         // Set agent to DQN mode (if applicable)
         if (this.trainingAgent.setMode) {
@@ -106,10 +107,10 @@ export class DQNIntegration {
         }
         
         // Update UI
-        this.updateStatus('Training Started');
+        this.updateStatus(useSimplePretraining ? 'Training + Pretraining Started' : 'Training Started');
         
         // Start training (non-blocking)
-        dqnTrainer.startTraining(this.trainingAgent, this.gameManager, this.gameEnvironment)
+        dqnTrainer.startTraining(this.trainingAgent, this.gameManager, this.gameEnvironment, useSimplePretraining)
             .then(() => {
                 this.updateStatus('Training Complete');
                 console.log('DQN training completed');
@@ -118,6 +119,72 @@ export class DQNIntegration {
                 this.updateStatus('Training Error');
                 console.error('DQN training error:', error);
             });
+    }
+
+    /**
+     * Run simple pretraining for a specific agent
+     * @param {number} agentIndex - Index of agent to train (0 = red, 1 = green)
+     */
+    async runSimplePretraining(agentIndex = 0) {
+        if (!this.isInitialized) {
+            throw new Error('DQN integration not initialized');
+        }
+        
+        if (!this.gameManager.agents || this.gameManager.agents.length <= agentIndex) {
+            throw new Error(`Agent ${agentIndex} not found`);
+        }
+        
+        this.trainingAgent = this.gameManager.agents[agentIndex];
+        
+        console.log(`Running simple pretraining for agent ${agentIndex} (${this.getAgentColorName(agentIndex)})`);
+        
+        // Set agent to random mode for pretraining
+        if (this.trainingAgent.setMode) {
+            this.trainingAgent.setMode('random');
+        }
+        
+        // Update UI
+        this.updateStatus('Pretraining in progress...');
+        
+        // Run pretraining
+        await dqnTrainer.runSimplePretraining(this.trainingAgent, this.gameManager, this.gameEnvironment);
+        
+        this.updateStatus('Pretraining completed');
+        console.log('Simple pretraining completed');
+    }
+
+    /**
+     * Get pretraining information and statistics
+     */
+    getPretrainingInfo() {
+        if (!this.isInitialized) {
+            return {
+                pretrainingEpisodes: 20,
+                pretrainingStepsPerEpisode: 100,
+                currentBufferSize: 0,
+                trainingStartSize: 1000,
+                readyForTraining: false
+            };
+        }
+        
+        return dqnTrainer.getPretrainingInfo();
+    }
+
+    /**
+     * Get real-time pretraining progress for UI display
+     */
+    getPretrainingProgress() {
+        if (!this.isInitialized) {
+            return {
+                isPretraining: false,
+                currentEpisode: 0,
+                totalEpisodes: 0,
+                currentStep: 0,
+                stepsPerEpisode: 0
+            };
+        }
+        
+        return dqnTrainer.getPretrainingProgress();
     }
 
     /**
@@ -193,11 +260,16 @@ export class DQNIntegration {
             // Load the model from localStorage
             const model = await tf.loadLayersModel(`localstorage://${modelName}`);
             
-            // Get model architecture and weights
+            // Get model architecture in the proper format for TensorFlow.js
+            const modelJSON = model.toJSON();
+            
+            console.log('Model JSON structure:', Object.keys(modelJSON));
+            console.log('Model JSON sample:', JSON.stringify(modelJSON).substring(0, 300) + '...');
+            
             const modelData = {
                 name: modelName,
                 exported: new Date().toISOString(),
-                architecture: model.toJSON(),
+                architecture: modelJSON, // This contains the full model definition
                 weights: []
             };
             
@@ -249,29 +321,117 @@ export class DQNIntegration {
             const jsonString = await file.text();
             const modelData = JSON.parse(jsonString);
             
+            console.log('Parsed model data structure:', {
+                hasArchitecture: !!modelData.architecture,
+                hasWeights: !!modelData.weights,
+                weightsLength: modelData.weights ? modelData.weights.length : 0
+            });
+            
             if (!modelData.architecture || !modelData.weights) {
-                throw new Error('Invalid model JSON format');
+                throw new Error('Invalid model JSON format - missing architecture or weights');
             }
             
-            // Recreate the model from architecture
-            const model = tf.models.modelFromJSON(modelData.architecture);
+            // Use a simpler approach: create the model from JSON and manually set weights
+            console.log('Creating model from architecture...');
             
-            // Recreate weights
+            // Handle different JSON formats that TensorFlow.js might produce
+            let modelConfig;
+            
+            console.log('Architecture keys:', Object.keys(modelData.architecture));
+            console.log('Architecture sample:', JSON.stringify(modelData.architecture).substring(0, 300) + '...');
+            
+            // Handle the direct TensorFlow.js JSON export format
+            if (modelData.architecture.class_name && modelData.architecture.config) {
+                // This is the standard TensorFlow.js JSON format
+                modelConfig = modelData.architecture;
+                console.log('Using direct TensorFlow.js JSON format (class_name + config)');
+            } else if (modelData.architecture.modelTopology) {
+                // Full TensorFlow.js save format
+                modelConfig = modelData.architecture.modelTopology;
+                console.log('Using modelTopology from architecture');
+            } else if (modelData.architecture.className && modelData.architecture.config) {
+                // Alternative className format
+                modelConfig = modelData.architecture;
+                console.log('Using className/config format');
+            } else {
+                // Fallback: use the architecture as-is
+                modelConfig = modelData.architecture;
+                console.log('Using architecture as-is (fallback)');
+            }
+            
+            console.log('Final model config keys:', Object.keys(modelConfig));
+            console.log('Final model config:', JSON.stringify(modelConfig).substring(0, 200) + '...');
+            
+            // Create the model using the correct TensorFlow.js approach
+            let model;
+            try {
+                // Use tf.sequential() to create the model from layers if it's a Sequential model
+                const modelType = modelConfig.class_name || modelConfig.className;
+                console.log('Detected model type:', modelType);
+                
+                if (modelType === 'Sequential') {
+                    console.log('Creating Sequential model from layers...');
+                    const layers = modelConfig.config.layers;
+                    
+                    model = tf.sequential();
+                    
+                    // Add each layer to the sequential model
+                    for (let i = 0; i < layers.length; i++) {
+                        const layerConfig = layers[i];
+                        console.log(`Adding layer ${i}: ${layerConfig.class_name}`, layerConfig.config);
+                        
+                        if (layerConfig.class_name === 'Dense') {
+                            const denseConfig = layerConfig.config;
+                            const layerOptions = {
+                                units: denseConfig.units,
+                                activation: denseConfig.activation,
+                                useBias: denseConfig.use_bias !== false, // Default to true
+                                name: denseConfig.name
+                            };
+                            
+                            // Add input shape for first layer
+                            if (i === 0 && denseConfig.batch_input_shape) {
+                                layerOptions.inputShape = denseConfig.batch_input_shape.slice(1); // Remove batch dimension
+                                console.log('  Input shape:', layerOptions.inputShape);
+                            }
+                            
+                            model.add(tf.layers.dense(layerOptions));
+                            console.log(`  Added Dense layer: ${denseConfig.units} units, activation: ${denseConfig.activation}`);
+                        } else {
+                            console.warn(`  Unsupported layer type: ${layerConfig.class_name}`);
+                        }
+                    }
+                } else {
+                    throw new Error(`Unsupported model type: ${modelType}. Only Sequential models are currently supported for import.`);
+                }
+                
+                console.log('Model created successfully');
+            } catch (modelCreationError) {
+                console.error('Error creating model:', modelCreationError);
+                throw new Error(`Failed to create model: ${modelCreationError.message}`);
+            }
+            
+            // Now set the weights manually
+            console.log('Creating weight tensors...');
             const weightTensors = [];
-            for (const weightInfo of modelData.weights) {
-                const tensor = tf.tensor(weightInfo.data, weightInfo.shape);
+            
+            for (let i = 0; i < modelData.weights.length; i++) {
+                const weightInfo = modelData.weights[i];
+                const tensor = tf.tensor(weightInfo.data, weightInfo.shape, 'float32');
                 weightTensors.push(tensor);
             }
             
-            // Set weights
+            console.log('Setting weights...');
             model.setWeights(weightTensors);
+            
+            // Clean up weight tensors
+            weightTensors.forEach(tensor => tensor.dispose());
             
             // Save to localStorage with imported name
             const importName = modelData.name + '_imported_' + Date.now();
-            await model.save(`localstorage://${importName}`);
+            console.log(`Saving model as: ${importName}`);
             
-            // Clean up tensors
-            weightTensors.forEach(tensor => tensor.dispose());
+            await model.save(`localstorage://${importName}`);
             
             console.log(`Model imported successfully as ${importName}`);
             this.updateStatus(`Model imported: ${importName}`);
@@ -284,78 +444,7 @@ export class DQNIntegration {
         }
     }
 
-    /**
-     * Get available pretraining phases
-     */
-    getPretrainingPhases() {
-        if (!this.isInitialized) {
-            return [];
-        }
-        return dqnTrainer.getPretrainingPhases();
-    }
 
-    /**
-     * Start pretraining for a specific agent
-     * @param {number} agentIndex - Index of agent to pretrain
-     * @param {number} startPhase - Phase to start from (optional)
-     */
-    async startPretraining(agentIndex = 0, startPhase = 0) {
-        if (!this.isInitialized) {
-            throw new Error('DQN integration not initialized');
-        }
-        
-        if (!this.gameManager.agents || this.gameManager.agents.length <= agentIndex) {
-            throw new Error(`Agent ${agentIndex} not found`);
-        }
-        
-        this.trainingAgent = this.gameManager.agents[agentIndex];
-        
-        console.log(`Starting DQN pretraining for agent ${agentIndex} (${this.getAgentColorName(agentIndex)}) from phase ${startPhase}`);
-        
-        // Set agent to DQN mode
-        if (this.trainingAgent.setMode) {
-            this.trainingAgent.setMode('dqn');
-        }
-        
-        // Update UI
-        this.updateStatus('Pretraining Started');
-        
-        // Start pretraining (non-blocking)
-        dqnTrainer.startPretraining(this.trainingAgent, this.gameManager, this.gameEnvironment, startPhase)
-            .then(() => {
-                this.updateStatus('Pretraining Complete');
-                console.log('DQN pretraining completed');
-            })
-            .catch((error) => {
-                this.updateStatus('Pretraining Error');
-                console.error('DQN pretraining error:', error);
-            });
-    }
-
-    /**
-     * Stop pretraining
-     */
-    stopPretraining() {
-        if (!this.isInitialized) {
-            console.warn('DQN integration not initialized');
-            return;
-        }
-        
-        dqnTrainer.stopPretraining();
-        this.updateStatus('Pretraining Stopped');
-        console.log('DQN pretraining stopped');
-    }
-
-    /**
-     * Get pretraining statistics
-     */
-    getPretrainingStats() {
-        if (!this.isInitialized) {
-            return null;
-        }
-        
-        return dqnTrainer.getPretrainingStats();
-    }
 
     /**
      * Set up UI monitoring elements
@@ -403,18 +492,7 @@ export class DQNIntegration {
             <div>Avg Reward: <span id="dqn-reward">0.000</span></div>
             <div>Epsilon: <span id="dqn-epsilon">1.000</span></div>
             <div>Loss: <span id="dqn-loss">0.000</span></div>
-            <div style="margin-top: 6px; font-size: 9px; border-top: 1px solid #ccc; padding-top: 4px;">
-                <div style="margin-bottom: 2px; font-weight: bold;">Pretraining:</div>
-                <button id="dqn-pretrain-btn" style="font-size: 9px; margin-right: 4px;">Start Pretraining</button>
-                <button id="dqn-pretrain-stop-btn" style="font-size: 9px; margin-right: 4px;">Stop Pretrain</button>
-                <select id="dqn-phase-select" style="font-size: 9px; margin-right: 4px;">
-                    <option value="0">Phase 1: Basic Movement</option>
-                    <option value="1">Phase 2: Map Exploration</option>
-                    <option value="2">Phase 3: Critical Points</option>
-                    <option value="3">Phase 4: Basic Competition</option>
-                    <option value="4">Phase 5: Multi-Agent</option>
-                </select>
-            </div>
+
             <div style="margin-top: 4px; font-size: 9px; border-top: 1px solid #ccc; padding-top: 4px;">
                 <div style="margin-bottom: 2px; font-weight: bold;">Training:</div>
                 <button id="dqn-start-btn" style="font-size: 9px; margin-right: 4px;">Start Training</button>
@@ -448,28 +526,10 @@ export class DQNIntegration {
      * Set up UI event handlers
      */
     setupUIEventHandlers() {
-        // Pretraining controls
-        const pretrainBtn = document.getElementById('dqn-pretrain-btn');
-        const pretrainStopBtn = document.getElementById('dqn-pretrain-stop-btn');
-        const phaseSelect = document.getElementById('dqn-phase-select');
-        
         // Training controls
         const startBtn = document.getElementById('dqn-start-btn');
         const stopBtn = document.getElementById('dqn-stop-btn');
         const saveBtn = document.getElementById('dqn-save-btn');
-        
-        if (pretrainBtn) {
-            pretrainBtn.onclick = () => {
-                const startPhase = parseInt(phaseSelect.value) || 0;
-                this.startPretraining(0, startPhase); // Pretrain red agent
-            };
-        }
-        
-        if (pretrainStopBtn) {
-            pretrainStopBtn.onclick = () => {
-                this.stopPretraining();
-            };
-        }
         
         if (startBtn) {
             startBtn.onclick = () => {
@@ -505,13 +565,6 @@ export class DQNIntegration {
      * Update UI display with current training stats
      */
     updateUIDisplay() {
-        // Check for pretraining stats first
-        const pretrainingStats = this.getPretrainingStats();
-        if (pretrainingStats && pretrainingStats.isActive) {
-            this.updatePretrainingDisplay(pretrainingStats);
-            return;
-        }
-        
         // Regular training stats
         const stats = this.getTrainingStats();
         if (!stats) return;
@@ -546,33 +599,7 @@ export class DQNIntegration {
         }
     }
 
-    /**
-     * Update UI display with pretraining information
-     */
-    updatePretrainingDisplay(pretrainingStats) {
-        if (this.statusElements.episode) {
-            this.statusElements.episode.textContent = `${pretrainingStats.currentPhase + 1}/${pretrainingStats.totalPhases}`;
-        }
-        
-        if (this.statusElements.phase) {
-            const progress = (pretrainingStats.phaseProgress * 100).toFixed(0);
-            this.statusElements.phase.textContent = `${pretrainingStats.currentPhaseName} (${progress}%)`;
-        }
-        
-        if (this.statusElements.reward) {
-            const recentRewards = pretrainingStats.phaseRewards.slice(-1);
-            const avgReward = recentRewards.length > 0 ? recentRewards[0] : 0;
-            this.statusElements.reward.textContent = avgReward.toFixed(3);
-        }
-        
-        if (this.statusElements.epsilon) {
-            this.statusElements.epsilon.textContent = '0.500'; // Pretraining uses moderate exploration
-        }
-        
-        if (this.statusElements.loss) {
-            this.statusElements.loss.textContent = 'Pretrain';
-        }
-    }
+
 
     /**
      * Update status message
@@ -588,7 +615,7 @@ export class DQNIntegration {
      * Get agent color name for display
      */
     getAgentColorName(agentIndex) {
-        const colors = ['Red', 'Green', 'Blue', 'Yellow'];
+        const colors = ['Red', 'Green', 'Yellow'];
         return colors[agentIndex] || `Agent ${agentIndex}`;
     }
 

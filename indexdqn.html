@@ -27,17 +27,38 @@
 			<h4 style="margin: 0 0 5px 0;">Game Controls</h4>
 			<div style="margin: 2px 0;">Mode: <span id="current-mode">Random</span></div>
 			<div style="margin: 2px 0;">Status: <span id="system-status">Ready</span></div>
+			<div style="margin: 2px 0; font-size: 10px; color: #666;">Buffer: <span id="buffer-status">0 experiences</span></div>
+			
+			<!-- Pretraining Progress Display -->
+			<div id="pretraining-progress" style="display: none; margin: 4px 0; padding: 4px; background: rgba(255,248,220,0.9); border: 1px solid #ddd; border-radius: 3px; font-size: 10px;">
+				<div style="font-weight: bold; color: #2196F3; margin-bottom: 2px;">Pretraining Progress</div>
+				<div>Episode: <span id="pretraining-episode">0/0</span></div>
+				<div>Step: <span id="pretraining-step">0/0</span></div>
+				<div style="margin-top: 3px;">
+					<div style="background: #f0f0f0; border-radius: 2px; height: 6px; overflow: hidden;">
+						<div id="pretraining-progress-bar" style="background: #4CAF50; height: 100%; width: 0%; transition: width 0.3s;"></div>
+					</div>
+					<div style="text-align: center; font-size: 9px; margin-top: 1px;">
+						<span id="pretraining-percentage">0%</span> complete
+					</div>
+				</div>
+			</div>
 			
 			<div style="margin: 3px 0;">
 				<button id="reset-scene">Reset Environment</button>
 				<button id="random-mode">Random Mode</button>
+				<button id="debug-cp" style="font-size: 10px;">Debug CPs</button>
 			</div>
 			
 			<div style="margin-top: 6px; border-top: 1px solid #ccc; padding-top: 4px;">
 				<h5 style="margin: 0 0 3px 0;">DQN Controls</h5>
 				<div style="margin: 2px 0;">
 					<button id="init-dqn" style="font-size: 10px;">Initialize DQN</button>
+					<button id="start-pretraining" style="font-size: 10px;">Start Pretraining</button>
+				</div>
+				<div style="margin: 2px 0;">
 					<button id="start-dqn" style="font-size: 10px;">Start Training</button>
+					<button id="start-dqn-with-pretraining" style="font-size: 10px;">Train + Pretraining</button>
 				</div>
 				<div style="margin: 2px 0;">
 					<button id="stop-dqn" style="font-size: 10px;">Stop Training</button>
@@ -63,6 +84,53 @@
 			<div id="red-minimal-state" style="font-size: 9px; color: #666; border-top: 1px solid #ddd; padding-top: 4px;">
 				<div style="margin-bottom: 2px;">state_vector:</div>
 				<div id="red-state-vector" style="font-family: monospace; word-break: break-all; line-height: 1.1;">[Loading...]</div>
+			</div>
+		</div>
+
+		<!-- Movement Tuning Panel - Fixed Overlay -->
+		<div id="movement-tuning" style="position: fixed; top: 50%; right: 20px; transform: translateY(-50%); background: rgba(240,240,240,0.9); border: 1px solid #ccc; padding: 8px; font-size: 10px; z-index: 1000; max-width: 200px;">
+			<div style="margin: 0 0 6px 0; font-weight: bold; color: #333; text-align: left; border-bottom: 1px solid #bbb; padding-bottom: 2px;">Movement Settings</div>
+			
+			<!-- Movement Speed -->
+			<div style="margin: 4px 0;">
+				<label style="display: block; margin-bottom: 1px;">Speed:</label>
+				<input type="range" id="movement-speed" min="0.01" max="0.15" step="0.005" value="0.05" style="width: 120px;">
+				<span id="speed-value" style="margin-left: 4px; font-family: monospace; font-size: 9px;">0.05</span>
+			</div>
+			
+			<!-- Direction Change Frequency -->
+			<div style="margin: 4px 0;">
+				<label style="display: block; margin-bottom: 1px;">Direction Freq:</label>
+				<input type="range" id="direction-freq" min="20" max="120" step="5" value="60" style="width: 120px;">
+				<span id="freq-value" style="margin-left: 4px; font-family: monospace; font-size: 9px;">60</span>
+			</div>
+			
+			<!-- CP Seeking Tendency -->
+			<div style="margin: 4px 0;">
+				<label style="display: block; margin-bottom: 1px;">CP Seeking:</label>
+				<input type="range" id="cp-seeking" min="0" max="100" step="5" value="20" style="width: 120px;">
+				<span id="cp-seeking-value" style="margin-left: 4px; font-family: monospace; font-size: 9px;">20%</span>
+			</div>
+			
+			<!-- Exploration Bonus -->
+			<div style="margin: 4px 0;">
+				<label style="display: block; margin-bottom: 1px;">Exploration:</label>
+				<input type="range" id="exploration-bonus" min="0" max="0.5" step="0.05" value="0.1" style="width: 120px;">
+				<span id="exploration-value" style="margin-left: 4px; font-family: monospace; font-size: 9px;">0.10</span>
+			</div>
+			
+			<!-- Diagonal Movement -->
+			<div style="margin: 4px 0;">
+				<label style="display: block; margin-bottom: 1px;">Diagonal:</label>
+				<input type="range" id="diagonal-movement" min="0" max="50" step="5" value="20" style="width: 120px;">
+				<span id="diagonal-value" style="margin-left: 4px; font-family: monospace; font-size: 9px;">20%</span>
+			</div>
+			
+			<!-- Control Buttons -->
+			<div style="margin: 6px 0 2px 0; text-align: left; border-top: 1px solid #bbb; padding-top: 4px;">
+				<button id="apply-movement-settings" style="font-size: 9px; margin: 1px; padding: 2px 6px; background: #666; color: white; border: 1px solid #333;">Apply</button>
+				<button id="reset-movement-settings" style="font-size: 9px; margin: 1px; padding: 2px 6px; background: #999; color: white; border: 1px solid #333;">Reset</button>
+				<button id="toggle-movement-panel" style="font-size: 9px; margin: 1px; padding: 2px 6px; background: #aaa; color: black; border: 1px solid #333;">Hide</button>
 			</div>
 		</div>
 		
@@ -187,6 +255,12 @@
 				// Start red agent state display updates
 				startRedAgentStateUpdates();
 				
+				// Start periodic buffer status updates
+				setInterval(() => {
+					updateBufferStatus();
+					updatePretrainingProgress();
+				}, 1000); // Update every second
+				
 				// Utility function for resetting critical points (used by UI)
 				window.resetCriticalPointsUtil = function() {
 					const cps = window.gameManager?.criticalPointSystem;
@@ -256,6 +330,9 @@
 				const statusSpan = document.getElementById('system-status');
 				
 				console.log('Basic game controls ready');
+				
+				// Setup Movement Tuning Controls
+				setupMovementTuningControls();
 				
 				// Reset Scene
 				document.getElementById('reset-scene').onclick = () => {
@@ -336,6 +413,94 @@
 					if (statusSpan) statusSpan.textContent = 'Random mode active';
 				};
 				
+				// Debug Critical Points
+				document.getElementById('debug-cp').onclick = () => {
+					console.log('🔍 DEBUGGING CRITICAL POINTS:');
+					const cps = window.globalCPSystem;
+					if (cps && cps.criticalPoints) {
+						console.log(`Found ${cps.criticalPoints.length} critical points:`);
+						cps.criticalPoints.forEach((cpData, i) => {
+							const pos = cpData.cp.position;
+							const inPlayArea = Math.abs(pos.x) <= 4.5 && Math.abs(pos.z) <= 4.5;
+							console.log(`CP ${i}: (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)}) - ${inPlayArea ? '✅ IN play area' : '❌ OUTSIDE play area'}`);
+						});
+					} else {
+						console.log('No critical points found');
+					}
+				};
+				
+				// Utility function to update buffer status
+				function updateBufferStatus() {
+					const bufferSpan = document.getElementById('buffer-status');
+					if (bufferSpan && dqnIntegration) {
+						try {
+							const info = dqnIntegration.getPretrainingInfo();
+							const bufferSize = info.currentBufferSize;
+							const readyForTraining = info.readyForTraining;
+							const percentage = Math.min(100, Math.round((bufferSize / info.trainingStartSize) * 100));
+							
+							bufferSpan.textContent = `${bufferSize} experiences (${percentage}%)`;
+							bufferSpan.style.color = readyForTraining ? '#4CAF50' : '#666';
+						} catch (error) {
+							bufferSpan.textContent = '0 experiences';
+						}
+					}
+				}
+
+				// Utility function to update pretraining progress display
+				function updatePretrainingProgress() {
+					try {
+						const progressDiv = document.getElementById('pretraining-progress');
+						if (!progressDiv || !dqnIntegration) return;
+
+						const progress = dqnIntegration.getPretrainingProgress();
+						
+						if (progress && progress.isPretraining) {
+							// Show progress display
+							progressDiv.style.display = 'block';
+							
+							// Update episode info
+							const episodeSpan = document.getElementById('pretraining-episode');
+							if (episodeSpan) {
+								episodeSpan.textContent = `${progress.currentEpisode}/${progress.totalEpisodes}`;
+							}
+							
+							// Update step info
+							const stepSpan = document.getElementById('pretraining-step');
+							if (stepSpan) {
+								stepSpan.textContent = `${progress.currentStep}/${progress.stepsPerEpisode}`;
+							}
+							
+							// Calculate overall progress percentage
+							const episodeProgress = (progress.currentEpisode - 1) / progress.totalEpisodes;
+							const stepProgress = progress.currentStep / progress.stepsPerEpisode;
+							const totalProgress = (episodeProgress + stepProgress / progress.totalEpisodes) * 100;
+							const roundedProgress = Math.min(100, Math.max(0, Math.round(totalProgress)));
+							
+							// Update progress bar
+							const progressBar = document.getElementById('pretraining-progress-bar');
+							if (progressBar) {
+								progressBar.style.width = `${roundedProgress}%`;
+							}
+							
+							// Update percentage text
+							const percentageSpan = document.getElementById('pretraining-percentage');
+							if (percentageSpan) {
+								percentageSpan.textContent = `${roundedProgress}%`;
+							}
+						} else {
+							// Hide progress display when not pretraining
+							progressDiv.style.display = 'none';
+						}
+					} catch (error) {
+						// Silently fail - pretraining progress is optional
+						const progressDiv = document.getElementById('pretraining-progress');
+						if (progressDiv) {
+							progressDiv.style.display = 'none';
+						}
+					}
+				}
+
 				// DQN Controls
 				document.getElementById('init-dqn').onclick = async () => {
 					console.log('Initializing DQN...');
@@ -350,6 +515,7 @@
 						});
 						
 						if (statusSpan) statusSpan.textContent = 'DQN Ready';
+						updateBufferStatus();
 						console.log('DQN initialized successfully');
 					} catch (error) {
 						if (statusSpan) statusSpan.textContent = 'DQN Init Error';
@@ -357,6 +523,33 @@
 					}
 				};
 				
+				document.getElementById('start-pretraining').onclick = async () => {
+					console.log('Starting simple pretraining...');
+					if (statusSpan) statusSpan.textContent = 'Running pretraining...';
+					if (modeSpan) modeSpan.textContent = 'Pretraining';
+					
+					// Start updating pretraining progress
+					const progressUpdateInterval = setInterval(() => {
+						updatePretrainingProgress();
+					}, 200); // Update every 200ms for smooth progress
+					
+					try {
+						await dqnIntegration.runSimplePretraining(0); // Pretrain red agent
+						if (statusSpan) statusSpan.textContent = 'Pretraining complete';
+						updateBufferStatus();
+						console.log('Simple pretraining completed');
+					} catch (error) {
+						if (statusSpan) statusSpan.textContent = 'Pretraining Error';
+						console.error('Pretraining error:', error);
+					} finally {
+						// Stop updating pretraining progress
+						clearInterval(progressUpdateInterval);
+						setTimeout(() => {
+							updatePretrainingProgress(); // Final update to hide progress
+						}, 500);
+					}
+				};
+
 				document.getElementById('start-dqn').onclick = async () => {
 					console.log('Starting DQN training...');
 					if (statusSpan) statusSpan.textContent = 'Starting DQN training...';
@@ -368,6 +561,31 @@
 					} catch (error) {
 						if (statusSpan) statusSpan.textContent = 'DQN Start Error';
 						console.error('DQN training start error:', error);
+					}
+				};
+
+				document.getElementById('start-dqn-with-pretraining').onclick = async () => {
+					console.log('Starting DQN training with pretraining...');
+					if (statusSpan) statusSpan.textContent = 'Starting with pretraining...';
+					if (modeSpan) modeSpan.textContent = 'DQN + Pretraining';
+					
+					// Start updating pretraining progress (will automatically stop when pretraining ends)
+					const progressUpdateInterval = setInterval(() => {
+						updatePretrainingProgress();
+					}, 200); // Update every 200ms for smooth progress
+					
+					try {
+						await dqnIntegration.startTraining(0, true); // Train red agent with pretraining
+						if (statusSpan) statusSpan.textContent = 'DQN training active';
+					} catch (error) {
+						if (statusSpan) statusSpan.textContent = 'DQN+Pre Start Error';
+						console.error('DQN training with pretraining error:', error);
+					} finally {
+						// Clean up progress updates after a delay to allow final update
+						setTimeout(() => {
+							clearInterval(progressUpdateInterval);
+							updatePretrainingProgress(); // Final update to hide progress if done
+						}, 1000);
 					}
 				};
 				
@@ -456,57 +674,196 @@
 						event.target.value = '';
 					}
 				};
-				
 				console.log('DQN game controls connected successfully');
 				
-				// Add console helper functions for pretraining
-				window.pretrainHelpers = {
-					startPretraining: (phase = 0) => {
-						console.log(`Starting pretraining from phase ${phase}...`);
-						if (window.dqnIntegration && window.dqnIntegration.isInitialized) {
-							window.dqnIntegration.startPretraining(0, phase);
+				// Movement Tuning Control Functions
+				function setupMovementTuningControls() {
+					console.log('Setting up movement tuning controls...');
+					
+					// Update display values when sliders change
+					const updateSliderDisplay = (sliderId, displayId, suffix = '') => {
+						const slider = document.getElementById(sliderId);
+						const display = document.getElementById(displayId);
+						if (slider && display) {
+							slider.addEventListener('input', (e) => {
+								display.textContent = parseFloat(e.target.value).toFixed(2) + suffix;
+							});
+						}
+					};
+					
+					// Setup all slider displays
+					updateSliderDisplay('movement-speed', 'speed-value');
+					updateSliderDisplay('direction-freq', 'freq-value');
+					updateSliderDisplay('cp-seeking', 'cp-seeking-value', '%');
+					updateSliderDisplay('exploration-bonus', 'exploration-value');
+					updateSliderDisplay('diagonal-movement', 'diagonal-value', '%');
+					
+					// Apply Movement Settings Button
+					document.getElementById('apply-movement-settings').onclick = () => {
+						console.log('Applying movement settings...');
+						
+						const settings = {
+							movementSpeed: parseFloat(document.getElementById('movement-speed').value),
+							directionChangeFreq: parseInt(document.getElementById('direction-freq').value),
+							cpSeekingChance: parseInt(document.getElementById('cp-seeking').value) / 100,
+							explorationBonus: parseFloat(document.getElementById('exploration-bonus').value),
+							diagonalChance: parseInt(document.getElementById('diagonal-movement').value) / 100
+						};
+						
+						console.log('New movement settings:', settings);
+						
+						// Apply settings to all agents
+						if (window.gameManager && window.gameManager.agents) {
+							window.gameManager.agents.forEach((agent, index) => {
+								// Update agent movement speed
+								if (agent.movementSpeed !== undefined) {
+									agent.movementSpeed = settings.movementSpeed;
+								}
+								
+								// Update movement parameters (these will be read by the agent's movement logic)
+								agent.movementTuning = {
+									directionChangeFreq: settings.directionChangeFreq,
+									cpSeekingChance: settings.cpSeekingChance,
+									explorationBonus: settings.explorationBonus,
+									diagonalChance: settings.diagonalChance
+								};
+								
+								console.log(`Applied settings to Agent ${agent.agentId || index}`);
+							});
+						}
+						
+						// Store settings globally for new agents
+						window.globalMovementSettings = settings;
+						
+						if (statusSpan) statusSpan.textContent = 'Movement settings applied';
+						setTimeout(() => {
+							if (statusSpan) statusSpan.textContent = 'Ready';
+						}, 2000);
+					};
+					
+					// Reset Movement Settings Button
+					document.getElementById('reset-movement-settings').onclick = () => {
+						console.log('Resetting movement settings to defaults...');
+						
+						// Reset sliders to default values
+						document.getElementById('movement-speed').value = 0.05;
+						document.getElementById('direction-freq').value = 60;
+						document.getElementById('cp-seeking').value = 20;
+						document.getElementById('exploration-bonus').value = 0.1;
+						document.getElementById('diagonal-movement').value = 20;
+						
+						// Update displays
+						document.getElementById('speed-value').textContent = '0.05';
+						document.getElementById('freq-value').textContent = '60';
+						document.getElementById('cp-seeking-value').textContent = '20%';
+						document.getElementById('exploration-value').textContent = '0.10';
+						document.getElementById('diagonal-value').textContent = '20%';
+						
+						// Apply default settings
+						document.getElementById('apply-movement-settings').click();
+						
+						console.log('Movement settings reset to defaults');
+					};
+					
+					// Toggle Movement Panel Button
+					document.getElementById('toggle-movement-panel').onclick = () => {
+						const panel = document.getElementById('movement-tuning');
+						const button = document.getElementById('toggle-movement-panel');
+						
+						if (panel.style.display === 'none') {
+							panel.style.display = 'block';
+							button.textContent = 'Hide Panel';
 						} else {
-							console.error('DQN integration not ready');
+							panel.style.display = 'none';
+							button.textContent = 'Show Movement Tuning';
+							
+							// Create a small show button if panel is hidden
+							if (!document.getElementById('show-movement-btn')) {
+								const showBtn = document.createElement('button');
+								showBtn.id = 'show-movement-btn';
+								showBtn.textContent = 'Movement';
+								showBtn.style.cssText = 'position: fixed; top: 50%; right: 5px; transform: translateY(-50%); z-index: 1001; font-size: 8px; padding: 2px 4px; background: #ccc; color: black; border: 1px solid #999;';
+								showBtn.onclick = () => {
+									panel.style.display = 'block';
+									button.textContent = 'Hide';
+									document.body.removeChild(showBtn);
+								};
+								document.body.appendChild(showBtn);
+							}
 						}
-					},
+					};
 					
-					stopPretraining: () => {
-						console.log('Stopping pretraining...');
-						if (window.dqnIntegration && window.dqnIntegration.isInitialized) {
-							window.dqnIntegration.stopPretraining();
-						}
-					},
-					
-					getPretrainingStats: () => {
-						if (window.dqnIntegration && window.dqnIntegration.isInitialized) {
-							const stats = window.dqnIntegration.getPretrainingStats();
-							console.log('Pretraining stats:', stats);
-							return stats;
-						}
-						return null;
-					},
-					
-					getPhases: () => {
-						if (window.dqnIntegration && window.dqnIntegration.isInitialized) {
-							const phases = window.dqnIntegration.getPretrainingPhases();
-							console.log('Available phases:', phases);
-							return phases;
-						}
-						return [];
-					}
-				};
-				
-				console.log('Pretraining console helpers available: window.pretrainHelpers');
-				console.log('Usage: pretrainHelpers.startPretraining(0) // Start from phase 0');
+					console.log('Movement tuning controls ready');
+				}
 			};
 			
 			setupControls();
 		});
 		
+		// Console helpers for testing pretraining
+		window.pretrainHelpers = {
+			async runPretraining() {
+				console.log('🚀 Starting pretraining from console...');
+				
+				// Start progress monitoring
+				const progressMonitor = setInterval(() => {
+					const progress = dqnIntegration.getPretrainingProgress();
+					if (progress && progress.isPretraining) {
+						console.log(`📊 Progress: Episode ${progress.currentEpisode}/${progress.totalEpisodes}, Step ${progress.currentStep}/${progress.stepsPerEpisode}`);
+					}
+				}, 2000); // Log progress every 2 seconds
+				
+				try {
+					await dqnIntegration.runSimplePretraining(0);
+					console.log('✅ Pretraining completed!');
+					updateBufferStatus();
+				} catch (error) {
+					console.error('❌ Pretraining error:', error);
+				} finally {
+					clearInterval(progressMonitor);
+				}
+			},
+			
+			getPretrainingInfo() {
+				try {
+					const info = dqnIntegration.getPretrainingInfo();
+					console.log('📊 Pretraining Info:', info);
+					return info;
+				} catch (error) {
+					console.error('Error getting pretraining info:', error);
+					return null;
+				}
+			},
+			
+			getPretrainingProgress() {
+				try {
+					const progress = dqnIntegration.getPretrainingProgress();
+					console.log('📈 Pretraining Progress:', progress);
+					return progress;
+				} catch (error) {
+					console.error('Error getting pretraining progress:', error);
+					return null;
+				}
+			},
+			
+			async trainWithPretraining() {
+				console.log('🎯 Starting DQN training WITH pretraining...');
+				try {
+					await dqnIntegration.startTraining(0, true);
+					console.log('✅ Training with pretraining started!');
+				} catch (error) {
+					console.error('❌ Training error:', error);
+				}
+			}
+		};
+		
 		console.log('DQN training system initialized');
+		console.log('💡 Console helpers available: pretrainHelpers.runPretraining(), pretrainHelpers.getPretrainingInfo(), pretrainHelpers.getPretrainingProgress(), pretrainHelpers.trainWithPretraining()');
+		console.log('💡 Or use the UI buttons: "Start Pretraining", "Train + Pretraining"');
+		console.log('💡 Watch the UI for real-time pretraining progress display!');
 	</script>
 
-	<script src="test-pretraining.js" type="module" defer></script>
+
 	<script src="AgentTestMain.js" type="module" defer></script>
 	</body>
 </html>

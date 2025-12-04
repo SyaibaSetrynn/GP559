@@ -173,75 +173,157 @@ class Agent {
     }
     
     /**
-     * Random mode: pure random movement (original behavior)
+     * Random mode: pure random movement with stuck detection and natural exploration
      */
     updateRandomMode() {
-        // Pure random movement - continuous motion with occasional direction changes
+        // Initialize random movement state
         if (!this.randomMoveTimer) this.randomMoveTimer = 0;
+        if (!this.lastPosition) this.lastPosition = this.getPosition().clone();
+        if (!this.stuckTimer) this.stuckTimer = 0;
+        if (!this.currentDirection) this.currentDirection = null;
+        
         this.randomMoveTimer++;
         
-        // Change movement direction every 20-60 frames (more frequent direction changes for better exploration)
-        const changeInterval = this.mode === 'training' ? (20 + Math.random() * 40) : (30 + Math.random() * 60);
-        if (this.randomMoveTimer > changeInterval) {
+        // Check if agent is stuck (hasn't moved much in the last few frames)
+        const currentPos = this.getPosition();
+        const distanceMoved = currentPos.distanceTo(this.lastPosition);
+        
+        if (distanceMoved < 0.001) { // Very small movement threshold
+            this.stuckTimer++;
+        } else {
+            this.stuckTimer = 0;
+        }
+        
+        // Update last position
+        this.lastPosition.copy(currentPos);
+        
+        // Get movement tuning settings (from UI or defaults)
+        const tuning = this.movementTuning || window.globalMovementSettings || {};
+        const directionChangeFreq = tuning.directionChangeFreq || 60;
+        const cpSeekingChance = tuning.cpSeekingChance || 0.2;
+        
+        // Force direction change if stuck or at regular intervals
+        const baseInterval = this.mode === 'training' ? (40 + Math.random() * 30) : directionChangeFreq;
+        const changeInterval = baseInterval + (Math.random() - 0.5) * 20; // Add some variation
+        const isStuck = this.stuckTimer > 10; // Stuck for more than 10 frames
+        const shouldChangeDirection = this.randomMoveTimer > changeInterval || isStuck || !this.currentDirection;
+        
+        // Check for CP seeking behavior
+        const shouldSeekCP = Math.random() < cpSeekingChance && window.globalCPSystem;
+        
+        if (shouldChangeDirection) {
             this.randomMoveTimer = 0;
+            this.stuckTimer = 0;
             
-            // More aggressive exploration during training mode
-            const explorationBonus = this.mode === 'training' ? 0.3 : 0.0;
-            const directions = [];
-            
-            // Add forward/backward with higher weight (boosted during training)
-            if (Math.random() < (0.7 + explorationBonus)) directions.push('w');
-            if (Math.random() < (0.7 + explorationBonus)) directions.push('s');
-            
-            // Add left/right with higher weight during training
-            if (Math.random() < (0.5 + explorationBonus)) directions.push('a');
-            if (Math.random() < (0.5 + explorationBonus)) directions.push('d');
-            
-            // If no directions selected, force one
-            if (directions.length === 0) {
-                const allDirections = ['w', 's', 'd', 'a'];
-                directions.push(allDirections[Math.floor(Math.random() * allDirections.length)]);
-            }
-            
-            // Reset all movement flags
-            this.movement.w = false;
-            this.movement.a = false;
-            this.movement.s = false;
-            this.movement.d = false;
-            
-            // Set selected directions
-            directions.forEach(dir => {
-                this.movement[dir] = true;
-            });
+            // Choose a new random direction (might be influenced by CP seeking)
+            this.selectNewRandomDirection(isStuck, shouldSeekCP);
         }
-
-        // Update agent position using world-space directions (not camera-relative)
-        let moved = false;
-        const moveVector = new T.Vector3(0, 0, 0);
-
-        // Use world directions instead of camera directions for consistent movement
-        if(this.movement.w) {
-            moveVector.z -= this.movementSpeed; // Forward is negative Z
-            moved = true;
-        }
-            
-        if(this.movement.a){
-            moveVector.x -= this.movementSpeed; // Left is negative X
-            moved = true;
-        }
-            
-        if(this.movement.s) {
-            moveVector.z += this.movementSpeed; // Backward is positive Z
-            moved = true;
-        }
-            
-        if(this.movement.d) {
-            moveVector.x += this.movementSpeed; // Right is positive X
-            moved = true;
-        }
+        
+        // Apply the current movement
+        this.applyMovement();
         
         // Continue with physics and collision detection
         this.handlePhysicsAndCollisions();
+    }
+    
+    /**
+     * Select a new random direction for movement
+     */
+    selectNewRandomDirection(isStuck = false, shouldSeekCP = false) {
+        // Reset all movement flags
+        this.movement.w = false;
+        this.movement.a = false;
+        this.movement.s = false;
+        this.movement.d = false;
+        
+        // Get movement tuning settings
+        const tuning = this.movementTuning || window.globalMovementSettings || {};
+        const diagonalChance = tuning.diagonalChance || 0.2;
+        const explorationBonus = tuning.explorationBonus || 0.1;
+        
+        let availableDirections = ['w', 's', 'a', 'd'];
+        let preferredDirection = null;
+        
+        // If seeking CPs, try to find direction towards nearest unclaimed CP
+        if (shouldSeekCP && window.globalCPSystem && window.globalCPSystem.criticalPoints) {
+            const currentPos = this.getPosition();
+            let nearestCP = null;
+            let nearestDistance = Infinity;
+            
+            // Find nearest unclaimed CP
+            window.globalCPSystem.criticalPoints.forEach(cpData => {
+                if (!cpData.ownedBy || cpData.ownedBy === null) {
+                    const distance = currentPos.distanceTo(cpData.cp.position);
+                    if (distance < nearestDistance) {
+                        nearestDistance = distance;
+                        nearestCP = cpData.cp.position;
+                    }
+                }
+            });
+            
+            // If we found a CP, bias movement towards it
+            if (nearestCP) {
+                const dx = nearestCP.x - currentPos.x;
+                const dz = nearestCP.z - currentPos.z;
+                
+                // Determine preferred directions based on distance to CP
+                if (Math.abs(dx) > Math.abs(dz)) {
+                    preferredDirection = dx > 0 ? 'd' : 'a'; // East or West
+                } else {
+                    preferredDirection = dz > 0 ? 's' : 'w'; // South or North
+                }
+            }
+        }
+        
+        // If stuck, avoid the opposite of current direction and try something different
+        if (isStuck && this.currentDirection) {
+            const opposites = { 'w': 's', 's': 'w', 'a': 'd', 'd': 'a' };
+            const avoidDirection = opposites[this.currentDirection];
+            availableDirections = availableDirections.filter(dir => dir !== this.currentDirection && dir !== avoidDirection);
+        }
+        
+        // Enhanced direction selection for more natural movement
+        const baseDiagonalChance = Math.random() < 0.7 ? 0 : (Math.random() < 0.8 ? 1 : 0);
+        const finalDiagonalChance = Math.random() < diagonalChance ? 1 : baseDiagonalChance;
+        const numDirections = finalDiagonalChance ? 2 : 1;
+        
+        for (let i = 0; i < numDirections && availableDirections.length > 0; i++) {
+            let selectedDir;
+            
+            // On first direction selection, prefer the CP-seeking direction if available
+            if (i === 0 && preferredDirection && availableDirections.includes(preferredDirection)) {
+                selectedDir = preferredDirection;
+                availableDirections = availableDirections.filter(dir => dir !== preferredDirection);
+            } else {
+                const dirIndex = Math.floor(Math.random() * availableDirections.length);
+                selectedDir = availableDirections[dirIndex];
+                availableDirections.splice(dirIndex, 1);
+            }
+            
+            this.movement[selectedDir] = true;
+            
+            // Track primary direction for stuck detection
+            if (i === 0) {
+                this.currentDirection = selectedDir;
+            }
+        }
+        
+        // Ensure at least one direction is always selected
+        if (!this.movement.w && !this.movement.s && !this.movement.a && !this.movement.d) {
+            const fallbackDir = ['w', 's', 'a', 'd'][Math.floor(Math.random() * 4)];
+            this.movement[fallbackDir] = true;
+            this.currentDirection = fallbackDir;
+        }
+        
+        // Remove jumping - agents will navigate around obstacles instead
+    }
+    
+    /**
+     * Apply movement based on current movement flags
+     */
+    applyMovement() {
+        // This will be handled in handlePhysicsAndCollisions, 
+        // but we keep this method for potential future enhancements
     }
     
     /**
@@ -251,22 +333,26 @@ class Agent {
         // Apply movement based on current movement flags
         let moved = false;
         const moveVector = new T.Vector3(0, 0, 0);
+        
+        // Get current movement speed (from tuning or default)
+        const tuning = this.movementTuning || window.globalMovementSettings || {};
+        const currentSpeed = tuning.movementSpeed !== undefined ? tuning.movementSpeed : this.movementSpeed;
 
         // Use world directions for consistent movement
         if(this.movement.w) {
-            moveVector.z -= this.movementSpeed; // Forward is negative Z
+            moveVector.z -= currentSpeed; // Forward is negative Z
             moved = true;
         }
         if(this.movement.a){
-            moveVector.x -= this.movementSpeed; // Left is negative X
+            moveVector.x -= currentSpeed; // Left is negative X
             moved = true;
         }
         if(this.movement.s) {
-            moveVector.z += this.movementSpeed; // Backward is positive Z
+            moveVector.z += currentSpeed; // Backward is positive Z
             moved = true;
         }
         if(this.movement.d) {
-            moveVector.x += this.movementSpeed; // Right is positive X
+            moveVector.x += currentSpeed; // Right is positive X
             moved = true;
         }
         
