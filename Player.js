@@ -343,6 +343,10 @@ let criticalPointsEnabled = true; // Toggle for critical points
 // Initialize Agent Manager
 const agentManager = new AgentManager(scene, collisionWorld, criticalPointSystem);
 
+// Expose globals for consistency with DQN version
+window.globalCPSystem = criticalPointSystem;
+window.gameManager = agentManager;
+
 // loading terrain
 let levelObj = null;
 let objectsInScene = [];
@@ -487,14 +491,24 @@ scene.add(levelObj);
 let player1 = new Player(0, renderer, collisionWorld);
 scene.add(player1.object);
 
-// Create multiple agents using the agent manager
-const agent1 = agentManager.createAgent(new T.Vector3(5, 1, 5));   // Red agent
-const agent2 = agentManager.createAgent(new T.Vector3(-5, 1, -5)); // Green agent
-// Removed blue agent (agent3) to fix falling issue
+// Create multiple agents using the agent manager (inside the maze walls)
+const agent1 = agentManager.createAgent(new T.Vector3(-4, 1, -4));  // Red agent - back left corner
+const agent2 = agentManager.createAgent(new T.Vector3(4, 1, -4));   // Green agent - back right corner
 
-// Agents should remain stationary - no targets set
-// agent1.setTarget(new T.Vector3(-2, 1, 3));
-// agent2.setTarget(new T.Vector3(3, 1, -2));
+// Debug summary after agent creation
+console.log('=== AGENT CREATION SUMMARY ===');
+console.log(`Created ${agentManager.agents.length} agents`);
+agentManager.agents.forEach((agent, i) => {
+    const pos = agent.getPosition();
+    console.log(`Agent ${i} (ID: ${agent.agentId}): Position (${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)}), Mode: ${agent.getMode()}`);
+});
+console.log(`AgentManager has ${agentManager.criticalPoints.length} critical points`);
+console.log(`Critical Point System has ${criticalPointSystem.cpRegistry.size} CPs in registry`);
+
+// Ensure agents are in random mode (they default to random, but let's be explicit)
+agentManager.setAllAgentsMode('random');
+console.log('All agents set to random mode');
+console.log('===============================');
 
 // Initialize score display
 setTimeout(() => {

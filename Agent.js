@@ -173,75 +173,106 @@ class Agent {
     }
     
     /**
-     * Random mode: pure random movement (original behavior)
+     * Random mode: pure random movement with stuck detection and natural exploration
      */
     updateRandomMode() {
-        // Pure random movement - continuous motion with occasional direction changes
+        // Initialize random movement state
         if (!this.randomMoveTimer) this.randomMoveTimer = 0;
+        if (!this.lastPosition) this.lastPosition = this.getPosition().clone();
+        if (!this.stuckTimer) this.stuckTimer = 0;
+        if (!this.currentDirection) this.currentDirection = null;
+        
         this.randomMoveTimer++;
         
-        // Change movement direction every 20-60 frames (more frequent direction changes for better exploration)
-        const changeInterval = this.mode === 'training' ? (20 + Math.random() * 40) : (30 + Math.random() * 60);
-        if (this.randomMoveTimer > changeInterval) {
+        // Check if agent is stuck (hasn't moved much in the last few frames)
+        const currentPos = this.getPosition();
+        const distanceMoved = currentPos.distanceTo(this.lastPosition);
+        
+        if (distanceMoved < 0.001) { // Very small movement threshold
+            this.stuckTimer++;
+        } else {
+            this.stuckTimer = 0;
+        }
+        
+        // Update last position
+        this.lastPosition.copy(currentPos);
+        
+        // Force direction change if stuck or at regular intervals
+        const changeInterval = this.mode === 'training' ? (40 + Math.random() * 30) : (60 + Math.random() * 60);
+        const isStuck = this.stuckTimer > 10; // Stuck for more than 10 frames
+        const shouldChangeDirection = this.randomMoveTimer > changeInterval || isStuck || !this.currentDirection;
+        
+        if (shouldChangeDirection) {
             this.randomMoveTimer = 0;
+            this.stuckTimer = 0;
             
-            // More aggressive exploration during training mode
-            const explorationBonus = this.mode === 'training' ? 0.3 : 0.0;
-            const directions = [];
-            
-            // Add forward/backward with higher weight (boosted during training)
-            if (Math.random() < (0.7 + explorationBonus)) directions.push('w');
-            if (Math.random() < (0.7 + explorationBonus)) directions.push('s');
-            
-            // Add left/right with higher weight during training
-            if (Math.random() < (0.5 + explorationBonus)) directions.push('a');
-            if (Math.random() < (0.5 + explorationBonus)) directions.push('d');
-            
-            // If no directions selected, force one
-            if (directions.length === 0) {
-                const allDirections = ['w', 's', 'd', 'a'];
-                directions.push(allDirections[Math.floor(Math.random() * allDirections.length)]);
-            }
-            
-            // Reset all movement flags
-            this.movement.w = false;
-            this.movement.a = false;
-            this.movement.s = false;
-            this.movement.d = false;
-            
-            // Set selected directions
-            directions.forEach(dir => {
-                this.movement[dir] = true;
-            });
+            // Choose a new random direction
+            this.selectNewRandomDirection(isStuck);
         }
-
-        // Update agent position using world-space directions (not camera-relative)
-        let moved = false;
-        const moveVector = new T.Vector3(0, 0, 0);
-
-        // Use world directions instead of camera directions for consistent movement
-        if(this.movement.w) {
-            moveVector.z -= this.movementSpeed; // Forward is negative Z
-            moved = true;
-        }
-            
-        if(this.movement.a){
-            moveVector.x -= this.movementSpeed; // Left is negative X
-            moved = true;
-        }
-            
-        if(this.movement.s) {
-            moveVector.z += this.movementSpeed; // Backward is positive Z
-            moved = true;
-        }
-            
-        if(this.movement.d) {
-            moveVector.x += this.movementSpeed; // Right is positive X
-            moved = true;
-        }
+        
+        // Apply the current movement
+        this.applyMovement();
         
         // Continue with physics and collision detection
         this.handlePhysicsAndCollisions();
+    }
+    
+    /**
+     * Select a new random direction for movement
+     */
+    selectNewRandomDirection(isStuck = false) {
+        // Reset all movement flags
+        this.movement.w = false;
+        this.movement.a = false;
+        this.movement.s = false;
+        this.movement.d = false;
+        
+        let availableDirections = ['w', 's', 'a', 'd'];
+        
+        // If stuck, avoid the opposite of current direction and try something different
+        if (isStuck && this.currentDirection) {
+            const opposites = { 'w': 's', 's': 'w', 'a': 'd', 'd': 'a' };
+            const avoidDirection = opposites[this.currentDirection];
+            availableDirections = availableDirections.filter(dir => dir !== this.currentDirection && dir !== avoidDirection);
+        }
+        
+        // Enhanced direction selection for more natural movement
+        const numDirections = Math.random() < 0.7 ? 1 : (Math.random() < 0.8 ? 2 : 1); // Mostly single direction, sometimes diagonal
+        
+        for (let i = 0; i < numDirections && availableDirections.length > 0; i++) {
+            const dirIndex = Math.floor(Math.random() * availableDirections.length);
+            const selectedDir = availableDirections[dirIndex];
+            this.movement[selectedDir] = true;
+            
+            // Remove selected direction to avoid duplicates
+            availableDirections.splice(dirIndex, 1);
+            
+            // Track primary direction for stuck detection
+            if (i === 0) {
+                this.currentDirection = selectedDir;
+            }
+        }
+        
+        // Ensure at least one direction is always selected
+        if (!this.movement.w && !this.movement.s && !this.movement.a && !this.movement.d) {
+            const fallbackDir = ['w', 's', 'a', 'd'][Math.floor(Math.random() * 4)];
+            this.movement[fallbackDir] = true;
+            this.currentDirection = fallbackDir;
+        }
+        
+        // Add occasional jumping, especially when stuck
+        if (isStuck || Math.random() < 0.05) { // 5% chance normally, 100% when stuck
+            this.movement.space = true;
+            this.movement.spaceHold = true;
+        }
+    }
+    
+    /**
+     * Apply movement based on current movement flags
+     */
+    applyMovement() {
+        // This will be handled in handlePhysicsAndCollisions, 
+        // but we keep this method for potential future enhancements
     }
     
     /**
