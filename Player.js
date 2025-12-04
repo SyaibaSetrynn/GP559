@@ -355,7 +355,7 @@ let objectsInScene = [];
 
 if (useMapGenerator) {
     // Import MapGenerator functions
-    const { createFloor, createWalls, createBlock } = await import('./mapgenerator.js');
+    const { createFloor, createWalls, createBlock } = await import('./MapGenerator.js');
     
     // Always use the smallest level (10x10)
     const mapWidth = 10;
