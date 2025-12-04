@@ -47,6 +47,7 @@
 			<div style="margin: 3px 0;">
 				<button id="reset-scene">Reset Environment</button>
 				<button id="random-mode">Random Mode</button>
+				<button id="debug-cp" style="font-size: 10px;">Debug CPs</button>
 			</div>
 			
 			<div style="margin-top: 6px; border-top: 1px solid #ccc; padding-top: 4px;">
@@ -360,6 +361,22 @@
 					window.gameManager.setAllAgentsMode('random');
 					if (modeSpan) modeSpan.textContent = 'Random';
 					if (statusSpan) statusSpan.textContent = 'Random mode active';
+				};
+				
+				// Debug Critical Points
+				document.getElementById('debug-cp').onclick = () => {
+					console.log('🔍 DEBUGGING CRITICAL POINTS:');
+					const cps = window.globalCPSystem;
+					if (cps && cps.criticalPoints) {
+						console.log(`Found ${cps.criticalPoints.length} critical points:`);
+						cps.criticalPoints.forEach((cpData, i) => {
+							const pos = cpData.cp.position;
+							const inPlayArea = Math.abs(pos.x) <= 4.5 && Math.abs(pos.z) <= 4.5;
+							console.log(`CP ${i}: (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)}) - ${inPlayArea ? '✅ IN play area' : '❌ OUTSIDE play area'}`);
+						});
+					} else {
+						console.log('No critical points found');
+					}
 				};
 				
 				// Utility function to update buffer status

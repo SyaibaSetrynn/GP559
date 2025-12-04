@@ -82,6 +82,16 @@ export function createWalls(scene, width, depth, height) {
     frontWall.position.set(0, height / 2, -halfDepth - halfWallThickness);
     frontWall.castShadow = true;
     frontWall.receiveShadow = true;
+    
+    // Add face classification for critical point placement
+    // Front wall is positioned at negative Z, so back face (id: 5) faces inward
+    frontWall.userData = {
+        faceClassification: {
+            isBoundaryWall: true,
+            inwardFaces: [5] // Back face (id: 5) faces inward to playable area
+        }
+    };
+    
     scene.add(frontWall);
     walls.push(frontWall);
     
@@ -93,6 +103,16 @@ export function createWalls(scene, width, depth, height) {
     backWall.position.set(0, height / 2, halfDepth + halfWallThickness);
     backWall.castShadow = true;
     backWall.receiveShadow = true;
+    
+    // Add face classification for critical point placement
+    // Back wall is positioned at positive Z, so front face (id: 4) faces inward
+    backWall.userData = {
+        faceClassification: {
+            isBoundaryWall: true,
+            inwardFaces: [4] // Front face (id: 4) faces inward to playable area
+        }
+    };
+    
     scene.add(backWall);
     walls.push(backWall);
     
@@ -106,6 +126,16 @@ export function createWalls(scene, width, depth, height) {
     leftWall.position.set(-halfWidth - halfWallThickness, height / 2, 0);
     leftWall.castShadow = true;
     leftWall.receiveShadow = true;
+    
+    // Add face classification for critical point placement
+    // Left wall is positioned at negative X, so right face (id: 0) faces inward
+    leftWall.userData = {
+        faceClassification: {
+            isBoundaryWall: true,
+            inwardFaces: [0] // Right face (id: 0) faces inward to playable area
+        }
+    };
+    
     scene.add(leftWall);
     walls.push(leftWall);
     
@@ -119,6 +149,16 @@ export function createWalls(scene, width, depth, height) {
     rightWall.position.set(halfWidth + halfWallThickness, height / 2, 0);
     rightWall.castShadow = true;
     rightWall.receiveShadow = true;
+    
+    // Add face classification for critical point placement
+    // Right wall is positioned at positive X, so left face (id: 1) faces inward
+    rightWall.userData = {
+        faceClassification: {
+            isBoundaryWall: true,
+            inwardFaces: [1] // Left face (id: 1) faces inward to playable area
+        }
+    };
+    
     scene.add(rightWall);
     walls.push(rightWall);
     
