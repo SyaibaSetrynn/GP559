@@ -472,12 +472,11 @@ scene.add(player1.object);
 // Create multiple agents using the agent manager
 const agent1 = agentManager.createAgent(new T.Vector3(5, 1, 5));   // Red agent
 const agent2 = agentManager.createAgent(new T.Vector3(-5, 1, -5)); // Green agent
-const agent3 = agentManager.createAgent(new T.Vector3(8, 1, -3));  // Blue agent
+// Removed blue agent (agent3) to fix falling issue
 
 // Agents should remain stationary - no targets set
 // agent1.setTarget(new T.Vector3(-2, 1, 3));
 // agent2.setTarget(new T.Vector3(3, 1, -2));
-// agent3.setTarget(new T.Vector3(-6, 1, 4));
 
 // Initialize score display
 setTimeout(() => {

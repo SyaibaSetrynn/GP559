@@ -85,7 +85,7 @@ export class DQNIntegration {
 
     /**
      * Start DQN training for a specific agent
-     * @param {number} agentIndex - Index of agent to train (0 = red, 1 = green, 2 = blue)
+     * @param {number} agentIndex - Index of agent to train (0 = red, 1 = green)
      * @param {boolean} useSimplePretraining - Whether to run simple pretraining first
      */
     async startTraining(agentIndex = 0, useSimplePretraining = false) {
@@ -123,7 +123,7 @@ export class DQNIntegration {
 
     /**
      * Run simple pretraining for a specific agent
-     * @param {number} agentIndex - Index of agent to train (0 = red, 1 = green, 2 = blue)
+     * @param {number} agentIndex - Index of agent to train (0 = red, 1 = green)
      */
     async runSimplePretraining(agentIndex = 0) {
         if (!this.isInitialized) {
@@ -340,28 +340,19 @@ export class DQNIntegration {
             console.log('Architecture keys:', Object.keys(modelData.architecture));
             console.log('Architecture sample:', JSON.stringify(modelData.architecture).substring(0, 300) + '...');
             
-            // Try different ways to extract the model configuration
-            if (modelData.architecture.modelTopology) {
+            // Handle the direct TensorFlow.js JSON export format
+            if (modelData.architecture.class_name && modelData.architecture.config) {
+                // This is the standard TensorFlow.js JSON format
+                modelConfig = modelData.architecture;
+                console.log('Using direct TensorFlow.js JSON format (class_name + config)');
+            } else if (modelData.architecture.modelTopology) {
                 // Full TensorFlow.js save format
                 modelConfig = modelData.architecture.modelTopology;
                 console.log('Using modelTopology from architecture');
-            } else if (modelData.architecture.config && (modelData.architecture.className || modelData.architecture.class_name)) {
-                // Direct model JSON format
-                modelConfig = {
-                    className: modelData.architecture.className || modelData.architecture.class_name,
-                    config: modelData.architecture.config
-                };
+            } else if (modelData.architecture.className && modelData.architecture.config) {
+                // Alternative className format
+                modelConfig = modelData.architecture;
                 console.log('Using className/config format');
-            } else if (modelData.architecture.layers && (modelData.architecture.className || modelData.architecture.class_name)) {
-                // Alternative format with layers directly in config
-                modelConfig = {
-                    className: modelData.architecture.className || modelData.architecture.class_name,
-                    config: {
-                        name: modelData.architecture.config?.name || 'imported_model',
-                        layers: modelData.architecture.layers || modelData.architecture.config?.layers
-                    }
-                };
-                console.log('Using layers-based format');
             } else {
                 // Fallback: use the architecture as-is
                 modelConfig = modelData.architecture;
@@ -371,9 +362,54 @@ export class DQNIntegration {
             console.log('Final model config keys:', Object.keys(modelConfig));
             console.log('Final model config:', JSON.stringify(modelConfig).substring(0, 200) + '...');
             
-            // Create the model from the config
-            const model = await tf.models.modelFromJSON(modelConfig);
-            console.log('Model created successfully');
+            // Create the model using the correct TensorFlow.js approach
+            let model;
+            try {
+                // Use tf.sequential() to create the model from layers if it's a Sequential model
+                const modelType = modelConfig.class_name || modelConfig.className;
+                console.log('Detected model type:', modelType);
+                
+                if (modelType === 'Sequential') {
+                    console.log('Creating Sequential model from layers...');
+                    const layers = modelConfig.config.layers;
+                    
+                    model = tf.sequential();
+                    
+                    // Add each layer to the sequential model
+                    for (let i = 0; i < layers.length; i++) {
+                        const layerConfig = layers[i];
+                        console.log(`Adding layer ${i}: ${layerConfig.class_name}`, layerConfig.config);
+                        
+                        if (layerConfig.class_name === 'Dense') {
+                            const denseConfig = layerConfig.config;
+                            const layerOptions = {
+                                units: denseConfig.units,
+                                activation: denseConfig.activation,
+                                useBias: denseConfig.use_bias !== false, // Default to true
+                                name: denseConfig.name
+                            };
+                            
+                            // Add input shape for first layer
+                            if (i === 0 && denseConfig.batch_input_shape) {
+                                layerOptions.inputShape = denseConfig.batch_input_shape.slice(1); // Remove batch dimension
+                                console.log('  Input shape:', layerOptions.inputShape);
+                            }
+                            
+                            model.add(tf.layers.dense(layerOptions));
+                            console.log(`  Added Dense layer: ${denseConfig.units} units, activation: ${denseConfig.activation}`);
+                        } else {
+                            console.warn(`  Unsupported layer type: ${layerConfig.class_name}`);
+                        }
+                    }
+                } else {
+                    throw new Error(`Unsupported model type: ${modelType}. Only Sequential models are currently supported for import.`);
+                }
+                
+                console.log('Model created successfully');
+            } catch (modelCreationError) {
+                console.error('Error creating model:', modelCreationError);
+                throw new Error(`Failed to create model: ${modelCreationError.message}`);
+            }
             
             // Now set the weights manually
             console.log('Creating weight tensors...');
@@ -579,7 +615,7 @@ export class DQNIntegration {
      * Get agent color name for display
      */
     getAgentColorName(agentIndex) {
-        const colors = ['Red', 'Green', 'Blue', 'Yellow'];
+        const colors = ['Red', 'Green', 'Yellow'];
         return colors[agentIndex] || `Agent ${agentIndex}`;
     }
 
