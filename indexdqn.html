@@ -27,6 +27,22 @@
 			<h4 style="margin: 0 0 5px 0;">Game Controls</h4>
 			<div style="margin: 2px 0;">Mode: <span id="current-mode">Random</span></div>
 			<div style="margin: 2px 0;">Status: <span id="system-status">Ready</span></div>
+			<div style="margin: 2px 0; font-size: 10px; color: #666;">Buffer: <span id="buffer-status">0 experiences</span></div>
+			
+			<!-- Pretraining Progress Display -->
+			<div id="pretraining-progress" style="display: none; margin: 4px 0; padding: 4px; background: rgba(255,248,220,0.9); border: 1px solid #ddd; border-radius: 3px; font-size: 10px;">
+				<div style="font-weight: bold; color: #2196F3; margin-bottom: 2px;">Pretraining Progress</div>
+				<div>Episode: <span id="pretraining-episode">0/0</span></div>
+				<div>Step: <span id="pretraining-step">0/0</span></div>
+				<div style="margin-top: 3px;">
+					<div style="background: #f0f0f0; border-radius: 2px; height: 6px; overflow: hidden;">
+						<div id="pretraining-progress-bar" style="background: #4CAF50; height: 100%; width: 0%; transition: width 0.3s;"></div>
+					</div>
+					<div style="text-align: center; font-size: 9px; margin-top: 1px;">
+						<span id="pretraining-percentage">0%</span> complete
+					</div>
+				</div>
+			</div>
 			
 			<div style="margin: 3px 0;">
 				<button id="reset-scene">Reset Environment</button>
@@ -37,7 +53,11 @@
 				<h5 style="margin: 0 0 3px 0;">DQN Controls</h5>
 				<div style="margin: 2px 0;">
 					<button id="init-dqn" style="font-size: 10px;">Initialize DQN</button>
+					<button id="start-pretraining" style="font-size: 10px;">Start Pretraining</button>
+				</div>
+				<div style="margin: 2px 0;">
 					<button id="start-dqn" style="font-size: 10px;">Start Training</button>
+					<button id="start-dqn-with-pretraining" style="font-size: 10px;">Train + Pretraining</button>
 				</div>
 				<div style="margin: 2px 0;">
 					<button id="stop-dqn" style="font-size: 10px;">Stop Training</button>
@@ -186,6 +206,12 @@
 				
 				// Start red agent state display updates
 				startRedAgentStateUpdates();
+				
+				// Start periodic buffer status updates
+				setInterval(() => {
+					updateBufferStatus();
+					updatePretrainingProgress();
+				}, 1000); // Update every second
 				
 				// Utility function for resetting critical points (used by UI)
 				window.resetCriticalPointsUtil = function() {
@@ -336,6 +362,78 @@
 					if (statusSpan) statusSpan.textContent = 'Random mode active';
 				};
 				
+				// Utility function to update buffer status
+				function updateBufferStatus() {
+					const bufferSpan = document.getElementById('buffer-status');
+					if (bufferSpan && dqnIntegration) {
+						try {
+							const info = dqnIntegration.getPretrainingInfo();
+							const bufferSize = info.currentBufferSize;
+							const readyForTraining = info.readyForTraining;
+							const percentage = Math.min(100, Math.round((bufferSize / info.trainingStartSize) * 100));
+							
+							bufferSpan.textContent = `${bufferSize} experiences (${percentage}%)`;
+							bufferSpan.style.color = readyForTraining ? '#4CAF50' : '#666';
+						} catch (error) {
+							bufferSpan.textContent = '0 experiences';
+						}
+					}
+				}
+
+				// Utility function to update pretraining progress display
+				function updatePretrainingProgress() {
+					try {
+						const progressDiv = document.getElementById('pretraining-progress');
+						if (!progressDiv || !dqnIntegration) return;
+
+						const progress = dqnIntegration.getPretrainingProgress();
+						
+						if (progress && progress.isPretraining) {
+							// Show progress display
+							progressDiv.style.display = 'block';
+							
+							// Update episode info
+							const episodeSpan = document.getElementById('pretraining-episode');
+							if (episodeSpan) {
+								episodeSpan.textContent = `${progress.currentEpisode}/${progress.totalEpisodes}`;
+							}
+							
+							// Update step info
+							const stepSpan = document.getElementById('pretraining-step');
+							if (stepSpan) {
+								stepSpan.textContent = `${progress.currentStep}/${progress.stepsPerEpisode}`;
+							}
+							
+							// Calculate overall progress percentage
+							const episodeProgress = (progress.currentEpisode - 1) / progress.totalEpisodes;
+							const stepProgress = progress.currentStep / progress.stepsPerEpisode;
+							const totalProgress = (episodeProgress + stepProgress / progress.totalEpisodes) * 100;
+							const roundedProgress = Math.min(100, Math.max(0, Math.round(totalProgress)));
+							
+							// Update progress bar
+							const progressBar = document.getElementById('pretraining-progress-bar');
+							if (progressBar) {
+								progressBar.style.width = `${roundedProgress}%`;
+							}
+							
+							// Update percentage text
+							const percentageSpan = document.getElementById('pretraining-percentage');
+							if (percentageSpan) {
+								percentageSpan.textContent = `${roundedProgress}%`;
+							}
+						} else {
+							// Hide progress display when not pretraining
+							progressDiv.style.display = 'none';
+						}
+					} catch (error) {
+						// Silently fail - pretraining progress is optional
+						const progressDiv = document.getElementById('pretraining-progress');
+						if (progressDiv) {
+							progressDiv.style.display = 'none';
+						}
+					}
+				}
+
 				// DQN Controls
 				document.getElementById('init-dqn').onclick = async () => {
 					console.log('Initializing DQN...');
@@ -350,6 +448,7 @@
 						});
 						
 						if (statusSpan) statusSpan.textContent = 'DQN Ready';
+						updateBufferStatus();
 						console.log('DQN initialized successfully');
 					} catch (error) {
 						if (statusSpan) statusSpan.textContent = 'DQN Init Error';
@@ -357,6 +456,33 @@
 					}
 				};
 				
+				document.getElementById('start-pretraining').onclick = async () => {
+					console.log('Starting simple pretraining...');
+					if (statusSpan) statusSpan.textContent = 'Running pretraining...';
+					if (modeSpan) modeSpan.textContent = 'Pretraining';
+					
+					// Start updating pretraining progress
+					const progressUpdateInterval = setInterval(() => {
+						updatePretrainingProgress();
+					}, 200); // Update every 200ms for smooth progress
+					
+					try {
+						await dqnIntegration.runSimplePretraining(0); // Pretrain red agent
+						if (statusSpan) statusSpan.textContent = 'Pretraining complete';
+						updateBufferStatus();
+						console.log('Simple pretraining completed');
+					} catch (error) {
+						if (statusSpan) statusSpan.textContent = 'Pretraining Error';
+						console.error('Pretraining error:', error);
+					} finally {
+						// Stop updating pretraining progress
+						clearInterval(progressUpdateInterval);
+						setTimeout(() => {
+							updatePretrainingProgress(); // Final update to hide progress
+						}, 500);
+					}
+				};
+
 				document.getElementById('start-dqn').onclick = async () => {
 					console.log('Starting DQN training...');
 					if (statusSpan) statusSpan.textContent = 'Starting DQN training...';
@@ -368,6 +494,31 @@
 					} catch (error) {
 						if (statusSpan) statusSpan.textContent = 'DQN Start Error';
 						console.error('DQN training start error:', error);
+					}
+				};
+
+				document.getElementById('start-dqn-with-pretraining').onclick = async () => {
+					console.log('Starting DQN training with pretraining...');
+					if (statusSpan) statusSpan.textContent = 'Starting with pretraining...';
+					if (modeSpan) modeSpan.textContent = 'DQN + Pretraining';
+					
+					// Start updating pretraining progress (will automatically stop when pretraining ends)
+					const progressUpdateInterval = setInterval(() => {
+						updatePretrainingProgress();
+					}, 200); // Update every 200ms for smooth progress
+					
+					try {
+						await dqnIntegration.startTraining(0, true); // Train red agent with pretraining
+						if (statusSpan) statusSpan.textContent = 'DQN training active';
+					} catch (error) {
+						if (statusSpan) statusSpan.textContent = 'DQN+Pre Start Error';
+						console.error('DQN training with pretraining error:', error);
+					} finally {
+						// Clean up progress updates after a delay to allow final update
+						setTimeout(() => {
+							clearInterval(progressUpdateInterval);
+							updatePretrainingProgress(); // Final update to hide progress if done
+						}, 1000);
 					}
 				};
 				
@@ -456,57 +607,76 @@
 						event.target.value = '';
 					}
 				};
-				
-				console.log('DQN game controls connected successfully');
-				
-				// Add console helper functions for pretraining
-				window.pretrainHelpers = {
-					startPretraining: (phase = 0) => {
-						console.log(`Starting pretraining from phase ${phase}...`);
-						if (window.dqnIntegration && window.dqnIntegration.isInitialized) {
-							window.dqnIntegration.startPretraining(0, phase);
-						} else {
-							console.error('DQN integration not ready');
-						}
-					},
-					
-					stopPretraining: () => {
-						console.log('Stopping pretraining...');
-						if (window.dqnIntegration && window.dqnIntegration.isInitialized) {
-							window.dqnIntegration.stopPretraining();
-						}
-					},
-					
-					getPretrainingStats: () => {
-						if (window.dqnIntegration && window.dqnIntegration.isInitialized) {
-							const stats = window.dqnIntegration.getPretrainingStats();
-							console.log('Pretraining stats:', stats);
-							return stats;
-						}
-						return null;
-					},
-					
-					getPhases: () => {
-						if (window.dqnIntegration && window.dqnIntegration.isInitialized) {
-							const phases = window.dqnIntegration.getPretrainingPhases();
-							console.log('Available phases:', phases);
-							return phases;
-						}
-						return [];
-					}
-				};
-				
-				console.log('Pretraining console helpers available: window.pretrainHelpers');
-				console.log('Usage: pretrainHelpers.startPretraining(0) // Start from phase 0');
+						console.log('DQN game controls connected successfully');
 			};
 			
 			setupControls();
 		});
 		
+		// Console helpers for testing pretraining
+		window.pretrainHelpers = {
+			async runPretraining() {
+				console.log('🚀 Starting pretraining from console...');
+				
+				// Start progress monitoring
+				const progressMonitor = setInterval(() => {
+					const progress = dqnIntegration.getPretrainingProgress();
+					if (progress && progress.isPretraining) {
+						console.log(`📊 Progress: Episode ${progress.currentEpisode}/${progress.totalEpisodes}, Step ${progress.currentStep}/${progress.stepsPerEpisode}`);
+					}
+				}, 2000); // Log progress every 2 seconds
+				
+				try {
+					await dqnIntegration.runSimplePretraining(0);
+					console.log('✅ Pretraining completed!');
+					updateBufferStatus();
+				} catch (error) {
+					console.error('❌ Pretraining error:', error);
+				} finally {
+					clearInterval(progressMonitor);
+				}
+			},
+			
+			getPretrainingInfo() {
+				try {
+					const info = dqnIntegration.getPretrainingInfo();
+					console.log('📊 Pretraining Info:', info);
+					return info;
+				} catch (error) {
+					console.error('Error getting pretraining info:', error);
+					return null;
+				}
+			},
+			
+			getPretrainingProgress() {
+				try {
+					const progress = dqnIntegration.getPretrainingProgress();
+					console.log('📈 Pretraining Progress:', progress);
+					return progress;
+				} catch (error) {
+					console.error('Error getting pretraining progress:', error);
+					return null;
+				}
+			},
+			
+			async trainWithPretraining() {
+				console.log('🎯 Starting DQN training WITH pretraining...');
+				try {
+					await dqnIntegration.startTraining(0, true);
+					console.log('✅ Training with pretraining started!');
+				} catch (error) {
+					console.error('❌ Training error:', error);
+				}
+			}
+		};
+		
 		console.log('DQN training system initialized');
+		console.log('💡 Console helpers available: pretrainHelpers.runPretraining(), pretrainHelpers.getPretrainingInfo(), pretrainHelpers.getPretrainingProgress(), pretrainHelpers.trainWithPretraining()');
+		console.log('💡 Or use the UI buttons: "Start Pretraining", "Train + Pretraining"');
+		console.log('💡 Watch the UI for real-time pretraining progress display!');
 	</script>
 
-	<script src="test-pretraining.js" type="module" defer></script>
+
 	<script src="AgentTestMain.js" type="module" defer></script>
 	</body>
 </html>
