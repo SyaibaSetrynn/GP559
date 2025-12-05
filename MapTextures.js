@@ -21,6 +21,8 @@ export function setMapTexture(mode, mapBlocks, walls, wallsWidth1, wallsWidth2, 
             applyUV(block.geometry);
             let index = Math.floor(Math.random() * (mapTextureFiles.length-3)) + 3;
             texture = loader.load(mapTextureFiles[index]);
+            block.material.metalness = 0;
+            block.material.roughness = 1;
             block.material.color.setRGB(1, 1, 1);
             block.material.map = texture;                
 
@@ -38,14 +40,18 @@ export function setMapTexture(mode, mapBlocks, walls, wallsWidth1, wallsWidth2, 
                 texture.repeat.set(wallsWidth1/2, 1);
             else
                 texture.repeat.set(wallsWidth2/2, 1);
+            wall.material.metalness = 0;
+            wall.material.roughness = 1;
             wall.material.color.setRGB(1, 1, 1);
-            wall.material.map = texture;   
+            wall.material.map = texture;
 
         }
     }
 
     if(floor.isMesh) {
         texture = loader.load(mapTextureFiles[1]);
+        floor.material.metalness = 0;
+        floor.material.roughness = 1;
         floor.material.color.setRGB(1, 1, 1);
         floor.material.map = texture;
     }
