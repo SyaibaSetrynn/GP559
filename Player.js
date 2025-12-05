@@ -295,6 +295,24 @@ class Player {
     /**
      * might need some other functions for colors and shooting
      */
+    
+    /**
+     * Set custom spawn position for the player
+     * @param {number} x - X coordinate for spawn position
+     * @param {number} y - Y coordinate for spawn position (optional, defaults to PLAYER_HEIGHT)
+     * @param {number} z - Z coordinate for spawn position
+     */
+    setSpawnPosition(x, y = PLAYER_HEIGHT, z) {
+        this.camera.position.set(x, y, z);
+        
+        // Update collider position to match
+        this.collider.start.set(x, y - PLAYER_HEIGHT/2, z);
+        this.collider.end.set(x, y - PLAYER_HEIGHT/4, z);
+        
+        // Update mesh position to match camera
+        const meshY = y - PLAYER_HEIGHT;
+        this.mesh.position.set(x, meshY, z);
+    }
 }
 
 // global variables
