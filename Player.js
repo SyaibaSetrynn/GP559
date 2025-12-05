@@ -336,7 +336,7 @@ const menuOverlay = document.getElementById("menuOverlay");
 const collisionWorld = new Octree();
 
 // map mode
-let mapMode = 2;
+let mapMode = 1;
 
 // Initialize Critical Point System
 const criticalPointSystem = new window.CriticalPointSystem(scene);
