@@ -8,6 +8,7 @@ import { Capsule } from "https://unpkg.com/three@0.165.0/examples/jsm/math/Capsu
 import Agent from "./Agent.js";
 import AgentManager from "./AgentManager.js";
 import * as M from "./MapTextures.js";
+import {MapLighting} from "./MapLighting.js";
 
 /**
  * Some references: https://www.youtube.com/watch?v=oqKzxPMLWxo
@@ -328,14 +329,14 @@ let scene = new T.Scene();
 // controls.target.set(0, 5, 0);
 // controls.update();
 
-// add an ambient light
-scene.add(new T.AmbientLight("white"));
-
 // simple start menu
 const menuOverlay = document.getElementById("menuOverlay");
 
 // handling collision
 const collisionWorld = new Octree();
+
+// map mode
+let mapMode = 5;
 
 // Initialize Critical Point System
 const criticalPointSystem = new window.CriticalPointSystem(scene);
@@ -450,8 +451,7 @@ if (useMapGenerator) {
     });
     
     // set up textures
-    M.setMapTexture(1, mazeBlocks, walls, mapWidth, mapDepth, floor);
-    console.log(walls);
+    M.setMapTexture(mapMode, mazeBlocks, walls, mapWidth, mapDepth, floor);
 
     
 } else {
@@ -491,7 +491,11 @@ if (useMapGenerator) {
     });
 }
 
-M.setSkyTexture(1, scene);
+// set up sky texture
+M.setSkyTexture(mapMode, scene);
+
+// add lighting to scene
+let lighting = new MapLighting(scene);
 
 scene.add(levelObj);
 
@@ -652,6 +656,8 @@ document.addEventListener('mouseup', (event) => {
 
 let previousTime = 0;
 
+// scene.add(new T.SpotLight("green", 3, 50, Math.PI / 4, 0.1, 2));
+
 function animate(timestamp) {
 
     // putting this here for now, just in case
@@ -668,6 +674,9 @@ function animate(timestamp) {
     if (criticalPointSystem) {
         criticalPointSystem.updateCriticalPoints();
     }
+
+    // when timer has only ten seconds left, light starts pulsing
+    // lighting.pulsing(delta);
 
     renderer.render(scene, player1.camera);
     
