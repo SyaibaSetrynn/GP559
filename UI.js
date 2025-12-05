@@ -256,12 +256,12 @@ class UI {
         // tutorialButton 已删除
         
         // Level选择相关
-        this.level = 0;  // 默认level为0（Tutorial），可以在0,1,2之间变化
+        this.level = 1;  // 默认level为1（Level1），可以在1,2,3,4,5之间变化
         this.levelLabel = {
             x: this.width / 2,  // 水平居中
             y: 650,  // 高度650位置（下移50格）
             fontSize: 36,
-            text: 'Tutorial'  // 默认文本（level 0）
+            text: 'Level 1'  // 默认文本（level 1）
         };
         
         // Level切换动画相关
@@ -484,7 +484,7 @@ class UI {
             
             if (button === this.leftArrowButton) {
                 // 减小level（只有在可用时才响应）
-                if (this.level > 0) {
+                if (this.level > 1) {
                     this.level--;
                     this.updateLevelLabel();
                 } else {
@@ -493,7 +493,7 @@ class UI {
                 }
             } else if (button === this.rightArrowButton) {
                 // 增大level（只有在可用时才响应）
-                if (this.level < 2) {
+                if (this.level < 5) {
                     this.level++;
                     this.updateLevelLabel();
                 } else {
@@ -539,13 +539,8 @@ class UI {
         // 保存旧的level用于方向判断
         const oldLevel = this.levelAnimation.newLevel;
         
-        // 获取新的文本
-        let newText;
-        if (this.level === 0) {
-            newText = 'Tutorial';
-        } else {
-            newText = `Level ${this.level}`;
-        }
+        // 获取新的文本 - 所有关卡都显示为Level 1~5
+        const newText = `Level ${this.level}`;
         
         // 如果文本没有变化，不触发动画
         if (this.levelLabel.text === newText) {
@@ -873,10 +868,10 @@ class UI {
             if (currentPhase === 1 || (currentPhase >= 10 && currentPhase <= 15)) {
                 // Phase 1: Level Selection界面
                 if (currentPhase === 1) {
-                    // Phase 1: Level Selection界面，默认level为0
-                    this.level = 0;
-                    this.levelAnimation.newLevel = 0;
-                    this.levelAnimation.oldLevel = 0;
+                    // Phase 1: Level Selection界面，默认level为1
+                    this.level = 1;
+                    this.levelAnimation.newLevel = 1;
+                    this.levelAnimation.oldLevel = 1;
                 } else {
                     // Phase 10-15: 主界面，如果不是 tutorial，保持之前的level或设为1
                     if (this.level === undefined || this.level === null) {
@@ -887,11 +882,8 @@ class UI {
                 }
                 
                 // 更新label文本（不触发动画）
-                if (this.level === 0) {
-                    this.levelLabel.text = 'Tutorial';
-                } else {
-                    this.levelLabel.text = `Level ${this.level}`;
-                }
+                // 更新关卡标签文本
+                this.levelLabel.text = `Level ${this.level}`;
                 
                 // 初始化3D场景（如果还没有初始化）
                 if (!this.levelSelection3D) {
@@ -905,32 +897,12 @@ class UI {
                 
                 // 更新3D场景的level
                 if (this.levelSelection3D) {
-                    // 如果是从 Help 界面直接进入 tutorial（directEnterTutorial），先加载迷宫和玩家
-                    if (this.directEnterTutorial && currentPhase === 1 && this.level === 0) {
-                        // 直接调用 enterLevel 来加载迷宫和玩家（参考点击模型的行为）
-                        if (!this.levelSelection3D.inLevelMode) {
-                            this.levelSelection3D.enterLevel(0).then(() => {
-                                // 加载完成后，切换到 phase 10
-                                this.directEnterTutorial = false;
-                                StateManager.setPhase(10);
-                            });
-                        }
-                    } else if (!this.directEnterTutorial) {
-                        // 正常情况下的更新
-                        this.levelSelection3D.updateLevel(this.level);
-                    }
+                    // 正常情况下的更新
+                    this.levelSelection3D.updateLevel(this.level);
                     
                     // 确保 UI 实例被传递给 LevelContent3D（用于暂停功能）
                     if (this.levelSelection3D.levelContent && !this.levelSelection3D.levelContent.uiInstance) {
                         this.levelSelection3D.levelContent.setUIInstance(this);
-                    }
-                    
-                    // 如果进入 tutorial level (level 0)，且已经在 phase 10，确保进入关卡
-                    if (this.level === 0 && currentPhase === 10 && !this.directEnterTutorial) {
-                        // 如果还没有进入关卡模式，则进入
-                        if (!this.levelSelection3D.inLevelMode) {
-                            this.levelSelection3D.enterLevel(0);
-                        }
                     }
                 }
             } else {
@@ -1181,8 +1153,8 @@ class UI {
         
         // 渲染箭头按钮（统一样式，使用hover字体大小）
         // 判断左右箭头按钮是否可用
-        const leftArrowEnabled = this.level > 0;
-        const rightArrowEnabled = this.level < 2;
+        const leftArrowEnabled = this.level > 1;
+        const rightArrowEnabled = this.level < 5;
         
         this.renderArrowButton(this.backButton, this.backButtonHoverFontSize);
         this.renderArrowButton(this.leftArrowButton, this.leftArrowButtonHoverFontSize, leftArrowEnabled);

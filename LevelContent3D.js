@@ -46,6 +46,32 @@ class LevelContent3D {
         
         // 调试变量
         this.lastCenterY = null;
+        
+        // 缓存applyUV函数
+        this._applyUV = null;
+        this._applyUVPromise = null;
+    }
+    
+    // 重新应用UV映射到block（异步加载applyUV如果还没有加载）
+    async _reapplyUVToBlock(block) {
+        try {
+            // 如果还没有加载applyUV，先加载
+            if (!this._applyUV) {
+                if (!this._applyUVPromise) {
+                    this._applyUVPromise = import('./MapTextures.js').then(module => {
+                        this._applyUV = module.applyUV;
+                        return this._applyUV;
+                    });
+                }
+                await this._applyUVPromise;
+            }
+            // 应用UV映射
+            if (this._applyUV && block.geometry) {
+                this._applyUV(block.geometry);
+            }
+        } catch (error) {
+            console.warn(`LevelContent3D: Failed to reapply UV to block:`, error);
+        }
     }
     
     // 设置模型引用（从 LevelSelection3D 传入）
@@ -76,8 +102,7 @@ class LevelContent3D {
             // 生成迷宫
             await this.generateMaze(level);
             
-            // 添加关卡灯
-            this.addLevelLight(level);
+            // 不添加关卡灯（已移除）
         } else {
             console.log(`LevelContent3D: Maze already generated for level ${level}, skipping generation`);
         }
@@ -199,23 +224,18 @@ class LevelContent3D {
             this.mazeBlocks[level] = [];
         }
         
-        // 获取地图大小
+        // 获取地图大小 - 所有关卡都是10x10（和Level0一样大）
         let mapWidth, mapDepth;
-        if (level === 0) {
+        if (level >= 1 && level <= 5) {
             mapWidth = 10;
             mapDepth = 10;
-        } else if (level === 1) {
-            mapWidth = 14;
-            mapDepth = 14;
-        } else if (level === 2) {
-            mapWidth = 18;
-            mapDepth = 18;
         } else {
+            console.error(`LevelContent3D: Unknown level: ${level}`);
             return;
         }
         
         // 动态导入 MapGenerator
-        const { createBlock } = await import('./mapgenerator.js');
+        const { createBlock } = await import('./MapGenerator.js');
         
         // 内部空间大小（正好是 mapWidth x mapDepth，因为墙现在在边界外侧）
         // 方块应该覆盖从 -halfWidth 到 +halfWidth 的整个内部空间
@@ -241,24 +261,26 @@ class LevelContent3D {
                     // 计算方块位置（相对于地图中心）
                     // 地图中心在 (0,0,0)，内部空间从 [-halfWidth, halfWidth] x [-halfDepth, halfDepth]
                     // 网格索引 x 从 0 到 innerWidth-1，对应世界坐标从 -halfWidth 到 halfWidth-1
-                    // 方块中心应该在每个格子的中心，并向 xz 正方向偏移 0.5 单位，所以：
-                    // actualX = -halfWidth + x + 0.5 + 0.5 = -halfWidth + x + 1.0
-                    // actualZ = -halfDepth + z + 0.5 + 0.5 = -halfDepth + z + 1.0
-                    const actualX = -halfWidth + x + 1.0;
-                    const actualZ = -halfDepth + z + 1.0;
+                    // 方块中心应该在每个格子的中心，所以：
+                    // actualX = -halfWidth + x + 0.5
+                    // actualZ = -halfDepth + z + 0.5
+                    const actualX = -halfWidth + x + 0.5;
+                    const actualZ = -halfDepth + z + 0.5;
                     
-                    // 初始高度为0，稍后通过动画增长到2
+                    // 直接创建高度为2的block，初始位置在地板下方（y=-2，完全看不见）
                     const tempScene = new THREE.Scene();
-                    const block = createBlock(tempScene, actualX, actualZ, 0);
+                    const block = createBlock(tempScene, actualX, actualZ, 2); // 高度为2
                     tempScene.remove(block);
                     
-                    // 确保方块可见（即使高度为0，也应该能看到）
+                    // 设置初始位置在地板下方（y=-2，block中心在-2，底部在-3，完全在地板下方）
+                    block.position.set(actualX, -2, actualZ);
                     block.visible = true;
                     
                     model.add(block);
                     mazeBlocks.push(block);
                     
-                    console.log(`Created block at (${actualX.toFixed(2)}, ${actualZ.toFixed(2)}) with initial height 0`);
+                    // 减少日志输出以提高性能
+                    // console.log(`Created block at (${actualX.toFixed(2)}, ${actualZ.toFixed(2)}) with height 2, initial y=-2 (below floor)`);
                 }
             }
         }
@@ -272,19 +294,56 @@ class LevelContent3D {
         for (let x = 0; x < innerWidth; x++) {
             for (let z = 0; z < innerDepth; z++) {
                 if (maze[x][z] === 0) {
-                    // 使用与方块相同的坐标计算方式（也向 xz 正方向偏移 0.5 单位）
-                    const actualX = -halfWidth + x + 1.0;
-                    const actualZ = -halfDepth + z + 1.0;
+                    // 使用与方块相同的坐标计算方式
+                    const actualX = -halfWidth + x + 0.5;
+                    const actualZ = -halfDepth + z + 0.5;
                     emptyPositions.push({ x: actualX, z: actualZ });
                 }
             }
         }
         this.emptyPositions[level] = emptyPositions;
         
-        console.log(`LevelContent3D: Generated maze for level ${level} (${mapWidth}x${mapDepth}): ${wallCount} walls, ${emptyCount} empty`);
-        console.log(`LevelContent3D: Added ${mazeBlocks.length} blocks to model, model has ${model.children.length} children`);
+        // 减少日志输出以提高性能
+        // console.log(`LevelContent3D: Generated maze for level ${level} (${mapWidth}x${mapDepth}): ${wallCount} walls, ${emptyCount} empty`);
         
-        // 启动方块生长动画（0.5秒内从高度0增长到2）
+        // 保存texture信息，以便在动画过程中重新应用
+        const mapMode = level; // Level1->mode1, Level2->mode2, etc.
+        this.blockTextureInfo = this.blockTextureInfo || {};
+        this.blockTextureInfo[level] = {
+            mapMode: mapMode,
+            walls: [],
+            floor: null,
+            mapWidth: mapWidth,
+            mapDepth: mapDepth
+        };
+        
+        // 获取walls和floor（从model中查找）
+        const walls = [];
+        const floor = model.children.find(child => child.userData && child.userData.isFloor) || 
+                     model.children.find(child => child.geometry && child.geometry.type === 'PlaneGeometry');
+        
+        // 查找walls（BoxGeometry且不是blocks）
+        model.children.forEach(child => {
+            if (child.geometry && child.geometry.type === 'BoxGeometry' && 
+                !mazeBlocks.includes(child) && child !== floor) {
+                walls.push(child);
+            }
+        });
+        
+        // 保存walls和floor引用
+        this.blockTextureInfo[level].walls = walls;
+        this.blockTextureInfo[level].floor = floor;
+        
+        // 应用texture到blocks, walls, floor（blocks已经创建，高度为2）
+        try {
+            const { setMapTexture, applyUV } = await import('./MapTextures.js');
+            setMapTexture(mapMode, mazeBlocks, walls, mapWidth, mapDepth, floor);
+            console.log(`LevelContent3D: Applied texture mode ${mapMode} to level ${level} (blocks, walls, floor)`);
+        } catch (error) {
+            console.warn(`LevelContent3D: Failed to apply texture to level ${level}:`, error);
+        }
+        
+        // 启动方块生长动画（从地板下方冒出来）
         this.startBlockGrowthAnimation(level);
     }
     
@@ -303,46 +362,39 @@ class LevelContent3D {
         }
         
         // 为每个方块保存动画信息
+        // block已经创建，高度为2，位置在地板下方（y=-2）
+        // 动画将把block从y=-2移动到y=1（高度2的block，底部在地面，中心在y=1）
         const animatedBlocks = blocks.map(block => {
             // 保存方块的原始位置（x, z）
             const x = block.position.x;
             const z = block.position.z;
-            // 确保方块初始高度为0
-            if (block.geometry) {
-                block.geometry.dispose();
-            }
-            const blockSize = 1;
-            block.geometry = new THREE.BoxGeometry(blockSize, 0, blockSize);
-            block.position.set(x, 0, z);
-            block.visible = true;
+            // block已经在y=-2位置（地板下方），geometry已经是高度2
+            // 不需要修改geometry，只需要改变y位置
             
             return {
                 block: block,
-                startHeight: 0,
-                targetHeight: 2,
+                startY: -2, // 起始位置（地板下方）
+                targetY: 1,  // 目标位置（高度2的block，中心在y=1，底部在地面y=0）
                 x: x,
                 z: z
             };
         });
         
+        // 动画时序：等待0.5秒，然后花1秒从地板下方冒出来
+        // startTime设置为0.5秒后（延迟开始）
         this.blockAnimations[level] = {
             isAnimating: true,
-            startTime: Date.now(),
-            duration: 500, // 0.5秒
-            blocks: animatedBlocks
+            startTime: Date.now() + 500, // 延迟0.5秒开始
+            duration: 1000, // 1秒（从y=-2移动到y=1）
+            blocks: animatedBlocks,
+            lastFrameTime: null // 用于等待下一帧渲染
         };
         
-        console.log(`LevelContent3D: Started block growth animation for level ${level} with ${animatedBlocks.length} blocks at ${new Date().toISOString()}`);
-        console.log(`LevelContent3D: Animation state:`, {
-            level: level,
-            isAnimating: this.blockAnimations[level].isAnimating,
-            startTime: this.blockAnimations[level].startTime,
-            duration: this.blockAnimations[level].duration,
-            blockCount: animatedBlocks.length
-        });
+        // 减少日志输出以提高性能
+        // console.log(`LevelContent3D: Started block growth animation for level ${level} with ${animatedBlocks.length} blocks`);
     }
     
-    // 更新方块生长动画
+    // 更新方块生长动画（移除async，因为不再需要异步操作）
     updateBlockGrowthAnimation() {
         const THREE = window.THREE;
         if (!THREE) {
@@ -350,20 +402,8 @@ class LevelContent3D {
             return;
         }
         
-        // 调试：检查是否有动画
-        const animCount = Object.keys(this.blockAnimations).length;
-        if (animCount > 0) {
-            if (!this._lastAnimCount || this._lastAnimCount !== animCount) {
-                console.log(`LevelContent3D: updateBlockGrowthAnimation called, found ${animCount} animation(s)`);
-                this._lastAnimCount = animCount;
-            }
-        } else {
-            // 如果没有动画，也输出一次（避免日志过多）
-            if (this._lastAnimCount !== 0) {
-                console.log(`LevelContent3D: updateBlockGrowthAnimation called, no animations found`);
-                this._lastAnimCount = 0;
-            }
-        }
+        // 移除调试日志以减少性能开销
+        // const animCount = Object.keys(this.blockAnimations).length;
         
         // 检查是否有方块需要强制设置为高度2（如果动画已经过期或没有启动）
         for (const levelKey in this.mazeBlocks) {
@@ -374,40 +414,26 @@ class LevelContent3D {
             // 检查是否有动画，如果没有或已过期，强制设置高度为2
             const anim = this.blockAnimations[level];
             if (!anim || !anim.isAnimating) {
-                // 检查动画是否已过期（超过0.5秒）
+                // 检查动画是否已过期（超过开始时间+持续时间）
                 if (anim && anim.startTime) {
-                    const elapsed = Date.now() - anim.startTime;
+                    const elapsed = Math.max(0, Date.now() - anim.startTime);
                     if (elapsed > anim.duration) {
-                        // 动画已过期，强制设置所有方块为高度2
+                        // 动画已过期，强制设置所有方块到最终位置y=1
                         for (const block of blocks) {
-                            if (block.geometry) {
-                                const currentHeight = block.geometry.parameters.height;
-                                if (currentHeight !== 2) {
-                                    block.geometry.dispose();
-                                    const blockSize = 1;
-                                    block.geometry = new THREE.BoxGeometry(blockSize, 2, blockSize);
-                                    block.position.y = 1; // 高度2，所以y = 2/2 = 1
-                                    block.visible = true;
-                                }
-                            }
+                            // block的geometry已经是高度2，只需要设置位置
+                            block.position.y = 1; // 高度2的block，中心在y=1
+                            block.visible = true;
                         }
                         // 清除过期的动画
                         delete this.blockAnimations[level];
                         console.log(`LevelContent3D: Force set all blocks to height 2 for level ${level} (animation expired)`);
                     }
                 } else if (!anim) {
-                    // 没有动画，直接设置所有方块为高度2
+                    // 没有动画，直接设置所有方块到最终位置y=1
                     for (const block of blocks) {
-                        if (block.geometry) {
-                            const currentHeight = block.geometry.parameters.height;
-                            if (currentHeight !== 2) {
-                                block.geometry.dispose();
-                                const blockSize = 1;
-                                block.geometry = new THREE.BoxGeometry(blockSize, 2, blockSize);
-                                block.position.y = 1; // 高度2，所以y = 2/2 = 1
-                                block.visible = true;
-                            }
-                        }
+                        // block的geometry已经是高度2，只需要设置位置
+                        block.position.y = 1; // 高度2的block，中心在y=1
+                        block.visible = true;
                     }
                 }
             }
@@ -416,71 +442,61 @@ class LevelContent3D {
         for (const levelKey in this.blockAnimations) {
             const anim = this.blockAnimations[levelKey];
             if (!anim.isAnimating) {
-                if (!this._skippedAnimLog || this._skippedAnimLog !== levelKey) {
-                    console.log(`LevelContent3D: Animation for level ${levelKey} is not animating, skipping`);
-                    this._skippedAnimLog = levelKey;
-                }
-                continue;
+                continue; // 跳过非活动动画
             }
             
-            const elapsed = Date.now() - anim.startTime;
+            // 计算经过的时间（考虑延迟开始）
+            const currentTime = Date.now();
+            const elapsed = Math.max(0, currentTime - anim.startTime); // 如果还没到开始时间，elapsed为0
+            
+            // 如果还没到开始时间，不更新block（保持在地板下方y=-2）
+            if (elapsed <= 0) {
+                continue; // 跳过这个动画，等待开始时间
+            }
+            
+            // 计算进度，但允许实际时间超过duration（等待下一帧渲染）
             const progress = Math.min(elapsed / anim.duration, 1);
             
             // 使用easeOut缓动（从快到慢，更自然的生长效果）
             const easedProgress = 1 - Math.pow(1 - progress, 3); // cubic ease-out
             
-            // 更新每个方块的高度
-            for (const blockInfo of anim.blocks) {
-                const block = blockInfo.block;
-                const startHeight = blockInfo.startHeight;
-                const targetHeight = blockInfo.targetHeight;
-                const currentHeight = startHeight + (targetHeight - startHeight) * easedProgress;
-                
-                // 更新几何体高度
-                if (block.geometry) {
-                    block.geometry.dispose();
-                }
-                const blockSize = 1;
-                block.geometry = new THREE.BoxGeometry(blockSize, currentHeight, blockSize);
-                
-                // 更新位置：方块底部在地面上，所以 y = currentHeight / 2
-                // 保持 x 和 z 位置不变
-                block.position.set(blockInfo.x, currentHeight / 2, blockInfo.z);
+            // 更新每个方块的y位置（从地板下方冒出来）
+            // 不再改变geometry，只改变位置
+            // 优化：计算一次currentY，然后批量更新所有block
+            const startY = -2;
+            const targetY = 1;
+            const currentY = startY + (targetY - startY) * easedProgress;
+            
+            // 批量更新所有block的y位置（避免在循环中重复计算）
+            for (let i = 0; i < anim.blocks.length; i++) {
+                anim.blocks[i].block.position.y = currentY;
             }
             
+            // 如果进度达到1，等待下一帧渲染后再完成动画
             if (progress >= 1) {
-                // 动画完成，强制设置所有方块到最终高度2
-                for (const blockInfo of anim.blocks) {
-                    const block = blockInfo.block;
-                    const targetHeight = blockInfo.targetHeight;
-                    
-                    if (block.geometry) {
-                        block.geometry.dispose();
-                    }
-                    const blockSize = 1;
-                    block.geometry = new THREE.BoxGeometry(blockSize, targetHeight, blockSize);
-                    // 保持 x 和 z 位置不变，y = targetHeight / 2（底部在地面上）
-                    block.position.set(blockInfo.x, targetHeight / 2, blockInfo.z);
-                    block.visible = true;
-                    
-                    // 确保方块材质正确
-                    if (!block.material) {
-                        const THREE = window.THREE;
-                        block.material = new THREE.MeshStandardMaterial({
-                            color: 0x555555,
-                            roughness: 0.7,
-                            metalness: 0.1
-                        });
-                    }
+                // 如果还没有标记为等待下一帧，则等待
+                if (!anim.waitingForFrame) {
+                    anim.waitingForFrame = true;
+                    // 使用requestAnimationFrame等待下一帧渲染
+                    requestAnimationFrame(() => {
+                        // 强制设置所有方块到最终位置y=1
+                        for (const blockInfo of anim.blocks) {
+                            const block = blockInfo.block;
+                            block.position.set(blockInfo.x, blockInfo.targetY, blockInfo.z);
+                            block.visible = true;
+                        }
+                        
+                        anim.isAnimating = false;
+                        anim.waitingForFrame = false;
+                        // console.log(`LevelContent3D: Block growth animation completed for level ${levelKey}, all blocks moved to y=1`);
+                        
+                        // 方块动画完成后，等待0.5秒，然后启动相机移动到随机位置的动画
+                        // 总时序：0-0.5秒等待，0.5-1.5秒block动画，1.5-2秒等待，2-3秒相机动画
+                        setTimeout(() => {
+                            this.startCameraMoveToRandomMazePosition(parseInt(levelKey));
+                        }, 500); // 等待0.5秒
+                    });
                 }
-                
-                anim.isAnimating = false;
-                console.log(`LevelContent3D: Block growth animation completed for level ${levelKey}, all blocks set to height 2`);
-                
-                // 方块动画完成后，等待0.3秒，然后启动相机移动到随机位置的动画
-                setTimeout(() => {
-                    this.startCameraMoveToRandomMazePosition(parseInt(levelKey));
-                }, 300);
             }
         }
     }
@@ -639,7 +655,7 @@ class LevelContent3D {
             isAnimating: true,
             completed: false,
             startTime: null, // 将在第一次update时设置，确保从第一次更新开始计时
-            duration: 700, // 0.7秒
+            duration: 1000, // 1秒
             startPos: startPos,
             targetPos: targetPos,
             startLookAt: startLookAt,
@@ -662,9 +678,20 @@ class LevelContent3D {
         const anim = this.cameraMoveToMazeAnimation;
         
         // 如果startTime还没有设置，现在设置它（确保从第一次update开始计时）
+        // 同时重新获取当前相机位置，确保使用最新的相机位置作为起始位置
         if (anim.startTime === null) {
             anim.startTime = Date.now();
-            console.log(`LevelContent3D: Camera move animation started at ${anim.startTime}`);
+            // 重新获取当前相机位置和目标，确保与用户更改后的位置同步
+            anim.startPos = this.camera.position.clone();
+            if (this.controls) {
+                anim.startLookAt = this.controls.target.clone();
+            } else {
+                // 如果没有controls，使用相机当前朝向计算lookAt
+                const direction = new THREE.Vector3();
+                this.camera.getWorldDirection(direction);
+                anim.startLookAt = anim.startPos.clone().add(direction.multiplyScalar(5));
+            }
+            console.log(`LevelContent3D: Camera move animation started at ${anim.startTime}, startPos: (${anim.startPos.x.toFixed(2)}, ${anim.startPos.y.toFixed(2)}, ${anim.startPos.z.toFixed(2)})`);
         }
         
         const elapsed = Date.now() - anim.startTime;

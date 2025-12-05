@@ -5,7 +5,7 @@ class LevelSelection3D {
         this.container = container;
         this.width = width;
         this.height = height;
-        this.currentLevel = 0;
+        this.currentLevel = 1; // 默认从Level1开始
         
         // 模型相关
         this.currentModel = null;
@@ -37,9 +37,9 @@ class LevelSelection3D {
         // 圆盘配置（在 initThree 中初始化）
         this.diskCenter = null;
         this.diskRadius = 8;
-        // 初始转盘旋转角度设置为 -30°，使 level 0 在中心
-        // level 0 的 baseAngle 是 +30°，所以需要 -30° 的旋转才能让它在中心（0°）
-        this.diskRotation = -30 * Math.PI / 180; // 当前圆盘旋转角度（弧度）
+        // 初始转盘旋转角度设置为 0°，使 Level1 在中心
+        // Level1 的 baseAngle 是 0°，所以初始旋转为 0°
+        this.diskRotation = 0; // 当前圆盘旋转角度（弧度）
         this.targetDiskRotation = 0; // 目标圆盘旋转角度（弧度）
         this.diskRotationAnimation = {
             isAnimating: false,
@@ -75,8 +75,8 @@ class LevelSelection3D {
         const aspect = this.width / this.height;
         this.camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 1000);
         // 相机位置
-        this.camera.position.set(0, 5, -8); // y=3（下移1单位：从4改为3）
-        this.camera.lookAt(0, 0.5,2); // 相机看向(0, 0.5, 0)，y=0.5（下移1单位：从1.5改为0.5）
+        this.camera.position.set(0, 3.75, -2.5); // y=3（下移1单位：从4改为3）
+        this.camera.lookAt(0, 0.25, 0); // 相机看向(0, 0.5, 0)，y=0.5（下移1单位：从1.5改为0.5）
         
         // 初始化圆盘中心 - 圆心是(0, 0, 8)，三个模型都在半径为8的圆上
         // level1在(0, 0, 0)，在圆上的角度0位置
@@ -294,17 +294,11 @@ class LevelSelection3D {
         try {
             const THREE = window.THREE;
             
-            // 根据level确定地图大小
+            // 根据level确定地图大小 - 所有关卡都是10x10（和Level0一样大）
             let mapWidth, mapDepth;
-            if (level === 0) {
+            if (level >= 1 && level <= 5) {
                 mapWidth = 10;
                 mapDepth = 10;
-            } else if (level === 1) {
-                mapWidth = 14;
-                mapDepth = 14;
-            } else if (level === 2) {
-                mapWidth = 18;
-                mapDepth = 18;
             } else {
                 console.error(`Unknown level: ${level}`);
                 return;
@@ -351,19 +345,12 @@ class LevelSelection3D {
             // 沿 y 轴顺时针旋转 30 度（注意：Three.js 中顺时针是负值）
             model.rotation.y = -Math.PI / 6; // -30度 = -π/6 弧度
             
-            // 计算缩放 - 根据level设置不同的目标高度，使模型从小到大有区别
+            // 计算缩放 - 所有关卡使用相同的目标高度（因为大小相同）
             const maxDimension = Math.max(size.x, size.y, size.z);
             console.log(`Model size for level ${level}:`, size, `maxDimension:`, maxDimension);
             
-            // level 0 (10x10) 最小，level 1 (14x14) 中等，level 2 (18x18) 最大
-            let targetHeight;
-            if (level === 0) {
-                targetHeight = 1.5;  // 最小
-            } else if (level === 1) {
-                targetHeight = 2.0;  // 中等
-            } else if (level === 2) {
-                targetHeight = 2.5;  // 最大
-            }
+            // 所有关卡（1-5）都使用相同的目标高度
+            const targetHeight = 1.5;
             
             const baseScale = targetHeight / maxDimension;
             model.scale.set(baseScale, baseScale, baseScale);
@@ -381,22 +368,15 @@ class LevelSelection3D {
             });
             
             // 计算模型位置：围绕圆盘中心 (0, 0, 8) 排列
-            // level1 在圆盘中心 (0, 0, 0)
-            // level0 在右边（+30°），level2 在左边（-30°）
+            // 5个关卡（Level1~Level5）分布在圆盘上，每个关卡相差30度
             let baseAngle;
             let radius;
-            // 所有模型都在半径为8的圆上，圆盘中心在(0, 0, 8)
-            // level1在(0, 0, 0)，对应角度0（正前方）
-            // level0在角度+30°位置，level2在角度-30°位置
             radius = 8;  // 所有模型都在半径为8的圆上
             
-            if (level === 0) {
-                baseAngle = 30 * Math.PI / 180; // 右边30度
-            } else if (level === 1) {
-                baseAngle = 0; // 角度0（正前方，对应位置(0, 0, 0)）
-            } else if (level === 2) {
-                baseAngle = -30 * Math.PI / 180; // 左边30度
-            }
+            // Level1在角度0（正前方），Level2在-30度（逆时针，右侧），Level3在-60度，Level4在-90度，Level5在-120度
+            // 转换为弧度：每个关卡相差 -30 * π / 180 = -π/6（逆时针方向）
+            const anglePerLevel = 30 * Math.PI / 180; // 30度 = π/6 弧度
+            baseAngle = -(level - 1) * anglePerLevel; // Level1=0, Level2=-30°, Level3=-60°, Level4=-90°, Level5=-120°
             
             // 应用圆盘旋转
             const angle = baseAngle + this.diskRotation;
@@ -498,6 +478,22 @@ class LevelSelection3D {
                 }
             }
             
+            // 应用texture：每个关卡（1-5）使用对应的mode（1-5）
+            // Level1使用mode1(LAB), Level2使用mode2(HEDGE), Level3使用mode3(GLASS), 
+            // Level4使用mode4(EYES), Level5使用mode5(LIBRARY)
+            try {
+                const { setMapTexture } = await import('./MapTextures.js');
+                const mapMode = level; // Level1->mode1, Level2->mode2, etc.
+                // 注意：此时还没有blocks，blocks是在LevelContent3D中生成的
+                // 所以这里只给floor和walls应用texture
+                // blocks的texture会在LevelContent3D中生成blocks后应用
+                const emptyBlocks = []; // 暂时为空，blocks会在LevelContent3D中生成
+                setMapTexture(mapMode, emptyBlocks, walls, mapWidth, mapDepth, floor);
+                console.log(`LevelSelection3D: Applied texture mode ${mapMode} to level ${level} (floor and walls)`);
+            } catch (error) {
+                console.warn(`LevelSelection3D: Failed to apply texture to level ${level}:`, error);
+            }
+            
             // 立即渲染一次
             this.render();
         } catch (error) {
@@ -506,18 +502,33 @@ class LevelSelection3D {
         }
     }
     
-    // 获取应该显示的level列表（始终显示所有三个模型）
+    // 获取应该显示的level列表（只显示当前level及其前后相邻的level）
     getVisibleLevels() {
-        // 始终返回所有三个level，让所有模型都可见
-        return [0, 1, 2];
+        const current = this.currentLevel;
+        const visibleLevels = [];
+        
+        // 添加前一个level（如果存在）
+        if (current > 1) {
+            visibleLevels.push(current - 1);
+        }
+        
+        // 添加当前level
+        visibleLevels.push(current);
+        
+        // 添加后一个level（如果存在）
+        if (current < 5) {
+            visibleLevels.push(current + 1);
+        }
+        
+        return visibleLevels;
     }
     
     // 更新可见的level，加载需要的，卸载不需要的
     async updateVisibleLevels() {
-        const visibleLevels = this.getVisibleLevels(); // 现在返回 [0, 1, 2]
-        const allLevels = [0, 1, 2];
+        const visibleLevels = this.getVisibleLevels(); // 只返回当前level及其前后相邻的level
+        const allLevels = [1, 2, 3, 4, 5];
         
-        // 对于每个level，确保都被加载和显示
+        // 对于每个level，检查是否需要加载或卸载
         for (const level of allLevels) {
             const shouldBeVisible = visibleLevels.includes(level);
             const isLoaded = this.models[level] !== undefined;
@@ -539,8 +550,26 @@ class LevelSelection3D {
                     this.modelLights[level].baseIntensity = baseIntensity;
                     this.startLightAnimation(level, baseIntensity, true);
                 }
+            } else if (!shouldBeVisible && isLoaded && isInScene) {
+                // 不应该可见但已加载且在场景中，需要卸载
+                // 从场景中移除
+                if (this.modelGroups[level]) {
+                    this.scene.remove(this.modelGroups[level]);
+                }
+                // 停止光照动画
+                if (this.lightAnimations[level]) {
+                    this.lightAnimations[level].isAnimating = false;
+                }
+                // 注意：不删除models和modelGroups，以便后续快速重新加载（可选：也可以删除以节省内存）
+                // 如果需要完全释放内存，可以取消注释以下代码：
+                // delete this.models[level];
+                // delete this.modelGroups[level];
+                // delete this.modelLights[level];
+                // delete this.modelCenters[level];
+                // delete this.modelScales[level];
+                // delete this.modelBaseScales[level];
+                // delete this.modelScaleAnimations[level];
             }
-            // 不再卸载模型，因为现在所有模型都应该始终可见
         }
     }
     
@@ -784,13 +813,9 @@ class LevelSelection3D {
             let baseAngle;
             const radius = 8;  // 所有模型都在半径为8的圆上
             
-            if (level === 0) {
-                baseAngle = 30 * Math.PI / 180; // 右边30度
-            } else if (level === 1) {
-                baseAngle = 0; // 角度0（正前方，对应位置(0, 0, 0)）
-            } else if (level === 2) {
-                baseAngle = -30 * Math.PI / 180; // 左边30度
-            }
+            // 5个关卡（Level1~Level5）分布在圆盘上，每个关卡相差30度（逆时针方向）
+            const anglePerLevel = 30 * Math.PI / 180; // 30度 = π/6 弧度
+            baseAngle = -(level - 1) * anglePerLevel; // Level1=0, Level2=-30°, Level3=-60°, Level4=-90°, Level5=-120°
             
             // 应用圆盘旋转
             const angle = baseAngle + this.diskRotation;
@@ -989,7 +1014,7 @@ class LevelSelection3D {
                         });
                         
                         if (this.uiInstance && !this.uiInstance.levelAnimation.isAnimating) {
-                            if (this.uiInstance.level > 0) {
+                            if (this.uiInstance.level > 1) {
                                 // 更新 UI 的 level
                                 this.uiInstance.level--;
                                 console.log(`UI level changed to ${this.uiInstance.level}`);
@@ -1001,7 +1026,7 @@ class LevelSelection3D {
                                 console.log(`Calling updateLevel(${this.uiInstance.level})`);
                                 this.updateLevel(this.uiInstance.level);
                             } else {
-                                console.log('Cannot go left: already at level 0');
+                                console.log('Cannot go left: already at level 1');
                             }
                         } else {
                             console.log('Cannot go left: animation is animating or no UI instance');
@@ -1033,7 +1058,7 @@ class LevelSelection3D {
                         });
                         
                         if (this.uiInstance && !this.uiInstance.levelAnimation.isAnimating) {
-                            if (this.uiInstance.level < 2) {
+                            if (this.uiInstance.level < 5) {
                                 // 更新 UI 的 level
                                 this.uiInstance.level++;
                                 console.log(`UI level changed to ${this.uiInstance.level}`);
@@ -1045,7 +1070,7 @@ class LevelSelection3D {
                                 console.log(`Calling updateLevel(${this.uiInstance.level})`);
                                 this.updateLevel(this.uiInstance.level);
                             } else {
-                                console.log('Cannot go right: already at level 2');
+                                console.log('Cannot go right: already at level 5');
                             }
                         } else {
                             console.log('Cannot go right: animation is animating or no UI instance');
@@ -1165,23 +1190,19 @@ class LevelSelection3D {
                                     // Phase 1: Level Selection界面，点击模型进入关卡
                                     this.enterLevel(clickedLevel);
                                     
-                                    // 跳转到对应phase
-                                    if (clickedLevel === 0) {
-                                        StateManager.setPhase(10); // Tutorial
-                                    } else if (clickedLevel === 1) {
-                                        StateManager.setPhase(11); // Level 1
-                                    } else if (clickedLevel === 2) {
-                                        StateManager.setPhase(12); // Level 2
-                                    }
+                            // 跳转到对应phase
+                            // Level1->Phase11, Level2->Phase12, Level3->Phase13, Level4->Phase14, Level5->Phase15
+                            if (clickedLevel >= 1 && clickedLevel <= 5) {
+                                StateManager.setPhase(10 + clickedLevel); // Level1->11, Level2->12, Level3->13, Level4->14, Level5->15
+                            }
                                 } else if (currentPhase >= 10 && currentPhase <= 15) {
                                     // Phase 10-15: 主界面，点击模型进入关卡
                                     this.enterLevel(clickedLevel);
                                     
                                     // 跳转到对应关卡
-                                    if (clickedLevel === 1) {
-                                        StateManager.setPhase(11);
-                                    } else if (clickedLevel === 2) {
-                                        StateManager.setPhase(12);
+                                    // Level1->Phase11, Level2->Phase12, Level3->Phase13, Level4->Phase14, Level5->Phase15
+                                    if (clickedLevel >= 1 && clickedLevel <= 5) {
+                                        StateManager.setPhase(10 + clickedLevel); // Level1->11, Level2->12, Level3->13, Level4->14, Level5->15
                                     }
                                 }
                             }
@@ -1331,8 +1352,7 @@ class LevelSelection3D {
         // 只生成迷宫，不创建玩家等其他内容
         await this.levelContent.generateMaze(level);
         console.log(`LevelSelection3D: generateMaze completed for level ${level}`);
-        // 添加关卡灯
-        this.levelContent.addLevelLight(level);
+        // 不添加关卡灯（已移除）
         
         // 标记为准备状态（但不完全进入关卡模式）
         // this.inLevelMode 会在 enterLevel 中设置为 true
