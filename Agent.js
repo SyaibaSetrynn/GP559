@@ -128,6 +128,22 @@ class Agent {
      * updates position of the agent, needs to be called in animate()
      */
     update(agentManager = null) {
+        // DEBUG: Track mode switches to detect rapid switching
+        if (this._lastMode !== this.mode) {
+            console.log(`Agent ${this.agentId} mode changed from ${this._lastMode} to ${this.mode}`);
+            this._lastMode = this.mode;
+        }
+        
+        // DEBUG: Count update calls per mode
+        if (!this._modeCallCount) this._modeCallCount = {};
+        if (!this._modeCallCount[this.mode]) this._modeCallCount[this.mode] = 0;
+        this._modeCallCount[this.mode]++;
+        
+        // Log every 60 frames for each mode
+        if (this._modeCallCount[this.mode] % 60 === 0) {
+            console.log(`Agent ${this.agentId} in ${this.mode} mode: ${this._modeCallCount[this.mode]} updates`);
+        }
+        
         // Handle different modes
         switch(this.mode) {
             case 'training':
@@ -147,13 +163,13 @@ class Agent {
      * Training mode: collect data while moving randomly
      */
     updateTrainingMode(agentManager) {
-        // Collect training data if DQN system is available
-        if (this.dqnDataCollector && agentManager) {
-            this.dqnDataCollector.collectExperience(this, agentManager);
-        }
-        
-        // Continue with random movement
+        // Use the EXACT same random movement method - no differences at all
         this.updateRandomMode();
+        
+        // Data collection disabled for debugging movement issues
+        // if (this.dqnDataCollector && agentManager) {
+        //     this.dqnDataCollector.collectExperience(this, agentManager);
+        // }
     }
     
     /**
@@ -200,10 +216,10 @@ class Agent {
         // Get movement tuning settings (from UI or defaults)
         const tuning = this.movementTuning || window.globalMovementSettings || {};
         const directionChangeFreq = tuning.directionChangeFreq || 60;
-        const cpSeekingChance = tuning.cpSeekingChance || 0.2;
+        const cpSeekingChance = tuning.cpSeekingChance || 0.4; // Increased from 0.2 to make agents more competitive
         
         // Force direction change if stuck or at regular intervals
-        const baseInterval = this.mode === 'training' ? (40 + Math.random() * 30) : directionChangeFreq;
+        const baseInterval = directionChangeFreq;
         const changeInterval = baseInterval + (Math.random() - 0.5) * 20; // Add some variation
         const isStuck = this.stuckTimer > 10; // Stuck for more than 10 frames
         const shouldChangeDirection = this.randomMoveTimer > changeInterval || isStuck || !this.currentDirection;
@@ -244,33 +260,53 @@ class Agent {
         let availableDirections = ['w', 's', 'a', 'd'];
         let preferredDirection = null;
         
-        // If seeking CPs, try to find direction towards nearest unclaimed CP
+        // If seeking CPs, try to find direction towards CPs that are not owned by this agent
         if (shouldSeekCP && window.globalCPSystem && window.globalCPSystem.criticalPoints) {
             const currentPos = this.getPosition();
-            let nearestCP = null;
-            let nearestDistance = Infinity;
+            let targetCP = null;
+            let bestScore = -1;
             
-            // Find nearest unclaimed CP
+            // Find best target CP (prioritize unclaimed, then opponent-owned)
             window.globalCPSystem.criticalPoints.forEach(cpData => {
+                // Skip CPs already owned by this agent
+                if (cpData.ownedBy === this.agentId) return;
+                
+                const distance = currentPos.distanceTo(cpData.cp.position);
+                let score = 0;
+                
+                // Scoring system:
+                // - Higher score for unclaimed CPs
+                // - Medium score for opponent-owned CPs  
+                // - Closer CPs get higher scores
                 if (!cpData.ownedBy || cpData.ownedBy === null) {
-                    const distance = currentPos.distanceTo(cpData.cp.position);
-                    if (distance < nearestDistance) {
-                        nearestDistance = distance;
-                        nearestCP = cpData.cp.position;
-                    }
+                    score = 100 / (distance + 1); // Unclaimed - highest priority
+                } else {
+                    score = 60 / (distance + 1); // Opponent-owned - medium priority
+                }
+                
+                if (score > bestScore) {
+                    bestScore = score;
+                    targetCP = cpData.cp.position;
                 }
             });
             
-            // If we found a CP, bias movement towards it
-            if (nearestCP) {
-                const dx = nearestCP.x - currentPos.x;
-                const dz = nearestCP.z - currentPos.z;
+            // If we found a target CP, bias movement towards it
+            if (targetCP) {
+                const dx = targetCP.x - currentPos.x;
+                const dz = targetCP.z - currentPos.z;
                 
                 // Determine preferred directions based on distance to CP
                 if (Math.abs(dx) > Math.abs(dz)) {
                     preferredDirection = dx > 0 ? 'd' : 'a'; // East or West
                 } else {
                     preferredDirection = dz > 0 ? 's' : 'w'; // South or North
+                }
+                
+                // DEBUG: Log target selection occasionally
+                if (this.randomMoveTimer % 180 === 0) { // Every 3 seconds
+                    const ownerText = !window.globalCPSystem.criticalPoints.find(cp => cp.cp.position === targetCP)?.ownedBy ? 
+                        'unclaimed' : `owned by agent ${window.globalCPSystem.criticalPoints.find(cp => cp.cp.position === targetCP)?.ownedBy}`;
+                    console.log(`Agent ${this.agentId} targeting CP at (${targetCP.x.toFixed(1)}, ${targetCP.z.toFixed(1)}) - ${ownerText}`);
                 }
             }
         }
@@ -337,6 +373,12 @@ class Agent {
         // Get current movement speed (from tuning or default)
         const tuning = this.movementTuning || window.globalMovementSettings || {};
         const currentSpeed = tuning.movementSpeed !== undefined ? tuning.movementSpeed : this.movementSpeed;
+        
+        // DEBUG: Track speed variations
+        if (!this._lastLoggedSpeed || this._lastLoggedSpeed !== currentSpeed) {
+            console.log(`Agent ${this.agentId} (${this.mode}): speed = ${currentSpeed}, tuning:`, tuning);
+            this._lastLoggedSpeed = currentSpeed;
+        }
 
         // Use world directions for consistent movement
         if(this.movement.w) {

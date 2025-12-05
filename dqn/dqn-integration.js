@@ -86,9 +86,8 @@ export class DQNIntegration {
     /**
      * Start DQN training for a specific agent
      * @param {number} agentIndex - Index of agent to train (0 = red, 1 = green)
-     * @param {boolean} useSimplePretraining - Whether to run simple pretraining first
      */
-    async startTraining(agentIndex = 0, useSimplePretraining = false) {
+    async startTraining(agentIndex = 0) {
         if (!this.isInitialized) {
             throw new Error('DQN integration not initialized');
         }
@@ -99,7 +98,7 @@ export class DQNIntegration {
         
         this.trainingAgent = this.gameManager.agents[agentIndex];
         
-        console.log(`Starting DQN training for agent ${agentIndex} (${this.getAgentColorName(agentIndex)})${useSimplePretraining ? ' with pretraining' : ''}`);
+        console.log(`Starting DQN training for agent ${agentIndex} (${this.getAgentColorName(agentIndex)})`);
         
         // Set agent to DQN mode (if applicable)
         if (this.trainingAgent.setMode) {
@@ -107,10 +106,10 @@ export class DQNIntegration {
         }
         
         // Update UI
-        this.updateStatus(useSimplePretraining ? 'Training + Pretraining Started' : 'Training Started');
+        this.updateStatus('Training Started');
         
         // Start training (non-blocking)
-        dqnTrainer.startTraining(this.trainingAgent, this.gameManager, this.gameEnvironment, useSimplePretraining)
+        dqnTrainer.startTraining(this.trainingAgent, this.gameManager, this.gameEnvironment)
             .then(() => {
                 this.updateStatus('Training Complete');
                 console.log('DQN training completed');
@@ -121,71 +120,7 @@ export class DQNIntegration {
             });
     }
 
-    /**
-     * Run simple pretraining for a specific agent
-     * @param {number} agentIndex - Index of agent to train (0 = red, 1 = green)
-     */
-    async runSimplePretraining(agentIndex = 0) {
-        if (!this.isInitialized) {
-            throw new Error('DQN integration not initialized');
-        }
-        
-        if (!this.gameManager.agents || this.gameManager.agents.length <= agentIndex) {
-            throw new Error(`Agent ${agentIndex} not found`);
-        }
-        
-        this.trainingAgent = this.gameManager.agents[agentIndex];
-        
-        console.log(`Running simple pretraining for agent ${agentIndex} (${this.getAgentColorName(agentIndex)})`);
-        
-        // Set agent to random mode for pretraining
-        if (this.trainingAgent.setMode) {
-            this.trainingAgent.setMode('random');
-        }
-        
-        // Update UI
-        this.updateStatus('Pretraining in progress...');
-        
-        // Run pretraining
-        await dqnTrainer.runSimplePretraining(this.trainingAgent, this.gameManager, this.gameEnvironment);
-        
-        this.updateStatus('Pretraining completed');
-        console.log('Simple pretraining completed');
-    }
 
-    /**
-     * Get pretraining information and statistics
-     */
-    getPretrainingInfo() {
-        if (!this.isInitialized) {
-            return {
-                pretrainingEpisodes: 20,
-                pretrainingStepsPerEpisode: 100,
-                currentBufferSize: 0,
-                trainingStartSize: 1000,
-                readyForTraining: false
-            };
-        }
-        
-        return dqnTrainer.getPretrainingInfo();
-    }
-
-    /**
-     * Get real-time pretraining progress for UI display
-     */
-    getPretrainingProgress() {
-        if (!this.isInitialized) {
-            return {
-                isPretraining: false,
-                currentEpisode: 0,
-                totalEpisodes: 0,
-                currentStep: 0,
-                stepsPerEpisode: 0
-            };
-        }
-        
-        return dqnTrainer.getPretrainingProgress();
-    }
 
     /**
      * Stop DQN training

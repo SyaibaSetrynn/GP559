@@ -151,9 +151,9 @@ if (useMapGenerator) {
 
 scene.add(levelObj);
 
-// Create multiple agents in corners (10x10 map goes from -5 to +5, stay inside walls at -4 to +4)
+// Create multiple agents in opposite corners (10x10 map goes from -5 to +5, stay inside walls at -4 to +4)
 const agent1 = agentManager.createAgent(new T.Vector3(-4, 1, -4));  // Red agent - back left corner
-const agent2 = agentManager.createAgent(new T.Vector3(4, 1, -4));   // Green agent - back right corner
+const agent2 = agentManager.createAgent(new T.Vector3(4, 1, 4));    // Green agent - front right corner (opposite)
 
 // Debug summary after level creation
 console.log('=== LEVEL CREATION SUMMARY ===');

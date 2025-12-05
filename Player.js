@@ -501,7 +501,7 @@ scene.add(player1.object);
 
 // Create multiple agents using the agent manager (inside the maze walls)
 const agent1 = agentManager.createAgent(new T.Vector3(-4, 1, -4));  // Red agent - back left corner
-const agent2 = agentManager.createAgent(new T.Vector3(4, 1, -4));   // Green agent - back right corner
+const agent2 = agentManager.createAgent(new T.Vector3(4, 1, 4));    // Green agent - front right corner (opposite)
 
 // Debug summary after agent creation
 console.log('=== AGENT CREATION SUMMARY ===');
