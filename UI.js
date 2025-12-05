@@ -868,10 +868,22 @@ class UI {
             if (currentPhase === 1 || (currentPhase >= 10 && currentPhase <= 15)) {
                 // Phase 1: Level Selection界面
                 if (currentPhase === 1) {
-                    // Phase 1: Level Selection界面，默认level为1
-                    this.level = 1;
-                    this.levelAnimation.newLevel = 1;
-                    this.levelAnimation.oldLevel = 1;
+                    // Phase 1: Level Selection界面
+                    // 如果有最后退出的关卡，自动切换到那个关卡；否则默认level为1
+                    if (this.levelSelection3D && this.levelSelection3D.lastExitedLevel) {
+                        this.level = this.levelSelection3D.lastExitedLevel;
+                        console.log(`UI: Restoring to last exited level: ${this.level}`);
+                    } else {
+                        this.level = 1;
+                    }
+                    this.levelAnimation.newLevel = this.level;
+                    this.levelAnimation.oldLevel = this.level;
+                    
+                    // 更新3D场景的level（如果已经初始化）
+                    if (this.levelSelection3D) {
+                        this.levelSelection3D.currentLevel = this.level;
+                        this.levelSelection3D.updateLevel(this.level);
+                    }
                 } else {
                     // Phase 10-15: 主界面，如果不是 tutorial，保持之前的level或设为1
                     if (this.level === undefined || this.level === null) {
