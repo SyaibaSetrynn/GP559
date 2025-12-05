@@ -535,7 +535,7 @@ agentManager.agents.forEach((agent, i) => {
 console.log(`AgentManager has ${agentManager.criticalPoints.length} critical points`);
 console.log(`Critical Point System has ${criticalPointSystem.cpRegistry.size} CPs in registry`);
 
-// Ensure agents are in random mode (they default to random, but let's be explicit)
+// Ensure agents are in random mode (trained)
 agentManager.setAllAgentsMode('random');
 console.log('All agents set to random mode');
 console.log('===============================');
