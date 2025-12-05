@@ -6,6 +6,7 @@ class LevelSelection3D {
         this.width = width;
         this.height = height;
         this.currentLevel = 1; // 默认从Level1开始
+        this.lastExitedLevel = null; // 记录最后退出的关卡
         
         // 模型相关
         this.currentModel = null;
@@ -368,15 +369,15 @@ class LevelSelection3D {
             });
             
             // 计算模型位置：围绕圆盘中心 (0, 0, 8) 排列
-            // 5个关卡（Level1~Level5）分布在圆盘上，每个关卡相差30度
+            // 5个关卡（Level1~Level5）分布在圆盘上，每个关卡相差20度
             let baseAngle;
             let radius;
             radius = 8;  // 所有模型都在半径为8的圆上
             
-            // Level1在角度0（正前方），Level2在-30度（逆时针，右侧），Level3在-60度，Level4在-90度，Level5在-120度
-            // 转换为弧度：每个关卡相差 -30 * π / 180 = -π/6（逆时针方向）
-            const anglePerLevel = 30 * Math.PI / 180; // 30度 = π/6 弧度
-            baseAngle = -(level - 1) * anglePerLevel; // Level1=0, Level2=-30°, Level3=-60°, Level4=-90°, Level5=-120°
+            // Level1在角度0（正前方），Level2在-25度（逆时针，右侧），Level3在-50度，Level4在-75度，Level5在-100度
+            // 转换为弧度：每个关卡相差 -25 * π / 180（逆时针方向）
+            const anglePerLevel = 25 * Math.PI / 180; // 25度
+            baseAngle = -(level - 1) * anglePerLevel; // Level1=0, Level2=-25°, Level3=-50°, Level4=-75°, Level5=-100°
             
             // 应用圆盘旋转
             const angle = baseAngle + this.diskRotation;
@@ -431,7 +432,7 @@ class LevelSelection3D {
             const spotlight = new THREE.SpotLight(0xffffff, initialIntensity);
             spotlight.position.set(x, y + 12, z);  // 抬高20% (10 * 1.2 = 12)
             spotlight.target.position.set(x, y, z);
-            spotlight.angle = (Math.PI / 12) * 1.2; // 18度锥角（增大20%，从15度到18度）
+            spotlight.angle = 12 * Math.PI / 180; // 12度锥角
             spotlight.penumbra = 0.3; // 边缘柔和度（减小，使边缘更硬）
             spotlight.decay = 2; // 衰减
             spotlight.distance = 20; // 照射距离
@@ -502,33 +503,18 @@ class LevelSelection3D {
         }
     }
     
-    // 获取应该显示的level列表（只显示当前level及其前后相邻的level）
+    // 获取应该显示的level列表（显示所有五个模型）
     getVisibleLevels() {
-        const current = this.currentLevel;
-        const visibleLevels = [];
-        
-        // 添加前一个level（如果存在）
-        if (current > 1) {
-            visibleLevels.push(current - 1);
-        }
-        
-        // 添加当前level
-        visibleLevels.push(current);
-        
-        // 添加后一个level（如果存在）
-        if (current < 5) {
-            visibleLevels.push(current + 1);
-        }
-        
-        return visibleLevels;
+        // 返回所有五个level，让所有模型都可见
+        return [1, 2, 3, 4, 5];
     }
     
     // 更新可见的level，加载需要的，卸载不需要的
     async updateVisibleLevels() {
-        const visibleLevels = this.getVisibleLevels(); // 只返回当前level及其前后相邻的level
+        const visibleLevels = this.getVisibleLevels(); // 现在返回 [1, 2, 3, 4, 5]
         const allLevels = [1, 2, 3, 4, 5];
         
-        // 对于每个level，检查是否需要加载或卸载
+        // 对于每个level，确保都被加载和显示
         for (const level of allLevels) {
             const shouldBeVisible = visibleLevels.includes(level);
             const isLoaded = this.models[level] !== undefined;
@@ -550,26 +536,8 @@ class LevelSelection3D {
                     this.modelLights[level].baseIntensity = baseIntensity;
                     this.startLightAnimation(level, baseIntensity, true);
                 }
-            } else if (!shouldBeVisible && isLoaded && isInScene) {
-                // 不应该可见但已加载且在场景中，需要卸载
-                // 从场景中移除
-                if (this.modelGroups[level]) {
-                    this.scene.remove(this.modelGroups[level]);
-                }
-                // 停止光照动画
-                if (this.lightAnimations[level]) {
-                    this.lightAnimations[level].isAnimating = false;
-                }
-                // 注意：不删除models和modelGroups，以便后续快速重新加载（可选：也可以删除以节省内存）
-                // 如果需要完全释放内存，可以取消注释以下代码：
-                // delete this.models[level];
-                // delete this.modelGroups[level];
-                // delete this.modelLights[level];
-                // delete this.modelCenters[level];
-                // delete this.modelScales[level];
-                // delete this.modelBaseScales[level];
-                // delete this.modelScaleAnimations[level];
             }
+            // 不再卸载模型，因为现在所有模型都应该始终可见
         }
     }
     
@@ -666,7 +634,7 @@ class LevelSelection3D {
         if (level !== this.currentLevel) {
             // 计算圆盘旋转角度差
             // 每个level相差30度，从level1切换到level2需要逆时针旋转-30度（让level2到中心）
-            const angleDiff = (level - this.currentLevel) * 30 * Math.PI / 180; // 每个level相差30度
+            const angleDiff = (level - this.currentLevel) * 25 * Math.PI / 180; // 每个level相差25度
             
             console.log(`Angle diff: ${(angleDiff * 180 / Math.PI).toFixed(1)}°, Current diskRotation: ${(this.diskRotation * 180 / Math.PI).toFixed(1)}°`);
             
@@ -813,9 +781,9 @@ class LevelSelection3D {
             let baseAngle;
             const radius = 8;  // 所有模型都在半径为8的圆上
             
-            // 5个关卡（Level1~Level5）分布在圆盘上，每个关卡相差30度（逆时针方向）
-            const anglePerLevel = 30 * Math.PI / 180; // 30度 = π/6 弧度
-            baseAngle = -(level - 1) * anglePerLevel; // Level1=0, Level2=-30°, Level3=-60°, Level4=-90°, Level5=-120°
+            // 5个关卡（Level1~Level5）分布在圆盘上，每个关卡相差20度（逆时针方向）
+            const anglePerLevel = 25 * Math.PI / 180; // 25度
+            baseAngle = -(level - 1) * anglePerLevel; // Level1=0, Level2=-25°, Level3=-50°, Level4=-75°, Level5=-100°
             
             // 应用圆盘旋转
             const angle = baseAngle + this.diskRotation;
@@ -1360,6 +1328,8 @@ class LevelSelection3D {
     
     // 进入关卡模式：隐藏其他模型，聚焦相机，生成迷宫
     async enterLevel(level) {
+        // 记录进入的关卡（用于后续退出时记录）
+        // 注意：这里不设置lastExitedLevel，因为这是进入，不是退出
         const THREE = window.THREE;
         if (!THREE) return;
         
@@ -1536,6 +1506,12 @@ class LevelSelection3D {
         
         // 注意：不清除保存的相机位置，以便下次进入时使用相同位置
         // 只有在重新进入 level selection 时才清除（如果需要的话）
+        
+        // 记录退出的关卡（在设置inLevelMode为false之前）
+        if (this.inLevelMode && this.currentLevel) {
+            this.lastExitedLevel = this.currentLevel;
+            console.log(`LevelSelection3D: Recorded last exited level: ${this.lastExitedLevel}`);
+        }
         
         this.inLevelMode = false;
         this.currentLevelModel = null;
