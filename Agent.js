@@ -180,8 +180,9 @@ class Agent {
         if (this.dqnAgentBehavior) {
             this.dqnAgentBehavior.updateAgent(this, agentManager);
         } else {
-            // Fallback to random movement if no DQN behavior loaded
-            this.updateRandomMode();
+            // During DQN training, agent movement is controlled by the DQN trainer
+            // Don't do any autonomous movement to avoid speed issues
+            // The DQN trainer will control movement via actionSpace.executeAction()
         }
         
         // Continue with physics and collision detection

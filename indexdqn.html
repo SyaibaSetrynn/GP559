@@ -6,68 +6,151 @@
 		
 		<!-- TensorFlow.js -->
 		<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+		
+		<!-- Custom Styles for Dark Theme -->
+		<style>
+			/* Dark theme for body */
+			body {
+				background-color: #0d1117;
+				margin: 0;
+				padding: 0;
+			}
+			
+			/* Button hover effects */
+			#right-panel button {
+				transition: all 0.2s ease;
+			}
+			#right-panel button:hover {
+				transform: translateY(-1px);
+				box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+				opacity: 0.9;
+			}
+			#right-panel button:active {
+				transform: translateY(0);
+			}
+			
+			/* Scrollbar styling for right panel */
+			#right-panel::-webkit-scrollbar {
+				width: 8px;
+			}
+			#right-panel::-webkit-scrollbar-track {
+				background: #2d3139;
+			}
+			#right-panel::-webkit-scrollbar-thumb {
+				background: #555;
+				border-radius: 4px;
+			}
+			#right-panel::-webkit-scrollbar-thumb:hover {
+				background: #777;
+			}
+			
+			/* Ensure game canvas uses full screen minus panel width and bottom space */
+			#div1 {
+				position: fixed;
+				top: 0;
+				left: 0;
+				right: 320px;
+				bottom: 85px;
+				background-color: #0d1117;
+				pointer-events: auto;
+			}
+			
+			/* Ensure canvas fits within the div1 container */
+			#div1 canvas {
+				position: absolute !important;
+				top: 0 !important;
+				left: 0 !important;
+				width: 100% !important;
+				height: 100% !important;
+				max-width: 100% !important;
+				max-height: 100% !important;
+			}
+		</style>
 	</head>
 
 	<body>
 		<div id="div1"></div>
 		
-		<!-- Game Info Display - Fixed Overlay -->
-		<div id="losUI" style="position: fixed; top: 10px; left: 10px; background: rgba(255,255,255,0.9); padding: 8px; border: 1px solid black; font-size: 12px; z-index: 1000;">
-			<strong>DQN Training Environment</strong>
-			<div id="agentScores">Loading scores...</div>
-			<div id="testTimer">Timer: 0</div>
-			<div style="font-size: 11px;">
-				Camera: Mouse look, Scroll zoom<br>
-				DQN: Deep Q-Network training
+		<!-- Right Side Panel - All UI Elements -->
+		<div id="right-panel" style="position: fixed; top: 0; right: 0; width: 320px; height: 100vh; background: #161b22; border-left: 1px solid #30363d; overflow-y: auto; z-index: 1000; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #c9d1d9;">
+			
+			<!-- Header Section -->
+			<div style="background: #21262d; color: #c9d1d9; padding: 15px; border-bottom: 1px solid #30363d;">
+				<h3 style="margin: 0; font-size: 16px; font-weight: 600;">DQN Training Environment</h3>
+				<div id="testTimer" style="font-size: 11px; opacity: 0.7; margin-top: 5px; color: #8b949e;">Timer: 0</div>
 			</div>
-		</div>
 
-		<!-- Game Controls - Fixed Overlay -->
-		<div id="game-controls" style="position: fixed; top: 10px; right: 10px; background: rgba(255,255,255,0.9); padding: 8px; border: 1px solid black; font-size: 12px; z-index: 1000; max-width: 300px;">
-			<h4 style="margin: 0 0 5px 0;">Game Controls</h4>
-			<div style="margin: 2px 0;">Mode: <span id="current-mode">Random</span></div>
-			<div style="margin: 2px 0;">Status: <span id="system-status">Ready</span></div>
-			<div style="margin: 2px 0; font-size: 10px; color: #666;">Buffer: <span id="buffer-status">0 experiences</span></div>
-			
+			<!-- System Status Section -->
+			<div style="padding: 15px; border-bottom: 1px solid #30363d;">
+				<h4 style="margin: 0 0 10px 0; color: #c9d1d9; font-size: 14px;">System Status</h4>
+				<div style="background: #0d1117; padding: 10px; border-radius: 6px; border: 1px solid #30363d;">
+					<div style="margin: 5px 0; display: flex; justify-content: space-between;">
+						<span style="color: #8b949e;">Mode:</span> <span id="current-mode" style="font-weight: bold; color: #3fb950;">Training</span>
+					</div>
+					<div style="margin: 5px 0; display: flex; justify-content: space-between;">
+						<span style="color: #8b949e;">Status:</span> <span id="system-status" style="font-weight: bold; color: #3fb950;">Ready</span>
+					</div>
+					<div style="margin: 5px 0; display: flex; justify-content: space-between; font-size: 11px;">
+						<span style="color: #8b949e;">Buffer:</span> <span id="buffer-status" style="color: #7d8590;">0 experiences</span>
+					</div>
+				</div>
+			</div>
 
-			
-			<div style="margin: 3px 0;">
-				<button id="reset-scene">Reset Environment</button>
-				<button id="random-mode">Random Mode</button>
-				<button id="debug-cp" style="font-size: 10px;">Debug CPs</button>
+			<!-- Environment Controls -->
+			<div style="padding: 15px; border-bottom: 1px solid #30363d;">
+				<h4 style="margin: 0 0 10px 0; color: #c9d1d9; font-size: 14px;">Environment Controls</h4>
+				<button id="reset-scene" style="width: 100%; padding: 8px 12px; background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; cursor: pointer; font-size: 11px; margin-bottom: 8px;">Reset Environment</button>
+				<button id="debug-cp" style="width: 100%; padding: 6px; background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; cursor: pointer; font-size: 10px;">Debug Critical Points</button>
 			</div>
 			
-			<div style="margin-top: 6px; border-top: 1px solid #ccc; padding-top: 4px;">
-				<h5 style="margin: 0 0 3px 0;">DQN Controls</h5>
-				<div style="margin: 2px 0;">
-					<button id="init-dqn" style="font-size: 10px;">Initialize DQN</button>
-					<button id="start-dqn" style="font-size: 10px;">Start Training</button>
+			<!-- DQN Controls -->
+			<div style="padding: 15px; border-bottom: 1px solid #30363d;">
+				<h4 style="margin: 0 0 10px 0; color: #c9d1d9; font-size: 14px;">DQN Controls</h4>
+				<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+					<button id="init-dqn" style="padding: 8px 12px; background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; cursor: pointer; font-size: 11px;">Initialize DQN</button>
+					<button id="start-dqn" style="padding: 8px 12px; background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; cursor: pointer; font-size: 11px;">Start Training</button>
 				</div>
-				<div style="margin: 2px 0;">
-					<button id="stop-dqn" style="font-size: 10px;">Stop Training</button>
-					<button id="save-dqn" style="font-size: 10px;">Save Model</button>
+				<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+					<button id="stop-dqn" style="padding: 8px 12px; background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; cursor: pointer; font-size: 11px;">Stop Training</button>
+					<button id="save-dqn" style="padding: 8px 12px; background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; cursor: pointer; font-size: 11px;">Save Model</button>
 				</div>
-				<div style="margin: 2px 0;">
-					<button id="export-model" style="font-size: 10px;">Export JSON</button>
-					<button id="import-model" style="font-size: 10px;">Import JSON</button>
+				<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+					<button id="export-model" style="padding: 8px 12px; background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; cursor: pointer; font-size: 11px;">Export JSON</button>
+					<button id="import-model" style="padding: 8px 12px; background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; cursor: pointer; font-size: 11px;">Import JSON</button>
 					<input type="file" id="import-file" accept=".json" style="display: none;">
 				</div>
 			</div>
+
+			<!-- Agent Scores Section -->
+			<div style="padding: 15px; border-bottom: 1px solid #30363d;">
+				<h4 style="margin: 0 0 10px 0; color: #c9d1d9; font-size: 14px;">Agent Scores</h4>
+				<div id="agentScores" style="background: #0d1117; padding: 10px; border-radius: 6px; border: 1px solid #30363d; font-size: 12px; line-height: 1.4; color: #c9d1d9;">Loading scores...</div>
+			</div>
+			
+			<!-- Agent State Display -->
+			<div style="padding: 15px; border-bottom: 1px solid #30363d;">
+				<h4 style="margin: 0 0 10px 0; color: #c9d1d9; font-size: 14px;">Red Agent State</h4>
+				<div id="red-agent-state" style="background: #0d1117; border-radius: 6px; padding: 12px; border: 1px solid #30363d;">
+					<div id="red-state-summary" style="margin-bottom: 10px; line-height: 1.3; font-size: 12px;">
+						<div style="margin: 4px 0; display: flex; justify-content: space-between;">
+							<span style="font-weight: 600; color: #8b949e;">Position:</span> <span id="red-position" style="font-family: monospace; color: #7d8590;">Loading...</span>
+						</div>
+						<div style="margin: 4px 0; display: flex; justify-content: space-between;">
+							<span style="font-weight: 600; color: #8b949e;">Score:</span> <span id="red-score" style="color: #f85149; font-weight: bold;">Loading...</span>
+						</div>
+						<div style="margin: 4px 0; display: flex; justify-content: space-between;">
+							<span style="font-weight: 600; color: #8b949e;">Movement:</span> <span id="red-movement" style="color: #58a6ff;">Loading...</span>
+						</div>
+						<div style="margin: 4px 0; display: flex; justify-content: space-between;">
+							<span style="font-weight: 600; color: #8b949e;">Target:</span> <span id="red-nearest-cp" style="color: #3fb950;">Loading...</span>
+						</div>
+					</div>
+				</div>
+			</div>
 		</div>
 
-		<!-- Agent State Display - Fixed Overlay -->
-		<div id="red-agent-state" style="position: fixed; bottom: 10px; left: 10px; background: rgba(240,240,240,0.95); border: 1px solid #ccc; padding: 8px; font-family: 'Courier New', monospace; font-size: 10px; z-index: 1000; max-width: 350px; color: #333;">
-			<div style="margin: 0 0 6px 0; font-weight: bold; font-size: 11px;">Agent 0 State Data</div>
-			<div id="red-state-summary" style="margin-bottom: 6px; line-height: 1.2;">
-				<div>pos: <span id="red-position">Loading...</span></div>
-				<div>score: <span id="red-score">Loading...</span></div>
-				<div>move: <span id="red-movement">Loading...</span></div>
-				<div>target: <span id="red-nearest-cp">Loading...</span></div>
-			</div>
-			<div id="red-minimal-state" style="font-size: 9px; color: #666; border-top: 1px solid #ddd; padding-top: 4px;">
-				<div style="margin-bottom: 2px;">state_vector:</div>
-				<div id="red-state-vector" style="font-family: monospace; word-break: break-all; line-height: 1.1;">[Loading...]</div>
-			</div>
+
+
 		</div>
 
 
@@ -107,6 +190,7 @@
 		window.OBJLoader = OBJLoader;
 		window.MTLLoader = MTLLoader;
 		window.CriticalPointSystem = CriticalPointSystem;
+		window.dqnIntegration = dqnIntegration;
 		window.CP_COLORS = CP_COLORS;
 		window.gameStateExtractor = gameStateExtractor;
 		window.dqnIntegration = dqnIntegration;
@@ -152,6 +236,11 @@
 					typeof val === 'number' ? val.toFixed(2) : val
 				).join(', ');
 				document.getElementById('red-state-vector').textContent = `[${formattedVector}]`;
+				
+				// Update DQN panel agent info if available
+				if (window.dqnIntegration && typeof window.dqnIntegration.updateAgentInfo === 'function') {
+					window.dqnIntegration.updateAgentInfo(redAgent);
+				}
 		} catch (error) {
 			console.warn('Error updating red agent state display:', error);
 			document.getElementById('red-position').textContent = 'Error';
@@ -333,18 +422,10 @@
 					}
 					
 					// Update UI
-					if (modeSpan) modeSpan.textContent = 'Random';
+					if (modeSpan) modeSpan.textContent = 'Training';
 					if (statusSpan) statusSpan.textContent = 'Environment reset';
 					
 					console.log('Environment reset complete');
-				};
-				
-				// Random Mode
-				document.getElementById('random-mode').onclick = () => {
-					console.log('Setting random mode');
-					window.gameManager.setAllAgentsMode('random');
-					if (modeSpan) modeSpan.textContent = 'Random';
-					if (statusSpan) statusSpan.textContent = 'Random mode active';
 				};
 				
 				// Debug Critical Points

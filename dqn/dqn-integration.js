@@ -98,11 +98,22 @@ export class DQNIntegration {
         
         this.trainingAgent = this.gameManager.agents[agentIndex];
         
+        this.trainingAgent = this.gameManager.agents[agentIndex];
+        
         console.log(`Starting DQN training for agent ${agentIndex} (${this.getAgentColorName(agentIndex)})`);
         
-        // Set agent to DQN mode (if applicable)
-        if (this.trainingAgent.setMode) {
+        // Set red agent to DQN mode for neural network control
+        if (this.trainingAgent && this.trainingAgent.setMode) {
             this.trainingAgent.setMode('dqn');
+        }
+        
+        // Set green agent to training mode for competitive movement (same speed/style as red)
+        if (this.gameManager.agents.length > 1 && agentIndex === 0) {
+            const greenAgent = this.gameManager.agents[1];
+            if (greenAgent && greenAgent.setMode) {
+                greenAgent.setMode('training');
+                console.log('Green agent set to training mode for competitive movement');
+            }
         }
         
         // Update UI
@@ -132,6 +143,19 @@ export class DQNIntegration {
         }
         
         dqnTrainer.stopTraining();
+        
+        // Reset both red and green agents back to random mode
+        const redAgent = this.gameManager.agents[0];
+        const greenAgent = this.gameManager.agents.length > 1 ? this.gameManager.agents[1] : null;
+        
+        if (redAgent && redAgent.setMode) {
+            redAgent.setMode('random');
+        }
+        if (greenAgent && greenAgent.setMode) {
+            greenAgent.setMode('random');
+            console.log('Both red and green agents reset to random mode');
+        }
+        
         this.updateStatus('Training Stopped');
         console.log('DQN training stopped');
     }
@@ -408,31 +432,53 @@ export class DQNIntegration {
         statusDiv.style.cssText = `
             position: fixed;
             bottom: 10px;
-            right: 10px;
-            background: rgba(240, 240, 240, 0.95);
-            border: 1px solid #ccc;
+            left: 10px;
+            right: 330px;
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
             padding: 8px;
-            font-family: 'Courier New', monospace;
-            font-size: 10px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 9px;
             z-index: 1000;
-            max-width: 300px;
-            color: #333;
+            height: 65px;
+            color: #c9d1d9;
+            box-sizing: border-box;
+            pointer-events: auto;
         `;
         
         statusDiv.innerHTML = `
-            <div style="margin: 0 0 6px 0; font-weight: bold; font-size: 11px;">DQN Training Status</div>
-            <div>Status: <span id="dqn-status">Not Started</span></div>
-            <div>Episode: <span id="dqn-episode">0</span></div>
-            <div>Phase: <span id="dqn-phase">-</span></div>
-            <div>Avg Reward: <span id="dqn-reward">0.000</span></div>
-            <div>Epsilon: <span id="dqn-epsilon">1.000</span></div>
-            <div>Loss: <span id="dqn-loss">0.000</span></div>
-
-            <div style="margin-top: 4px; font-size: 9px; border-top: 1px solid #ccc; padding-top: 4px;">
-                <div style="margin-bottom: 2px; font-weight: bold;">Training:</div>
-                <button id="dqn-start-btn" style="font-size: 9px; margin-right: 4px;">Start Training</button>
-                <button id="dqn-stop-btn" style="font-size: 9px; margin-right: 4px;">Stop</button>
-                <button id="dqn-save-btn" style="font-size: 9px;">Save Model</button>
+            <div style="display: grid; grid-template-columns: auto 1fr auto; gap: 12px; height: 100%; align-items: center;">
+                <!-- DQN Status Section -->
+                <div style="min-width: 200px;">
+                    <div style="font-weight: 600; font-size: 9px; color: #c9d1d9; margin-bottom: 4px;">DQN Status</div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; font-size: 8px; margin-bottom: 3px;">
+                        <div><span style="color: #8b949e;">Status:</span><br><span id="dqn-status" style="color: #f85149;">Not Started</span></div>
+                        <div><span style="color: #8b949e;">Episode:</span><br><span id="dqn-episode" style="color: #c9d1d9;">0</span></div>
+                        <div><span style="color: #8b949e;">Reward:</span><br><span id="dqn-reward" style="color: #3fb950;">0.00</span></div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 2px;">
+                        <button id="dqn-start-btn" style="padding: 2px 4px; background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 3px; cursor: pointer; font-size: 8px;">Start</button>
+                        <button id="dqn-stop-btn" style="padding: 2px 4px; background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 3px; cursor: pointer; font-size: 8px;">Stop</button>
+                        <button id="dqn-save-btn" style="padding: 2px 4px; background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 3px; cursor: pointer; font-size: 8px;">Save</button>
+                    </div>
+                </div>
+                
+                <!-- Red Agent State Section -->
+                <div style="flex: 1;">
+                    <div style="font-weight: 600; font-size: 9px; color: #c9d1d9; margin-bottom: 4px;">Red Agent State</div>
+                    <div id="red-state-vector" style="font-family: 'Courier New', monospace; font-size: 8px; color: #f0f6fc; word-break: break-all; line-height: 1.1; background: #0d1117; padding: 4px; border-radius: 3px; border: 1px solid #58a6ff; box-shadow: 0 0 3px rgba(88, 166, 255, 0.2); white-space: pre-wrap; max-height: 32px; overflow: hidden;">[Loading...]</div>
+                </div>
+                
+                <!-- Additional Info Section -->
+                <div style="min-width: 120px; font-size: 8px;">
+                    <div style="font-weight: 600; font-size: 9px; color: #c9d1d9; margin-bottom: 4px;">Agent Info</div>
+                    <div style="color: #8b949e; line-height: 1.2;">
+                        <div>Mode: <span id="agent-mode" style="color: #c9d1d9;">Training</span></div>
+                        <div>Score: <span id="agent-score" style="color: #3fb950;">0</span></div>
+                        <div>Position: <span id="agent-pos" style="color: #58a6ff;">-,-,-</span></div>
+                    </div>
+                </div>
             </div>
         `;
         
@@ -453,7 +499,10 @@ export class DQNIntegration {
             phase: document.getElementById('dqn-phase'),
             reward: document.getElementById('dqn-reward'),
             epsilon: document.getElementById('dqn-epsilon'),
-            loss: document.getElementById('dqn-loss')
+            loss: document.getElementById('dqn-loss'),
+            agentMode: document.getElementById('agent-mode'),
+            agentScore: document.getElementById('agent-score'),
+            agentPos: document.getElementById('agent-pos')
         };
     }
 
@@ -611,6 +660,37 @@ export class DQNIntegration {
         } catch (error) {
             console.error('Error listing saved models:', error);
             return [];
+        }
+    }
+
+    /**
+     * Update agent info display
+     * @param {Object} agent - The red agent object
+     */
+    updateAgentInfo(agent) {
+        if (!this.statusElements.agentMode) return;
+        
+        try {
+            // Update agent mode - show "Training" for training mode, otherwise show actual mode
+            let displayMode = agent.mode || 'Unknown';
+            if (displayMode === 'training') {
+                displayMode = 'Training';
+            } else if (displayMode === 'random') {
+                displayMode = 'Training'; // Show as "Training" in DQN context
+            }
+            this.statusElements.agentMode.textContent = displayMode;
+            
+            // Update agent score (from critical points or other scoring system)
+            const score = agent.score || agent.points || 0;
+            this.statusElements.agentScore.textContent = score.toString();
+            
+            // Update agent position
+            if (agent.mesh && agent.mesh.position) {
+                const pos = agent.mesh.position;
+                this.statusElements.agentPos.textContent = `${pos.x.toFixed(1)},${pos.y.toFixed(1)},${pos.z.toFixed(1)}`;
+            }
+        } catch (error) {
+            console.warn('Error updating agent info:', error);
         }
     }
 }
