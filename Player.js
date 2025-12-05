@@ -707,72 +707,61 @@ function animate(timestamp) {
 
 // Add keyboard controls for debugging
 document.addEventListener('keydown', function(event) {
-    if (event.key === 'p' || event.key === 'P') {
-        // Print current scores
-        const scores = agentManager.getScores();
-        // Current agent scores logged
-    }
-    if (event.key === 'l' || event.key === 'L') {
-        // Toggle LOS UI visibility
-        const losUI = document.getElementById('losUI');
-        if (losUI) {
-            losUI.style.display = losUI.style.display === 'none' ? 'block' : 'none';
-        }
-    }
+    // Reserved for future debugging controls
 });
+
+// Game start time for tracking elapsed time
+let gameStartTime = null;
 
 // Function to update score display
 function updateScoreDisplay() {
     const scoreDiv = document.getElementById('agentScores');
     if (!scoreDiv) return;
     
+    // Initialize game start time if not set
+    if (!gameStartTime && startGame) {
+        gameStartTime = Date.now();
+    }
+    
     let text = '';
     
-    // Show critical point info
-    if (criticalPointSystem && criticalPointSystem.cpRegistry) {
-        const cpScoring = criticalPointSystem.getScoring();
-        
-        text += `Critical Points:\n`;
-        text += `Total: ${criticalPointSystem.cpRegistry.size}\n`;
-        text += `Neutral: ${cpScoring.neutral}\n`;
-        text += `Claimed: ${cpScoring.activelyClaimed}\n\n`;
-        
-        // Show owner breakdown
-        if (Object.keys(cpScoring.byOwner).length > 0) {
-            text += `Owned by agents:\n`;
-            for (const [owner, data] of Object.entries(cpScoring.byOwner)) {
-                const colorName = getColorName(owner);
-                text += `  ${colorName}: ${data.owned} owned\n`;
-            }
-            text += `\n`;
-        }
-    } else {
-        text += `Critical Points: Not initialized\n\n`;
-    }
+    // Show scores by color
+    const scores = { Red: 0, Green: 0, Blue: 0 };
     
-    // Show agent info
+    // Get agent scores
     if (agentManager && agentManager.agents) {
-        text += `Agents (${agentManager.agents.length}):\n`;
-        agentManager.agents.forEach((agent, i) => {
+        agentManager.agents.forEach((agent) => {
             try {
-                const pos = agent.getPosition();
                 const score = agent.getScore();
-                const hexColor = agent.agentColor.toString(16);
+                const hexColor = agent.agentColor.toString(16).padStart(6, '0');
                 const colorName = getColorName(hexColor);
-                text += `${colorName} Agent ${agent.agentId}: Score ${score}, Pos (${pos.x.toFixed(1)}, ${pos.z.toFixed(1)})\n`;
+                if (scores.hasOwnProperty(colorName)) {
+                    scores[colorName] = score;
+                }
             } catch (e) {
-                text += `Agent ${i}: Error getting data\n`;
+                // Skip if error getting agent data
             }
         });
-    } else {
-        text += `Agents: Not found\n`;
     }
     
-    // Show player info
+    // Get player score (Blue)
     if (player1) {
-        const playerColor = player1.color.toString(16);
-        const playerColorName = getColorName(playerColor);
-        text += `\n${playerColorName} Player: ${player1.score} points\n`;
+        scores.Blue = player1.score;
+    }
+    
+    // Display scores
+    text += `Red: ${scores.Red}\n`;
+    text += `Green: ${scores.Green}\n`;
+    text += `Blue: ${scores.Blue}\n\n`;
+    
+    // Show game time
+    if (gameStartTime && startGame) {
+        const elapsedMs = Date.now() - gameStartTime;
+        const seconds = Math.floor(elapsedMs / 1000);
+        const milliseconds = elapsedMs % 1000;
+        text += `Time: ${seconds}.${milliseconds.toString().padStart(3, '0')}s`;
+    } else {
+        text += `Time: 0.000s`;
     }
     
     // Update display
