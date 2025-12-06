@@ -375,9 +375,7 @@ class Player {
 
     /**
      * might need some other functions for colors and shooting
-     */
-    
-    /**
+     * 
      * Set custom spawn position for the player
      * @param {number} x - X coordinate for spawn position
      * @param {number} y - Y coordinate for spawn position (optional, defaults to PLAYER_HEIGHT)
@@ -396,15 +394,21 @@ class Player {
     }
 }
 
-// global variables
-const PLAYER_HEIGHT = 0.5;
-const PLAYER_RADIUS = 0.5 * Math.sqrt(2) / 2;
-const PLAYER_SPEED = 0.02;
-const PLAYER_JUMP_HEIGHT = 1.2;
-const PLAYER_JUMP_SPEED = 0.03;
-const WORLD_BOUNDARY = 20;
-const GRAVITY = (PLAYER_JUMP_SPEED * PLAYER_JUMP_SPEED) / (2 * PLAYER_JUMP_HEIGHT);
+// Global constants (will be overridden by window globals if available)
+const PLAYER_HEIGHT = window.PLAYER_HEIGHT || 0.5;
+const PLAYER_RADIUS = window.PLAYER_RADIUS || (0.5 * Math.sqrt(2) / 2);
+const PLAYER_SPEED = window.PLAYER_SPEED || 0.02;
+const PLAYER_JUMP_HEIGHT = window.PLAYER_JUMP_HEIGHT || 1.2;
+const PLAYER_JUMP_SPEED = window.PLAYER_JUMP_SPEED || 0.03;
+const WORLD_BOUNDARY = window.WORLD_BOUNDARY || 20;
+const GRAVITY = window.GRAVITY || ((window.PLAYER_JUMP_SPEED || 0.03) * (window.PLAYER_JUMP_SPEED || 0.03)) / (2 * (window.PLAYER_JUMP_HEIGHT || 1.2));
 
+
+// Function to initialize the indexjake game (called from UI transition)
+window.startIndexJakeGame = async function(selectedLevel = 1) {
+    console.log(`Initializing indexjake game for level ${selectedLevel}`);
+    
+// global variables
 let startGame = false;
 
 // to switch between different levels
@@ -757,6 +761,10 @@ let previousTime = 0;
 
 // scene.add(new T.SpotLight("green", 3, 50, Math.PI / 4, 0.1, 2));
 
+// Performance optimization: limit UI updates to 10fps instead of every frame
+let lastUIUpdateTime = 0;
+const UI_UPDATE_INTERVAL = 100; // Update UI every 100ms (10fps)
+
 function animate(timestamp) {
 
     // putting this here for now, just in case
@@ -764,14 +772,17 @@ function animate(timestamp) {
         previousTime = timestamp;
     let delta = (timestamp - previousTime) / 1000;
 
-    player1.update(objectsInScene, criticalPointSystem.criticalPoints);
-    
-    // Update all agents and their line of sight
-    agentManager.update();
-    
-    // Update critical points animation
-    if (criticalPointSystem) {
-        criticalPointSystem.updateCriticalPoints();
+    // Only update game objects if the game has actually started
+    if (startGame) {
+        player1.update(objectsInScene, criticalPointSystem.criticalPoints);
+        
+        // Update all agents and their line of sight
+        agentManager.update();
+        
+        // Update critical points animation (less frequently for better performance)
+        if (criticalPointSystem && timestamp - lastUIUpdateTime > UI_UPDATE_INTERVAL / 2) {
+            criticalPointSystem.updateCriticalPoints();
+        }
     }
 
     // when timer has only ten seconds left, light starts pulsing
@@ -779,8 +790,11 @@ function animate(timestamp) {
 
     renderer.render(scene, player1.camera);
     
-    // Update UI every frame for real-time feedback
-    updateScoreDisplay();
+    // Update UI less frequently to improve performance
+    if (timestamp - lastUIUpdateTime > UI_UPDATE_INTERVAL) {
+        updateScoreDisplay();
+        lastUIUpdateTime = timestamp;
+    }
     
     previousTime = timestamp;
     window.requestAnimationFrame(animate);
@@ -984,3 +998,5 @@ function getColorName(hexColor) {
     
     return colorMap[cleanHex] || `Color ${cleanHex}`;
 }
+
+}; // End of startIndexJakeGame function
