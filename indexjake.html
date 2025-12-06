@@ -1,116 +1,221 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Game</title>
-    <link rel="stylesheet" href="./style.css" />
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
-            background-color: #1a1a1a;
-            font-family: Arial, sans-serif;
-        }
-        
-        #gameContainer {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 1280px;
-            height: 720px;
-        }
-        
-        #gameCanvas {
-            display: block;
-            border: 2px solid #333;
-            background-color: transparent; /* 透明背景，让3D模型显示 */
-            position: absolute;
-            top: 0;
-            left: 0;
-            z-index: 2; /* UI canvas 在上层 */
-        }
-        
-        #menuOverlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 1280px;
-            height: 720px;
-            background-color: rgba(255, 255, 255, 0.2);
-            display: none; /* 初始隐藏，等待动画完成后显示 */
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-            opacity: 0; /* 初始透明度为0，用于淡入动画 */
-            transition: opacity 0.3s ease-in;
-        }
-        
-        /* 确保menuOverlay在显示时使用flex布局居中 */
-        #menuOverlay[style*="display: flex"],
-        #menuOverlay[style*="display:flex"] {
-            display: flex !important;
-        }
-        
-        #startText {
-            color: black;
-            font-size: 3rem;
-            font-family: Impact;
-            text-align: center;
-        }
-    </style>
-</head>
-<body>
-    <div id="gameContainer">
-        <div id="div1"></div>
-        <canvas id="gameCanvas" width="1280" height="720"></canvas>
-        <div id="menuOverlay">
-            <div id="startText">Click to Start</div>
-        </div>
-        <!-- Game Status UI - 放在gameContainer内，与gameCanvas叠加 -->
-        <div id="losUI" style="position: absolute; top: 10px; right: 420px; color: white; font-family: monospace; font-size: 14px; font-weight: bold; text-align: right; text-shadow: 2px 2px 4px rgba(0,0,0,0.8); display: none; pointer-events: none; z-index: 1;">
-            <div id="agentScores">Loading scores...</div>
-        </div>
-    </div>
-    
-    <!-- 使用 esm.sh，它有更好的 CORS 支持 -->
-    <script type="importmap">
-        {
-            "imports": {
-                "three": "https://esm.sh/three@0.161.0",
-                "three/addons/": "https://esm.sh/three@0.161.0/examples/jsm/"
-            }
-        }
-    </script>
-    <script type="module">
-        import * as THREE from 'three';
-        import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
-        import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
-        import { CriticalPointSystem, CP_COLORS } from './critical-point-system.js';
-        
-        // 将 Three.js 和相关加载器暴露到全局
-        window.THREE = THREE;
-        window.OBJLoader = OBJLoader;
-        window.MTLLoader = MTLLoader;
-        window.CriticalPointSystem = CriticalPointSystem;
-        window.CP_COLORS = CP_COLORS;
-        
-        console.log('Three.js, loaders, and Critical Point System loaded successfully');
-    </script>
-    <script src="StateManager.js"></script>
-    <!-- Player.js 将在进入关卡后动态加载，不在选关时加载 -->
-    <!-- LevelContent3D.js 必须在 LevelSelection3D.js 之前加载 -->
-    <script src="LevelContent3D.js" defer></script>
-    <script src="LevelSelection3D.js" defer></script>
-    <script src="UI.js"></script>
-</body>
-</html>
+<html>
+	<head>
+		<link rel="stylesheet" href="./style.css" />
+		<style>
+			* {
+				margin: 0;
+				padding: 0;
+				box-sizing: border-box;
+			}
+			
+			body {
+				display: flex;
+				justify-content: center;
+				align-items: center;
+				min-height: 100vh;
+				background-color: #1a1a1a;
+				font-family: Arial, sans-serif;
+			}
+			
+			#gameContainer {
+				position: relative;
+			}
+			
+			#gameCanvas {
+				display: block;
+				border: 2px solid #333;
+				background-color: transparent;
+				position: relative;
+				z-index: 2; /* UI canvas on top */
+			}
+			
+			#div1 {
+				display: none; /* Initially hidden until game starts */
+			}
+			
+			#menuOverlay {
+				display: none; /* Will be controlled by the UI system */
+			}
+			
+			#losUI {
+				position: absolute; 
+				top: 10px; 
+				right: 420px; 
+				color: white; 
+				font-family: monospace; 
+				font-size: 14px; 
+				font-weight: bold; 
+				text-align: right; 
+				text-shadow: 2px 2px 4px rgba(0,0,0,0.8); 
+				display: none; 
+				pointer-events: none;
+			}
+		</style>
+	</head>
+
+	<body>
+		<div id="gameContainer">
+			<canvas id="gameCanvas" width="1280" height="720"></canvas>
+		</div>
+		
+		<div id="div1"></div>
+		<div id="menuOverlay">
+			<div id="startText">Click to Start</div>
+		</div>
+		
+		<!-- Game Status UI -->
+		<div id="losUI">
+			<div id="agentScores">Loading scores...</div>
+		</div>
+		
+	<script type="importmap">
+		{
+			"imports": {
+				"three": "https://unpkg.com/three@0.161.0/build/three.module.js",
+				"three/addons/": "https://unpkg.com/three@0.161.0/examples/jsm/"
+			}
+		}
+	</script>
+
+	<script type="module">
+		import * as THREE from 'three';
+		import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+		import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
+		import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+		import { Octree } from 'three/addons/math/Octree.js';
+		import { OctreeHelper } from 'three/addons/helpers/OctreeHelper.js';
+		import { Capsule } from 'three/addons/math/Capsule.js';
+		import { CriticalPointSystem, CP_COLORS } from './critical-point-system.js';
+		
+		// Import Agent and AgentManager
+		const AgentModule = await import('./Agent.js');
+		const AgentManagerModule = await import('./AgentManager.js');
+		
+		// Expose Three.js and related systems to global scope
+		window.THREE = THREE;
+		window.T = THREE;  // Also expose as T for Player.js compatibility
+		window.OBJLoader = OBJLoader;
+		window.MTLLoader = MTLLoader;
+		window.OrbitControls = OrbitControls;
+		window.Octree = Octree;
+		window.OctreeHelper = OctreeHelper;
+		window.Capsule = Capsule;
+		window.CriticalPointSystem = CriticalPointSystem;
+		window.CP_COLORS = CP_COLORS;
+		window.Agent = AgentModule.default;
+		window.AgentManager = AgentManagerModule.default;
+		
+		// Expose global constants needed by Player.js
+		window.PLAYER_HEIGHT = 0.5;
+		window.PLAYER_RADIUS = 0.5 * Math.sqrt(2) / 2;
+		window.PLAYER_SPEED = 0.02;
+		window.PLAYER_JUMP_HEIGHT = 1.2;
+		window.PLAYER_JUMP_SPEED = 0.03;
+		window.WORLD_BOUNDARY = 20;
+		window.GRAVITY = (window.PLAYER_JUMP_SPEED * window.PLAYER_JUMP_SPEED) / (2 * window.PLAYER_JUMP_HEIGHT);
+		
+		console.log('Three.js, loaders, and all required dependencies loaded successfully');
+		
+		// Initialize the UI system after everything loads
+		window.addEventListener('load', () => {
+			const canvas = document.getElementById('gameCanvas');
+			if (canvas) {
+				window.uiInstance = new UI(canvas);
+				console.log('UI system initialized');
+				
+				// Set up the transition function for when level is selected
+				window.transitionToGame = window.transitionToIndexJakeGame;
+				
+				// Override the LevelSelection3D enterLevel method when it's created
+				setTimeout(() => {
+					setupLevelTransition();
+				}, 1000); // Give time for LevelSelection3D to be created
+			}
+		});
+		
+		function setupLevelTransition() {
+			// Check if LevelSelection3D has been created and override enterLevel
+			if (window.uiInstance && window.uiInstance.levelSelection3D) {
+				const originalEnterLevel = window.uiInstance.levelSelection3D.enterLevel.bind(window.uiInstance.levelSelection3D);
+				window.uiInstance.levelSelection3D.enterLevel = function(level) {
+					console.log(`Level ${level} selected, continuing UI flow for 5 seconds before transitioning to indexjake game`);
+					
+					// Call the original enterLevel to continue normal UI flow
+					originalEnterLevel(level).then(() => {
+						console.log(`Original enterLevel completed for level ${level}`);
+					}).catch(error => {
+						console.error(`Error in original enterLevel:`, error);
+					});
+					
+					// Start the 5-second timer to transition to indexjake
+					window.transitionToIndexJakeGame(level);
+				};
+				console.log('Level transition override set up successfully');
+			} else {
+				// Try again in a bit if not ready
+				setTimeout(setupLevelTransition, 500);
+			}
+		}
+		
+		// Function to transition to indexjake game with selected level after 5 seconds
+		window.transitionToIndexJakeGame = function(selectedLevel) {
+			console.log(`Level ${selectedLevel} selected, UI will continue for 5 seconds before switching to main game`);
+			
+			// Wait 5 seconds while the UI continues to work normally
+			setTimeout(() => {
+				console.log(`5 seconds elapsed, switching to indexjake game for level ${selectedLevel}`);
+				
+				// Stop the UI system's animation loop to prevent conflicts
+				if (window.uiInstance && window.uiInstance.stopRenderLoop) {
+					window.uiInstance.stopRenderLoop();
+				}
+				
+				// Clean up any existing animation loops or timers
+				if (window.uiAnimationId) {
+					cancelAnimationFrame(window.uiAnimationId);
+				}
+				
+				// Hide the UI canvas and container
+				const gameCanvas = document.getElementById('gameCanvas');
+				const gameContainer = document.getElementById('gameContainer');
+				if (gameCanvas) gameCanvas.style.display = 'none';
+				if (gameContainer) gameContainer.style.display = 'none';
+				
+				// Show the Three.js game container
+				const div1 = document.getElementById('div1');
+				if (div1) {
+					div1.style.display = 'block';
+					div1.style.position = 'fixed';
+					div1.style.top = '0';
+					div1.style.left = '0';
+					div1.style.width = '100vw';
+					div1.style.height = '100vh';
+				}
+				
+				// Show the game UI
+				const losUI = document.getElementById('losUI');
+				if (losUI) losUI.style.display = 'block';
+				
+				// Start the indexjake game (defined in Player.js)
+				console.log(`Starting indexjake game with level ${selectedLevel}`);
+				if (window.startIndexJakeGame) {
+					try {
+						window.startIndexJakeGame(selectedLevel);
+					} catch (error) {
+						console.error(`Error starting indexjake game:`, error);
+					}
+				} else {
+					console.error('startIndexJakeGame function not found in Player.js');
+				}
+			}, 5000); // 5 seconds delay
+		}
+	</script>
+
+	<script src="StateManager.js"></script>
+	<script src="Player.js" type="module"></script>
+	<!-- LevelContent3D.js must be loaded before LevelSelection3D.js -->
+	<script src="LevelContent3D.js" defer></script>
+	<script src="LevelSelection3D.js" defer></script>
+	<script src="UI.js"></script>
+	</body>
