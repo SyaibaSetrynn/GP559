@@ -779,6 +779,14 @@ class UI {
         render();
     }
     
+    stopRenderLoop() {
+        if (this.animationFrame) {
+            cancelAnimationFrame(this.animationFrame);
+            this.animationFrame = null;
+            console.log('UI render loop stopped');
+        }
+    }
+    
     render() {
         // 获取当前phase
         const currentPhase = (typeof StateManager !== 'undefined') ? StateManager.getPhase() : 0;

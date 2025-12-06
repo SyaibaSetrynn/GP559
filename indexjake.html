@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- Version: 2024-01-FINAL-V3 - Prevent multiple game instances -->
 <html>
 	<head>
 		<link rel="stylesheet" href="./style.css" />
@@ -39,9 +40,9 @@
 			}
 			
 			#losUI {
-				position: absolute; 
+				position: fixed; 
 				top: 10px; 
-				right: 420px; 
+				right: 10px; 
 				color: white; 
 				font-family: monospace; 
 				font-size: 14px; 
@@ -50,6 +51,10 @@
 				text-shadow: 2px 2px 4px rgba(0,0,0,0.8); 
 				display: none; 
 				pointer-events: none;
+				z-index: 10000;
+				background: rgba(0, 0, 0, 0.5);
+				padding: 10px;
+				border-radius: 5px;
 			}
 		</style>
 	</head>
@@ -69,6 +74,12 @@
 			<div id="agentScores">Loading scores...</div>
 		</div>
 		
+	<!-- Load UI.js first so the class is available -->
+	<script src="StateManager.js"></script>
+	<script src="LevelContent3D.js"></script>
+	<script src="LevelSelection3D.js"></script>
+	<script src="UI.js"></script>
+	
 	<script type="importmap">
 		{
 			"imports": {
@@ -137,9 +148,10 @@
 		function setupLevelTransition() {
 			// Check if LevelSelection3D has been created and override enterLevel
 			if (window.uiInstance && window.uiInstance.levelSelection3D) {
+				console.log('Setting up level selection override...');
 				const originalEnterLevel = window.uiInstance.levelSelection3D.enterLevel.bind(window.uiInstance.levelSelection3D);
 				window.uiInstance.levelSelection3D.enterLevel = function(level) {
-					console.log(`Level ${level} selected, continuing UI flow for 5 seconds before transitioning to indexjake game`);
+					console.log(`✓ Level ${level} selected! Starting transition...`);
 					
 					// Call the original enterLevel to continue normal UI flow
 					originalEnterLevel(level).then(() => {
@@ -151,71 +163,109 @@
 					// Start the 5-second timer to transition to indexjake
 					window.transitionToIndexJakeGame(level);
 				};
-				console.log('Level transition override set up successfully');
+				console.log('✓ Level transition override set up successfully');
+				console.log('✓ Click on a level or use the SKIP TO GAME button');
 			} else {
 				// Try again in a bit if not ready
 				setTimeout(setupLevelTransition, 500);
 			}
 		}
 		
+		// Function to immediately start the game
+		function startGameNow(level) {
+			// Prevent duplicate starts
+			if (window.gameStarting || (window.gameInstance && window.gameInstance.running)) {
+				console.warn('⚠️ Game is already starting or running! Ignoring duplicate request.');
+				return;
+			}
+			
+			window.gameStarting = true;
+			
+			console.log(`========================================`);
+			console.log(`STARTING GAME IMMEDIATELY for level ${level}`);
+			console.log(`========================================`);
+			
+			// Hide the skip button
+			const skipBtn = document.getElementById('skipToGame');
+			if (skipBtn) {
+				skipBtn.style.display = 'none';
+			}
+			
+			// Stop the UI system
+			if (window.uiInstance && window.uiInstance.stopRenderLoop) {
+				window.uiInstance.stopRenderLoop();
+				console.log('UI stopped');
+			}
+			
+			// Hide UI elements
+			const gameCanvas = document.getElementById('gameCanvas');
+			const gameContainer = document.getElementById('gameContainer');
+			const menuOverlay = document.getElementById('menuOverlay');
+			
+			if (gameCanvas) gameCanvas.style.display = 'none';
+			if (gameContainer) gameContainer.style.display = 'none';
+			if (menuOverlay) menuOverlay.style.display = 'none';
+			
+			// Show game container
+			const div1 = document.getElementById('div1');
+			if (div1) {
+				div1.style.display = 'block';
+				div1.style.position = 'fixed';
+				div1.style.top = '0';
+				div1.style.left = '0';
+				div1.style.width = '100vw';
+				div1.style.height = '100vh';
+				div1.style.zIndex = '9999';
+				console.log('Game container shown');
+			}
+			
+			// Show game UI (make it visible and ensure z-index)
+			const losUI = document.getElementById('losUI');
+			if (losUI) {
+				losUI.style.display = 'block';
+				losUI.style.position = 'fixed';
+				losUI.style.zIndex = '10000';
+				losUI.style.top = '10px';
+				losUI.style.right = '10px';
+				console.log('Game UI shown');
+			}
+			
+			// Start the game
+			if (window.startIndexJakeGame) {
+				console.log('Calling startIndexJakeGame...');
+				try {
+					window.startIndexJakeGame(level);
+					console.log('✓ Game started successfully!');
+					window.gameStarting = false; // Reset flag after successful start
+				} catch (error) {
+					console.error('ERROR starting game:', error);
+					window.gameStarting = false; // Reset flag on error
+					window.gameInstance = null; // Clear instance on error
+				}
+			} else {
+				console.error('startIndexJakeGame function not found!');
+				window.gameStarting = false; // Reset flag
+			}
+		}
+		
 		// Function to transition to indexjake game with selected level after 5 seconds
 		window.transitionToIndexJakeGame = function(selectedLevel) {
-			console.log(`Level ${selectedLevel} selected, UI will continue for 5 seconds before switching to main game`);
+			console.log(`========================================`);
+			console.log(`Level ${selectedLevel} selected`);
+			console.log(`UI will continue for 5 seconds...`);
+			console.log(`========================================`);
 			
 			// Wait 5 seconds while the UI continues to work normally
 			setTimeout(() => {
-				console.log(`5 seconds elapsed, switching to indexjake game for level ${selectedLevel}`);
-				
-				// Stop the UI system's animation loop to prevent conflicts
-				if (window.uiInstance && window.uiInstance.stopRenderLoop) {
-					window.uiInstance.stopRenderLoop();
-				}
-				
-				// Clean up any existing animation loops or timers
-				if (window.uiAnimationId) {
-					cancelAnimationFrame(window.uiAnimationId);
-				}
-				
-				// Hide the UI canvas and container
-				const gameCanvas = document.getElementById('gameCanvas');
-				const gameContainer = document.getElementById('gameContainer');
-				if (gameCanvas) gameCanvas.style.display = 'none';
-				if (gameContainer) gameContainer.style.display = 'none';
-				
-				// Show the Three.js game container
-				const div1 = document.getElementById('div1');
-				if (div1) {
-					div1.style.display = 'block';
-					div1.style.position = 'fixed';
-					div1.style.top = '0';
-					div1.style.left = '0';
-					div1.style.width = '100vw';
-					div1.style.height = '100vh';
-				}
-				
-				// Show the game UI
-				const losUI = document.getElementById('losUI');
-				if (losUI) losUI.style.display = 'block';
-				
-				// Start the indexjake game (defined in Player.js)
-				console.log(`Starting indexjake game with level ${selectedLevel}`);
-				if (window.startIndexJakeGame) {
-					try {
-						window.startIndexJakeGame(selectedLevel);
-					} catch (error) {
-						console.error(`Error starting indexjake game:`, error);
-					}
-				} else {
-					console.error('startIndexJakeGame function not found in Player.js');
-				}
+				console.log(`5 seconds elapsed - starting game now`);
+				startGameNow(selectedLevel);
 			}, 5000); // 5 seconds delay
 		}
+		
+		// Make startGameNow globally accessible for debugging
+		window.startGameNow = startGameNow;
 	</script>
 
-	<script src="StateManager.js"></script>
+	<!-- Player.js is a module that loads after other scripts -->
 	<script src="Player.js" type="module"></script>
-	<!-- LevelContent3D.js must be loaded before LevelSelection3D.js -->
-	<script src="LevelContent3D.js" defer></script>
-	<script src="LevelSelection3D.js" defer></script>
-	<script src="UI.js"></script>
 	</body>
