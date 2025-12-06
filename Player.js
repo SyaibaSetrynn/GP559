@@ -984,3 +984,40 @@ function getColorName(hexColor) {
     
     return colorMap[cleanHex] || `Color ${cleanHex}`;
 }
+
+// Function to initialize the indexjake game in a given div (for side-by-side canvases)
+window.startIndexJakeGame = async function(selectedLevel = 1, targetDiv = "div1") {
+    // --- Ensure only one animation loop is running and UI is reset for this div ---
+    if (!window.currentAnimationFrameIds) window.currentAnimationFrameIds = {};
+    if (window.currentAnimationFrameIds[targetDiv]) {
+        cancelAnimationFrame(window.currentAnimationFrameIds[targetDiv]);
+        window.currentAnimationFrameIds[targetDiv] = null;
+    }
+    // Hide UI overlays from previous screen (optional, per div)
+    let menuOverlay = document.getElementById("menuOverlay");
+    if (menuOverlay) menuOverlay.style.display = "none";
+
+    // set up renderer
+    let renderer = new T.WebGLRenderer({preserveDrawingBuffer:true});
+    renderer.setSize(1280, 720);
+    document.getElementById(targetDiv).appendChild(renderer.domElement);
+    renderer.domElement.id = "canvas-" + targetDiv;
+
+    // set up scene
+    let scene = new T.Scene();
+    // ...existing code...
+    // Animation loop for this canvas
+    let previousTime = 0;
+    function animate(timestamp) {
+        if(previousTime == 0) previousTime = timestamp;
+        let delta = (timestamp - previousTime) / 1000;
+        player1.update(objectsInScene, criticalPointSystem.criticalPoints);
+        agentManager.update();
+        if (criticalPointSystem) criticalPointSystem.updateCriticalPoints();
+        renderer.render(scene, player1.camera);
+        updateScoreDisplay();
+        previousTime = timestamp;
+        window.currentAnimationFrameIds[targetDiv] = window.requestAnimationFrame(animate);
+    }
+    window.currentAnimationFrameIds[targetDiv] = window.requestAnimationFrame(animate);
+}
