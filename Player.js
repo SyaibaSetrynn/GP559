@@ -58,6 +58,11 @@ class Player {
     
         this.score = 0;
 
+        // 3-point claiming system
+        this.maxClaimedPoints = 3;
+        this.claimedPointsList = []; // Array to track order of claimed points (FIFO)
+        this.claimedCriticalPoints = new Set(); // Set for fast lookup
+
     }
 
     /**
@@ -159,10 +164,44 @@ class Player {
             let distY = Math.abs(endPoint.y - point.cp.position.y);
             let distZ = Math.abs(endPoint.z - point.cp.position.z);
             if(distX < 0.05 && distY < 0.05 && distZ < 0.05) {
+                // Check if we should claim this critical point (3-point limit with FIFO)
+                const cpId = point.cp.userData?.cpId || point.cp.toString();
+                
+                // Don't claim if already claimed by this player
+                if (this.claimedCriticalPoints.has(cpId)) {
+                    return; // Skip to next iteration
+                }
+                
+                // If at max capacity, remove the oldest claimed point (FIFO)
+                if (this.claimedPointsList.length >= this.maxClaimedPoints) {
+                    const oldestCpId = this.claimedPointsList.shift();
+                    this.claimedCriticalPoints.delete(oldestCpId);
+                    
+                    // Find and revert the color of the oldest point to white
+                    for (let oldPoint of criticalPoints) {
+                        const oldCpId = oldPoint.cp.userData?.cpId || oldPoint.cp.toString();
+                        if (oldCpId === oldestCpId) {
+                            oldPoint.cp.material.color.setHex(window.CP_COLORS.WHITE);
+                            if (oldPoint.cp.children && oldPoint.cp.children.length > 0) {
+                                oldPoint.cp.children.forEach(child => {
+                                    if (child.material) {
+                                        child.material.color.setHex(window.CP_COLORS.WHITE);
+                                    }
+                                });
+                            }
+                            break;
+                        }
+                    }
+                }
+                
+                // Claim the new point
+                this.claimedCriticalPoints.add(cpId);
+                this.claimedPointsList.push(cpId);
+                
+                console.log(`Player claimed CP, now has ${this.claimedPointsList.length}/${this.maxClaimedPoints} points`);
+                
                 // Use the new critical point registry system if available
                 if (criticalPointSystem && point.cp && point.cp.userData.cpId !== undefined) {
-                    const cpId = point.cp.userData.cpId;
-                    
                     // Claim the CP in the registry (line drawn to it)
                     criticalPointSystem.claimCriticalPoint(cpId, this.color, 'Player');
                     
@@ -229,18 +268,27 @@ class Player {
         else
             this.laser.visible = false;
 
-        // update score using new registry system
+        // update score using color-based scoring (most reliable)
         this.score = 0;
-        if (criticalPointSystem && criticalPointSystem.cpsByOwner) {
-            const playerOwnedCPs = criticalPointSystem.cpsByOwner.get(this.color);
-            this.score = playerOwnedCPs ? playerOwnedCPs.length : 0;
-        } else {
-            // Fallback to old color-based scoring
-            for (let point of criticalPoints) {
-                if(point.cp.material.color.getHex() === this.color) {
-                    this.score ++;
+        let debugCount = 0;
+        let colorMatches = [];
+        
+        for (let point of criticalPoints) {
+            if (point.cp && point.cp.material && point.cp.material.color) {
+                const cpColorHex = point.cp.material.color.getHex();
+                debugCount++;
+                if (cpColorHex === this.color) {
+                    this.score++;
                 }
+                // Collect colors for debugging
+                colorMatches.push(cpColorHex.toString(16).padStart(6, '0'));
             }
+        }
+        
+        // Debug logging every 60 frames (~1 second)
+        if (debugCount > 0 && Date.now() % 1000 < 50) {
+            console.log(`Player scoring: checked ${debugCount} CPs, player color: ${this.color.toString(16).padStart(6, '0')}, score: ${this.score}`);
+            console.log(`CP colors found: ${colorMatches.slice(0, 5).join(', ')}...`);
         }
 
         // // update jump

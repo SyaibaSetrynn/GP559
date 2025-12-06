@@ -72,79 +72,16 @@ class AgentManager {
     }
 
     /**
-     * Update all agents' line of sight
+     * Update all agents' line of sight using their individual 3-point claiming system
      */
     updateAllLineOfSight() {
-        // Clear all existing lines first
+        // Use each agent's individual updateLineOfSight method which enforces 3-point limit
         this.agents.forEach(agent => {
-            agent.clearLOSLines(this.scene);
-            
-            // Release claims in the new registry system
-            if (this.criticalPointSystem) {
-                agent.claimedCriticalPoints.forEach(pointIndex => {
-                    const cp = this.criticalPoints[pointIndex];
-                    if (cp && cp.mesh && cp.mesh.userData.cpId !== undefined) {
-                        this.criticalPointSystem.releaseCriticalPoint(cp.mesh.userData.cpId, `Agent${agent.agentId}`);
-                    }
-                });
-            }
-            
-            agent.claimedCriticalPoints.clear(); // Clear claimed points for fresh calculation
+            agent.updateLineOfSight(this.criticalPoints, this.obstacles, this.scene, this.globalClaimedPoints);
         });
-        
-        // Clear globally claimed points
-        this.globalClaimedPoints.clear();
-        
-        // For each critical point, find which agents can see it and resolve conflicts
-        this.criticalPoints.forEach((cp, pointIndex) => {
-            const agentsWithLOS = [];
-            
-            // Find all agents that have line of sight to this critical point
-            this.agents.forEach(agent => {
-                if (agent.hasLineOfSight(cp.position, this.obstacles)) {
-                    agentsWithLOS.push(agent);
-                }
-            });
-            
-            // If multiple agents can see it, only the first one gets to claim it
-            // This prevents conflicts as specified in the requirements
-            if (agentsWithLOS.length > 0) {
-                const claimingAgent = agentsWithLOS[0]; // First agent wins
-                
-                // Only the claiming agent gets to draw a line and claim the point
-                claimingAgent.claimedCriticalPoints.add(pointIndex);
-                this.globalClaimedPoints.add(pointIndex);
-                
-                // Create visual line for the claiming agent
-                claimingAgent.createLOSLine(cp.position, this.scene);
-                
-                // Update the new CP registry system
-                if (this.criticalPointSystem && cp.mesh && cp.mesh.userData.cpId !== undefined) {
-                    const cpId = cp.mesh.userData.cpId;
-                    
-                    // Claim the CP in the registry (line drawn to it)
-                    const claimSuccess = this.criticalPointSystem.claimCriticalPoint(cpId, claimingAgent.agentColor, `Agent${claimingAgent.agentId}`);
-                    
-                    // Capture the CP (change ownership/color)
-                    const captureSuccess = this.criticalPointSystem.captureCriticalPoint(cpId, claimingAgent.agentColor, `Agent${claimingAgent.agentId}`);
-                } else {
-                    // Fallback to old color system if registry not available
-                    if (cp.mesh && cp.mesh.material) {
-                        cp.mesh.material.color.setHex(claimingAgent.agentColor);
-                        
-                        // Also color the glow if it exists
-                        if (cp.mesh.children && cp.mesh.children.length > 0) {
-                            cp.mesh.children.forEach(child => {
-                                if (child.material) {
-                                    child.material.color.setHex(claimingAgent.agentColor);
-                                }
-                            });
-                        }
-                    }
-                }
-            }
-        });
-    }    /**
+    }
+
+    /**
      * Update all agents (movement and line of sight)
      */
     update() {
@@ -235,6 +172,25 @@ class AgentManager {
             agentId: agent.agentId,
             mode: agent.getMode()
         }));
+    }
+
+    /**
+     * Update movement speed for all agents
+     * @param {number} speed - New movement speed
+     */
+    setGlobalMovementSpeed(speed) {
+        this.agents.forEach(agent => {
+            agent.movementSpeed = speed;
+        });
+        console.log(`Updated all ${this.agents.length} agents to movement speed: ${speed}`);
+    }
+
+    /**
+     * Get current movement speed from first agent (assuming all agents have same speed)
+     * @returns {number} Current movement speed
+     */
+    getGlobalMovementSpeed() {
+        return this.agents.length > 0 ? this.agents[0].movementSpeed : 0.025;
     }
 }
 

@@ -54,6 +54,10 @@ class Agent {
         this.losLines = []; // Store line objects for visual rendering
         this.claimedCriticalPoints = new Set(); // Critical points this agent has claimed
         this.raycaster = new T.Raycaster(); // For line of sight calculations
+        
+        // 3-point claiming system
+        this.maxClaimedPoints = 3;
+        this.claimedPointsList = []; // Array to track order of claimed points (FIFO)
     }
 
     /**
@@ -575,7 +579,7 @@ class Agent {
     }
 
     /**
-     * Update line of sight and claim critical points
+     * Update line of sight and claim critical points with proper 3-point limit
      * @param {Array} criticalPoints - Array of critical point objects with position and mesh properties
      * @param {Array} obstacles - Array of obstacle objects for collision detection
      * @param {T.Scene} scene - Three.js scene for line rendering
@@ -585,52 +589,129 @@ class Agent {
         // Clear existing lines
         this.clearLOSLines(scene);
         
-        // Check each critical point
+        // Step 1: Find all currently visible critical points
+        const visibleCPs = [];
         criticalPoints.forEach((cp, index) => {
-            // Skip if already claimed by another agent
+            // Skip if claimed by another agent (not this agent)
             if (globalClaimedPoints.has(index) && !this.claimedCriticalPoints.has(index)) {
                 return;
             }
             
-            // Check line of sight
             if (this.hasLineOfSight(cp.position, obstacles)) {
-                // Create visual line
-                this.createLOSLine(cp.position, scene);
-                
-
-                
-                // Claim the critical point using centralized system
-                if (!this.claimedCriticalPoints.has(index)) {
-                    this.claimedCriticalPoints.add(index);
-                    globalClaimedPoints.add(index);
-                    
-                    // Also capture in the centralized CP system if available and ready
-                    if (window.globalCPSystem && window.cpsFullyLoaded && cp.mesh && cp.mesh.userData.cpId !== undefined) {
-                        try {
-                            // First claim (draw line), then capture (take ownership) 
-                            window.globalCPSystem.claimCriticalPoint(cp.mesh.userData.cpId, this.agentColor, `Agent${this.agentId}`);
-                            window.globalCPSystem.captureCriticalPoint(cp.mesh.userData.cpId, this.agentColor, `Agent${this.agentId}`);
-                        } catch (error) {
-                            // Silent error handling
-                        }
-                    }
-                }
-                
-                // Color the critical point with agent's color
-                if (cp.mesh && cp.mesh.material) {
-                    cp.mesh.material.color.setHex(this.agentColor);
-                    
-                    // Also color the glow if it exists
-                    if (cp.mesh.children && cp.mesh.children.length > 0) {
-                        cp.mesh.children.forEach(child => {
-                            if (child.material) {
-                                child.material.color.setHex(this.agentColor);
-                            }
-                        });
-                    }
-                }
+                visibleCPs.push({ cp, index });
             }
         });
+        
+        console.log(`Agent ${this.agentId} sees ${visibleCPs.length} CPs, currently owns ${this.claimedPointsList.length}/${this.maxClaimedPoints}`);
+        
+        // Step 2: Release any claimed points that are no longer visible
+        const stillVisibleIndices = visibleCPs.map(v => v.index);
+        const toRelease = [];
+        
+        for (let claimedIndex of this.claimedPointsList) {
+            if (!stillVisibleIndices.includes(claimedIndex)) {
+                toRelease.push(claimedIndex);
+            }
+        }
+        
+        // Release points that lost line of sight
+        toRelease.forEach(index => {
+            this.releaseCriticalPoint(index, criticalPoints, globalClaimedPoints);
+            console.log(`Agent ${this.agentId} lost line of sight, released CP ${index}`);
+        });
+        
+        // Step 3: Process visible CPs - draw lines only to owned ones, claim new ones up to limit
+        let claimedCount = 0;
+        
+        // First, draw lines to points we already own and count them
+        visibleCPs.forEach(({ cp, index }) => {
+            if (this.claimedCriticalPoints.has(index)) {
+                this.createLOSLine(cp.position, scene);
+                claimedCount++;
+            }
+        });
+        
+        // Step 4: Claim new visible points up to our limit (3 total)
+        visibleCPs.forEach(({ cp, index }) => {
+            // Skip if we already own this point
+            if (this.claimedCriticalPoints.has(index)) {
+                return;
+            }
+            
+            // Skip if we've reached our maximum claimed points
+            if (claimedCount >= this.maxClaimedPoints) {
+                return;
+            }
+            
+            // If at max capacity, release the oldest point (FIFO)
+            if (this.claimedPointsList.length >= this.maxClaimedPoints) {
+                const oldestIndex = this.claimedPointsList.shift();
+                this.releaseCriticalPoint(oldestIndex, criticalPoints, globalClaimedPoints);
+                console.log(`Agent ${this.agentId} at capacity, released oldest CP ${oldestIndex} to make room`);
+            }
+            
+            // Claim new point
+            this.claimCriticalPoint(index, cp, globalClaimedPoints);
+            this.createLOSLine(cp.position, scene);
+            claimedCount++;
+            console.log(`Agent ${this.agentId} claimed new CP ${index}, now has ${this.claimedPointsList.length}/${this.maxClaimedPoints}`);
+        });
+    }
+    
+    /**
+     * Claim a critical point
+     */
+    claimCriticalPoint(index, cp, globalClaimedPoints) {
+        // Safety check: don't claim if already at max capacity
+        if (this.claimedPointsList.length >= this.maxClaimedPoints) {
+            console.warn(`Agent ${this.agentId} tried to claim CP ${index} but already at max capacity!`);
+            return;
+        }
+        
+        this.claimedCriticalPoints.add(index);
+        this.claimedPointsList.push(index);
+        globalClaimedPoints.add(index);
+        
+        // Color the critical point first (most reliable method)
+        if (cp.mesh && cp.mesh.material) {
+            cp.mesh.material.color.setHex(this.agentColor);
+            if (cp.mesh.children && cp.mesh.children.length > 0) {
+                cp.mesh.children.forEach(child => {
+                    if (child.material) {
+                        child.material.color.setHex(this.agentColor);
+                    }
+                });
+            }
+            console.log(`Agent ${this.agentId} set CP color to ${this.agentColor.toString(16).padStart(6, '0')}`);
+        }
+        
+        // Update centralized system if available
+        if (window.globalCPSystem && cp.mesh && cp.mesh.userData.cpId !== undefined) {
+            try {
+                window.globalCPSystem.claimCriticalPoint(cp.mesh.userData.cpId, this.agentColor, `Agent${this.agentId}`);
+                window.globalCPSystem.captureCriticalPoint(cp.mesh.userData.cpId, this.agentColor, `Agent${this.agentId}`);
+            } catch (error) {
+                // Silent error handling
+            }
+        }
+    }
+    
+    /**
+     * Release a claimed critical point - removes line of sight but preserves ownership/color
+     */
+    releaseCriticalPoint(index, criticalPoints, globalClaimedPoints) {
+        this.claimedCriticalPoints.delete(index);
+        globalClaimedPoints.delete(index);
+        
+        // Remove from list (maintain order)
+        const listIndex = this.claimedPointsList.indexOf(index);
+        if (listIndex > -1) {
+            this.claimedPointsList.splice(listIndex, 1);
+        }
+        
+        // DO NOT revert color - the point should stay the agent's color until claimed by another agent
+        // This maintains ownership even when line of sight is lost
+        console.log(`Agent ${this.agentId} lost line of sight to CP ${index} but color/ownership preserved`);
     }
 
 
@@ -692,18 +773,51 @@ class Agent {
             return this.testScore;
         }
         
+        // Validation: ensure we never exceed max claimed points
+        if (this.claimedPointsList.length > this.maxClaimedPoints) {
+            console.error(`Agent ${this.agentId} has ${this.claimedPointsList.length} claimed points, exceeds max ${this.maxClaimedPoints}!`);
+            // Emergency cleanup: remove excess points
+            while (this.claimedPointsList.length > this.maxClaimedPoints) {
+                const excessIndex = this.claimedPointsList.shift();
+                this.claimedCriticalPoints.delete(excessIndex);
+                console.log(`Emergency cleanup: removed excess CP ${excessIndex} from Agent ${this.agentId}`);
+            }
+        }
+        
         // Use centralized CP system if available and fully initialized
         if (window.globalCPSystem && typeof window.globalCPSystem.getCriticalPointsByOwner === 'function') {
             try {
                 const ownedCPs = window.globalCPSystem.getCriticalPointsByOwner(this.agentColor);
                 return ownedCPs ? ownedCPs.length : 0;
             } catch (error) {
-                // Silent fallback to local system
+                // Silent fallback to color-based counting
             }
         }
         
-        // Fallback to local system
-        return this.claimedCriticalPoints.size;
+        // Fallback to color-based scoring - count CPs that match our color
+        if (window.gameManager && window.gameManager.criticalPoints) {
+            let score = 0;
+            let debugCount = 0;
+            for (let cp of window.gameManager.criticalPoints) {
+                if (cp.mesh && cp.mesh.material && cp.mesh.material.color) {
+                    debugCount++;
+                    const cpColorHex = cp.mesh.material.color.getHex();
+                    if (cpColorHex === this.agentColor) {
+                        score++;
+                    }
+                }
+            }
+            
+            // Debug logging occasionally
+            if (this.agentId === 0 && debugCount > 0 && Date.now() % 2000 < 50) { // Agent 0, every 2 seconds
+                console.log(`Agent ${this.agentId} scoring: checked ${debugCount} CPs, agent color: ${this.agentColor.toString(16).padStart(6, '0')}, score: ${score}`);
+            }
+            
+            return score;
+        }
+        
+        // Last resort fallback
+        return 0;
     }
     
     /**
@@ -771,7 +885,7 @@ class Agent {
 // Agent-specific global variables
 const AGENT_HEIGHT = 0.5;
 const AGENT_RADIUS = 0.5 * Math.sqrt(2) / 2;
-const AGENT_SPEED = 0.05;
+const AGENT_SPEED = 0.025;
 const AGENT_JUMP_HEIGHT = 1.2;
 const AGENT_JUMP_SPEED = 0.03;
 const GRAVITY = (AGENT_JUMP_SPEED * AGENT_JUMP_SPEED) / (2 * AGENT_JUMP_HEIGHT);

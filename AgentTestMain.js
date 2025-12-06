@@ -3,6 +3,8 @@ import {OrbitControls} from "https://unpkg.com/three@0.161.0/examples/jsm/contro
 import { Octree } from "https://unpkg.com/three@0.165.0/examples/jsm/math/Octree.js";
 import Agent from "./Agent.js";
 import AgentManager from "./AgentManager.js";
+import * as M from "./MapTextures.js";
+import {MapLighting} from "./MapLighting.js";
 
 /**
  * Agent Test Main - Replicates Player.js but with free roam camera and agents
@@ -11,6 +13,7 @@ import AgentManager from "./AgentManager.js";
 
 // Map generation settings
 let useMapGenerator = true; // Use MapGenerator instead of pre-built terrain
+let mapMode = 1; // Set texture mode to 1
 
 // Set up renderer
 let renderer = new T.WebGLRenderer({preserveDrawingBuffer:true});
@@ -30,8 +33,7 @@ controls.enableDamping = true;
 controls.dampingFactor = 0.05;
 controls.update();
 
-// Add lighting
-scene.add(new T.AmbientLight("white"));
+// Lighting will be set up after map generation with MapLighting
 
 // Collision handling
 const collisionWorld = new Octree();
@@ -53,7 +55,7 @@ let objectsInScene = [];
 
 if (useMapGenerator) {
     // Import MapGenerator functions
-    const { createFloor, createWalls, createBlock } = await import('./mapgenerator.js');
+    const { createFloor, createWalls, createBlock } = await import('./MapGenerator.js');
     
     // Always use the smallest level (10x10)
     const mapWidth = 10;
@@ -147,7 +149,21 @@ if (useMapGenerator) {
         }
     });
     
+    // Set up textures
+    M.setMapTexture(mapMode, mazeBlocks, walls, mapWidth, mapDepth, floor);
+    
 }
+
+// Skybox removed for cleaner background
+
+// Add basic lighting instead of HDR lighting
+const ambientLight = new T.AmbientLight(0x404040, 0.6); // Soft white light
+scene.add(ambientLight);
+
+const directionalLight = new T.DirectionalLight(0xffffff, 0.8);
+directionalLight.position.set(10, 10, 5);
+directionalLight.castShadow = false; // Disable shadows for better performance
+scene.add(directionalLight);
 
 scene.add(levelObj);
 

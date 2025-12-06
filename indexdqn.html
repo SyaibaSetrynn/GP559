@@ -65,6 +65,39 @@
 				max-width: 100% !important;
 				max-height: 100% !important;
 			}
+			
+			/* Movement Speed Slider Styling */
+			#movement-speed-slider {
+				-webkit-appearance: none;
+				appearance: none;
+			}
+			
+			#movement-speed-slider::-webkit-slider-thumb {
+				-webkit-appearance: none;
+				appearance: none;
+				width: 16px;
+				height: 16px;
+				border-radius: 50%;
+				background: #3fb950;
+				cursor: pointer;
+				border: 2px solid #21262d;
+				box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+			}
+			
+			#movement-speed-slider::-webkit-slider-thumb:hover {
+				background: #46d058;
+				transform: scale(1.1);
+			}
+			
+			#movement-speed-slider::-moz-range-thumb {
+				width: 16px;
+				height: 16px;
+				border-radius: 50%;
+				background: #3fb950;
+				cursor: pointer;
+				border: 2px solid #21262d;
+				box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+			}
 		</style>
 	</head>
 
@@ -100,7 +133,20 @@
 			<div style="padding: 15px; border-bottom: 1px solid #30363d;">
 				<h4 style="margin: 0 0 10px 0; color: #c9d1d9; font-size: 14px;">Environment Controls</h4>
 				<button id="reset-scene" style="width: 100%; padding: 8px 12px; background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; cursor: pointer; font-size: 11px; margin-bottom: 8px;">Reset Environment</button>
-				<button id="debug-cp" style="width: 100%; padding: 6px; background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; cursor: pointer; font-size: 10px;">Debug Critical Points</button>
+				<button id="debug-cp" style="width: 100%; padding: 6px; background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; cursor: pointer; font-size: 10px; margin-bottom: 8px;">Debug Critical Points</button>
+				
+				<!-- Movement Speed Slider -->
+				<div style="margin-top: 8px;">
+					<label for="movement-speed-slider" style="display: block; font-size: 12px; color: #8b949e; margin-bottom: 6px;">
+						Agent Movement Speed: <span id="movement-speed-value" style="color: #3fb950; font-weight: bold;">0.025</span>
+					</label>
+					<input type="range" id="movement-speed-slider" min="0.005" max="0.1" step="0.005" value="0.025" 
+						style="width: 100%; height: 4px; border-radius: 5px; background: #30363d; outline: none; appearance: none; cursor: pointer;">
+					<div style="display: flex; justify-content: space-between; font-size: 10px; color: #8b949e; margin-top: 2px;">
+						<span>0.005 (slow)</span>
+						<span>0.1 (fast)</span>
+					</div>
+				</div>
 			</div>
 			
 			<!-- DQN Controls -->
@@ -201,12 +247,16 @@
 				// Get the red agent (first agent, which should be red)
 				const redAgent = window.gameManager?.agents?.[0];
 						if (!redAgent) {
-				// Update UI to show no agent found
-				document.getElementById('red-position').textContent = 'No red agent found';
-				document.getElementById('red-score').textContent = 'N/A';
-				document.getElementById('red-movement').textContent = 'N/A';
-				document.getElementById('red-nearest-cp').textContent = 'N/A';
-				document.getElementById('red-state-vector').textContent = '[Agent not found]';
+				// Update UI to show no agent found with safety checks
+				const safeUpdate = (id, text) => {
+					const element = document.getElementById(id);
+					if (element) element.textContent = text;
+				};
+				safeUpdate('red-position', 'No red agent found');
+				safeUpdate('red-score', 'N/A');
+				safeUpdate('red-movement', 'N/A');
+				safeUpdate('red-nearest-cp', 'N/A');
+				safeUpdate('red-state-vector', '[Agent not found]');
 				return;
 			}
 
@@ -225,17 +275,22 @@
 					redAgent, agentManager, mapLayout, criticalPointSystem
 				);
 
-				// Update UI elements
-				document.getElementById('red-position').textContent = summary.position || '(0.0, 0.0)';
-				document.getElementById('red-score').textContent = summary.score || '0/0 CPs owned';
-				document.getElementById('red-movement').textContent = summary.movement || 'Unknown';
-				document.getElementById('red-nearest-cp').textContent = summary.nearestCP || 'None available';
+				// Update UI elements with safety checks
+				const safeUpdate = (id, text) => {
+					const element = document.getElementById(id);
+					if (element) element.textContent = text;
+				};
+				
+				safeUpdate('red-position', summary.position || '(0.0, 0.0)');
+				safeUpdate('red-score', summary.score || '0/0 CPs owned');
+				safeUpdate('red-movement', summary.movement || 'Unknown');
+				safeUpdate('red-nearest-cp', summary.nearestCP || 'None available');
 				
 				// Format state vector nicely
 				const formattedVector = stateVector.map(val => 
 					typeof val === 'number' ? val.toFixed(2) : val
 				).join(', ');
-				document.getElementById('red-state-vector').textContent = `[${formattedVector}]`;
+				safeUpdate('red-state-vector', `[${formattedVector}]`);
 				
 				// Update DQN panel agent info if available
 				if (window.dqnIntegration && typeof window.dqnIntegration.updateAgentInfo === 'function') {
@@ -243,11 +298,16 @@
 				}
 		} catch (error) {
 			console.warn('Error updating red agent state display:', error);
-			document.getElementById('red-position').textContent = 'Error';
-			document.getElementById('red-score').textContent = 'Error';
-			document.getElementById('red-movement').textContent = 'Error';
-			document.getElementById('red-nearest-cp').textContent = 'Error';
-			document.getElementById('red-state-vector').textContent = '[Error extracting state]';
+			// Safety checks for DOM elements
+			const safeUpdate = (id, text) => {
+				const element = document.getElementById(id);
+				if (element) element.textContent = text;
+			};
+			safeUpdate('red-position', 'Error');
+			safeUpdate('red-score', 'Error');
+			safeUpdate('red-movement', 'Error');
+			safeUpdate('red-nearest-cp', 'Error');
+			safeUpdate('red-state-vector', '[Error extracting state]');
 		}
 		}
 
@@ -443,6 +503,44 @@
 						console.log('No critical points found');
 					}
 				};
+
+				// Movement Speed Slider
+				const movementSpeedSlider = document.getElementById('movement-speed-slider');
+				const movementSpeedValue = document.getElementById('movement-speed-value');
+				
+				if (movementSpeedSlider) {
+					movementSpeedSlider.addEventListener('input', (e) => {
+						const speed = parseFloat(e.target.value);
+						
+						// Update the display value
+						if (movementSpeedValue) {
+							movementSpeedValue.textContent = speed.toFixed(3);
+						}
+						
+						// Update all agents' movement speed
+						if (window.gameManager && window.gameManager.setGlobalMovementSpeed) {
+							window.gameManager.setGlobalMovementSpeed(speed);
+						}
+						
+						console.log(`Movement speed updated to: ${speed}`);
+					});
+					
+					// Initialize with current speed when gameManager is ready
+					const initSpeed = () => {
+						if (window.gameManager && window.gameManager.getGlobalMovementSpeed) {
+							const currentSpeed = window.gameManager.getGlobalMovementSpeed();
+							movementSpeedSlider.value = currentSpeed;
+							if (movementSpeedValue) {
+								movementSpeedValue.textContent = currentSpeed.toFixed(3);
+							}
+							console.log(`Movement speed slider initialized with current speed: ${currentSpeed}`);
+						} else {
+							setTimeout(initSpeed, 200);
+						}
+					};
+					
+					initSpeed();
+				}
 				
 				// Utility function to update buffer status
 				function updateBufferStatus() {
