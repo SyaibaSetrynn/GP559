@@ -589,17 +589,27 @@ class UI {
     }
     
     handlePauseClick() {
-        if (this.pauseButton.isClicked || this.isPaused) return;
+        console.log('UI.js: handlePauseClick called');
+        console.log('UI.js: pauseButton.isClicked?', this.pauseButton.isClicked);
+        console.log('UI.js: isPaused before?', this.isPaused);
+        
+        if (this.pauseButton.isClicked || this.isPaused) {
+            console.log('UI.js: handlePauseClick early return');
+            return;
+        }
         
         this.pauseButton.isClicked = true;
         this.isPaused = true;
+        console.log('UI.js: isPaused set to true');
         
         // 启动黑幕淡入动画
         this.startOverlayAnimation(0.5);
+        console.log('UI.js: startOverlayAnimation called');
         
         // 启动按钮淡入动画
         this.startButtonSlideAnimation('resume', true);
         this.startButtonSlideAnimation('quit', true);
+        console.log('UI.js: startButtonSlideAnimation called for resume and quit');
         
         setTimeout(() => {
             this.pauseButton.isClicked = false;
@@ -872,7 +882,7 @@ class UI {
                     // 如果有最后退出的关卡，自动切换到那个关卡；否则默认level为1
                     if (this.levelSelection3D && this.levelSelection3D.lastExitedLevel) {
                         this.level = this.levelSelection3D.lastExitedLevel;
-                        console.log(`UI: Restoring to last exited level: ${this.level}`);
+                        // console.log(`UI: Restoring to last exited level: ${this.level}`);
                     } else {
                         this.level = 1;
                     }
@@ -936,6 +946,12 @@ class UI {
     }
     
     renderMainMenu() {
+        // 绘制标题 "Cubers" 在顶部居中
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.font = `bold 120px Arial`;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'top';
+        this.ctx.fillText('Cubers', this.width / 2, 50);
         // 更新填充进度
         this.updateFillProgress();
         

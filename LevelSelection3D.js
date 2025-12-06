@@ -109,7 +109,7 @@ class LevelSelection3D {
         // 初始化 OrbitControls
         this.initOrbitControls();
         
-        console.log('Three.js scene initialized');
+        // console.log('Three.js scene initialized');
 
         // Initialize Critical Point System (if available)
         if (typeof window.CriticalPointSystem !== 'undefined') {
@@ -134,13 +134,13 @@ class LevelSelection3D {
     async initLevelContent() {
         // 如果已经初始化，直接返回
         if (this.levelContent) {
-            console.log('LevelContent3D already initialized');
+            // console.log('LevelContent3D already initialized');
             return;
         }
         
         // 如果正在初始化，等待完成
         if (this.levelContentInitializing) {
-            console.log('LevelContent3D is being initialized, waiting...');
+            // console.log('LevelContent3D is being initialized, waiting...');
             let waitCount = 0;
             const maxWait = 100; // 最多等待5秒
             while (this.levelContentInitializing && !this.levelContent && waitCount < maxWait) {
@@ -148,7 +148,7 @@ class LevelSelection3D {
                 waitCount++;
             }
             if (this.levelContent) {
-                console.log('LevelContent3D initialization completed');
+                // console.log('LevelContent3D initialization completed');
                 return;
             }
         }
@@ -160,28 +160,28 @@ class LevelSelection3D {
             let waitCount = 0;
             const maxWait = 100; // 最多等待5秒 (100 * 50ms)
             
-            console.log(`LevelSelection3D: Checking for window.LevelContent3D, current value: ${typeof window.LevelContent3D}`);
+            // console.log(`LevelSelection3D: Checking for window.LevelContent3D, current value: ${typeof window.LevelContent3D}`);
             
             while (typeof window.LevelContent3D === 'undefined' && waitCount < maxWait) {
                 await new Promise(resolve => setTimeout(resolve, 50));
                 waitCount++;
                 if (waitCount % 20 === 0) {
-                    console.log(`Waiting for LevelContent3D... (${waitCount * 50}ms), window.LevelContent3D: ${typeof window.LevelContent3D}`);
+                    // console.log(`Waiting for LevelContent3D... (${waitCount * 50}ms), window.LevelContent3D: ${typeof window.LevelContent3D}`);
                 }
             }
             
             if (typeof window.LevelContent3D === 'undefined') {
-                console.error('LevelContent3D not found after waiting. Please ensure LevelContent3D.js is loaded before LevelSelection3D.js in the HTML file.');
-                console.error('Current window.LevelContent3D:', window.LevelContent3D);
+                // console.error('LevelContent3D not found after waiting. Please ensure LevelContent3D.js is loaded before LevelSelection3D.js in the HTML file.');
+                // console.error('Current window.LevelContent3D:', window.LevelContent3D);
                 this.levelContentInitializing = false;
                 return;
             }
             
-            console.log(`LevelSelection3D: LevelContent3D found! Type: ${typeof window.LevelContent3D}`);
+            // console.log(`LevelSelection3D: LevelContent3D found! Type: ${typeof window.LevelContent3D}`);
             
             // 确保 Three.js 和 controls 已经初始化
             if (!this.scene || !this.camera || !this.renderer) {
-                console.warn('LevelContent3D: Scene, camera, or renderer not ready, retrying...');
+                // console.warn('LevelContent3D: Scene, camera, or renderer not ready, retrying...');
                 this.levelContentInitializing = false;
                 setTimeout(() => this.initLevelContent(), 100);
                 return;
@@ -210,7 +210,10 @@ class LevelSelection3D {
                 this.levelContent.setUIInstance(this.uiInstance);
             }
             
-            console.log('LevelContent3D initialized successfully');
+            // console.log('LevelContent3D initialized successfully');
+            
+            // 暴露LevelSelection3D实例到window，供Player.js使用
+            window.levelSelection3D = this;
         } finally {
             this.levelContentInitializing = false;
         }
@@ -219,7 +222,7 @@ class LevelSelection3D {
     // 初始化 OrbitControls（已禁用）
     async initOrbitControls() {
         // OrbitControls 已禁用，不创建controls
-        console.log('OrbitControls disabled');
+        // console.log('OrbitControls disabled');
         this.controls = null;
         
         // 之前的代码已注释：
@@ -269,7 +272,7 @@ class LevelSelection3D {
                 delete this.modelScales[level];
                 delete this.modelBaseScales[level];
                 delete this.modelScaleAnimations[level];
-                console.log(`LevelSelection3D: Cleared cache for level ${level}`);
+                // console.log(`LevelSelection3D: Cleared cache for level ${level}`);
             }
         } else {
             // 清除所有level的缓存
@@ -287,10 +290,10 @@ class LevelSelection3D {
         
         // 如果模型已加载，直接返回
         if (this.models[level]) {
-            console.log(`LevelSelection3D: Model for level ${level} already loaded, skipping (cache hit)`);
+            // console.log(`LevelSelection3D: Model for level ${level} already loaded, skipping (cache hit)`);
             return;
         }
-        console.log(`LevelSelection3D: Loading model for level ${level} (cache miss)`);
+        // console.log(`LevelSelection3D: Loading model for level ${level} (cache miss)`);
         
         try {
             const THREE = window.THREE;
@@ -301,11 +304,11 @@ class LevelSelection3D {
                 mapWidth = 10;
                 mapDepth = 10;
             } else {
-                console.error(`Unknown level: ${level}`);
+                // console.error(`Unknown level: ${level}`);
                 return;
             }
             
-            console.log(`Generating map for level ${level}: ${mapWidth}x${mapDepth}`);
+            // console.log(`Generating map for level ${level}: ${mapWidth}x${mapDepth}`);
             
             // 动态导入 MapGenerator
             const { createFloor, createWalls } = await import('./MapGenerator.js');
@@ -319,9 +322,9 @@ class LevelSelection3D {
             
             // 生成围墙（会添加到tempScene，我们需要手动移除并添加到model group）
             // 围墙高度统一为2，无论地图大小如何
-            console.log(`LevelSelection3D: About to create walls for level ${level} with map size ${mapWidth}x${mapDepth}`);
+            // console.log(`LevelSelection3D: About to create walls for level ${level} with map size ${mapWidth}x${mapDepth}`);
             const walls = createWalls(tempScene, mapWidth, mapDepth, 2);
-            console.log(`LevelSelection3D: Created ${walls.length} walls for level ${level}`);
+            // console.log(`LevelSelection3D: Created ${walls.length} walls for level ${level}`);
             walls.forEach(wall => tempScene.remove(wall));
             
             // 将所有元素组合到一个Group中
@@ -348,7 +351,7 @@ class LevelSelection3D {
             
             // 计算缩放 - 所有关卡使用相同的目标高度（因为大小相同）
             const maxDimension = Math.max(size.x, size.y, size.z);
-            console.log(`Model size for level ${level}:`, size, `maxDimension:`, maxDimension);
+            // console.log(`Model size for level ${level}:`, size, `maxDimension:`, maxDimension);
             
             // 所有关卡（1-5）都使用相同的目标高度
             const targetHeight = 1.5;
@@ -362,11 +365,11 @@ class LevelSelection3D {
                 this.modelScales[level] = 1.0;
             }
             
-            console.log(`Model scaled by ${baseScale}, final size:`, {
-                x: size.x * baseScale,
-                y: size.y * baseScale,
-                z: size.z * baseScale
-            });
+            // console.log(`Model scaled by ${baseScale}, final size:`, {
+            //     x: size.x * baseScale,
+            //     y: size.y * baseScale,
+            //     z: size.z * baseScale
+            // });
             
             // 计算模型位置：围绕圆盘中心 (0, 0, 8) 排列
             // 5个关卡（Level1~Level5）分布在圆盘上，每个关卡相差20度
@@ -402,16 +405,16 @@ class LevelSelection3D {
             
             // 调试信息：打印每个level的位置（仅在首次加载时打印）
             if (!this.models[level]) {
-                console.log(`Level ${level} initial position:`, {
-                    level: level,
-                    mapSize: `${mapWidth}x${mapDepth}`,
-                    baseAngle: (baseAngle * 180 / Math.PI).toFixed(1) + '°',
-                    targetPosition: { x: x.toFixed(2), y: y.toFixed(2), z: z.toFixed(2) },
-                    modelPosition: { x: model.position.x.toFixed(2), y: model.position.y.toFixed(2), z: model.position.z.toFixed(2) },
-                    modelCenter: { x: center.x.toFixed(2), y: center.y.toFixed(2), z: center.z.toFixed(2) },
-                    modelSize: { x: size.x.toFixed(2), y: size.y.toFixed(2), z: size.z.toFixed(2) },
-                    scale: baseScale.toFixed(3)
-                });
+                // console.log(`Level ${level} initial position:`, {
+                //     level: level,
+                //     mapSize: `${mapWidth}x${mapDepth}`,
+                //     baseAngle: (baseAngle * 180 / Math.PI).toFixed(1) + '°',
+                //     targetPosition: { x: x.toFixed(2), y: y.toFixed(2), z: z.toFixed(2) },
+                //     modelPosition: { x: model.position.x.toFixed(2), y: model.position.y.toFixed(2), z: model.position.z.toFixed(2) },
+                //     modelCenter: { x: center.x.toFixed(2), y: center.y.toFixed(2), z: center.z.toFixed(2) },
+                //     modelSize: { x: size.x.toFixed(2), y: size.y.toFixed(2), z: size.z.toFixed(2) },
+                //     scale: baseScale.toFixed(3)
+                // });
             }
             
             // 创建模型组（包含模型和独立灯光系统）
@@ -467,9 +470,9 @@ class LevelSelection3D {
             const targetIntensity = (level === this.currentLevel) ? 24.0 : 6.0;
             this.startLightAnimation(level, targetIntensity, true);
             
-            console.log(`Model for level ${level} processed and positioned at (${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)})`);
-            console.log(`  - baseAngle: ${(baseAngle * 180 / Math.PI).toFixed(1)}°, radius: ${radius}, angle: ${(angle * 180 / Math.PI).toFixed(1)}°`);
-            console.log(`  - model.position after setting: (${model.position.x.toFixed(2)}, ${model.position.y.toFixed(2)}, ${model.position.z.toFixed(2)})`);
+            // console.log(`Model for level ${level} processed and positioned at (${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)})`);
+            // console.log(`  - baseAngle: ${(baseAngle * 180 / Math.PI).toFixed(1)}°, radius: ${radius}, angle: ${(angle * 180 / Math.PI).toFixed(1)}°`);
+            // console.log(`  - model.position after setting: (${model.position.x.toFixed(2)}, ${model.position.y.toFixed(2)}, ${model.position.z.toFixed(2)})`);
             
             // 如果启用了关键点系统，添加关键点
             if (this.criticalPointsEnabled && this.criticalPointSystem) {
@@ -490,15 +493,15 @@ class LevelSelection3D {
                 // blocks的texture会在LevelContent3D中生成blocks后应用
                 const emptyBlocks = []; // 暂时为空，blocks会在LevelContent3D中生成
                 setMapTexture(mapMode, emptyBlocks, walls, mapWidth, mapDepth, floor);
-                console.log(`LevelSelection3D: Applied texture mode ${mapMode} to level ${level} (floor and walls)`);
+                // console.log(`LevelSelection3D: Applied texture mode ${mapMode} to level ${level} (floor and walls)`);
             } catch (error) {
-                console.warn(`LevelSelection3D: Failed to apply texture to level ${level}:`, error);
+                // console.warn(`LevelSelection3D: Failed to apply texture to level ${level}:`, error);
             }
             
             // 立即渲染一次
             this.render();
         } catch (error) {
-            console.error(`Failed to load model for level ${level}:`, error);
+            // console.error(`Failed to load model for level ${level}:`, error);
             // 如果加载失败，可以显示一个占位符或错误信息
         }
     }
@@ -622,7 +625,7 @@ class LevelSelection3D {
     }
     
     updateLevel(level) {
-        console.log(`updateLevel called: level=${level}, currentLevel=${this.currentLevel}, diskRotation=${(this.diskRotation * 180 / Math.PI).toFixed(1)}°`);
+        // console.log(`updateLevel called: level=${level}, currentLevel=${this.currentLevel}, diskRotation=${(this.diskRotation * 180 / Math.PI).toFixed(1)}°`);
         
         // 如果 level 和 currentLevel 相同，仍然需要更新模型位置（确保初始位置正确）
         if (level === this.currentLevel) {
@@ -636,19 +639,19 @@ class LevelSelection3D {
             // 每个level相差30度，从level1切换到level2需要逆时针旋转-30度（让level2到中心）
             const angleDiff = (level - this.currentLevel) * 25 * Math.PI / 180; // 每个level相差25度
             
-            console.log(`Angle diff: ${(angleDiff * 180 / Math.PI).toFixed(1)}°, Current diskRotation: ${(this.diskRotation * 180 / Math.PI).toFixed(1)}°`);
+            // console.log(`Angle diff: ${(angleDiff * 180 / Math.PI).toFixed(1)}°, Current diskRotation: ${(this.diskRotation * 180 / Math.PI).toFixed(1)}°`);
             
             // 启动平滑旋转动画
             // 目标旋转 = 当前旋转 + 角度差（反向旋转）
             const targetRotation = this.diskRotation + angleDiff;
-            console.log(`Target rotation: ${(targetRotation * 180 / Math.PI).toFixed(1)}°`);
+            // console.log(`Target rotation: ${(targetRotation * 180 / Math.PI).toFixed(1)}°`);
             
             this.startDiskRotationAnimation(targetRotation);
             
             const oldLevel = this.currentLevel;
             this.currentLevel = level;
             
-            console.log(`Starting rotation animation from ${(this.diskRotation * 180 / Math.PI).toFixed(1)}° to ${(targetRotation * 180 / Math.PI).toFixed(1)}°`);
+            // console.log(`Starting rotation animation from ${(this.diskRotation * 180 / Math.PI).toFixed(1)}° to ${(targetRotation * 180 / Math.PI).toFixed(1)}°`);
             
             // 更新可见的level
             this.updateVisibleLevels();
@@ -704,11 +707,11 @@ class LevelSelection3D {
         this.diskRotationAnimation.startTime = Date.now();
         this.diskRotationAnimation.isAnimating = true;
         
-        console.log(`Disk rotation animation started:`, {
-            startRotation: (this.diskRotationAnimation.startRotation * 180 / Math.PI).toFixed(1) + '°',
-            targetRotation: (this.diskRotationAnimation.targetRotation * 180 / Math.PI).toFixed(1) + '°',
-            isAnimating: this.diskRotationAnimation.isAnimating
-        });
+        // console.log(`Disk rotation animation started:`, {
+        //     startRotation: (this.diskRotationAnimation.startRotation * 180 / Math.PI).toFixed(1) + '°',
+        //     targetRotation: (this.diskRotationAnimation.targetRotation * 180 / Math.PI).toFixed(1) + '°',
+        //     isAnimating: this.diskRotationAnimation.isAnimating
+        // });
     }
     
     // 更新圆盘旋转动画
@@ -744,7 +747,7 @@ class LevelSelection3D {
             this.diskRotationAnimation.isAnimating = false;
             // 动画结束后，确保位置更新到最终位置
             this.updateModelPositions();
-            console.log(`Disk rotation animation completed. Final rotation: ${(this.diskRotation * 180 / Math.PI).toFixed(1)}°`);
+            // console.log(`Disk rotation animation completed. Final rotation: ${(this.diskRotation * 180 / Math.PI).toFixed(1)}°`);
         }
     }
     
@@ -763,7 +766,7 @@ class LevelSelection3D {
             }
             this._updateModelPositionsCallCount++;
             if (this._updateModelPositionsCallCount <= 3 || this._updateModelPositionsCallCount % 10 === 0) {
-                console.log(`updateModelPositions called (count: ${this._updateModelPositionsCallCount}), diskRotation: ${(this.diskRotation * 180 / Math.PI).toFixed(1)}°`);
+                // console.log(`updateModelPositions called (count: ${this._updateModelPositionsCallCount}), diskRotation: ${(this.diskRotation * 180 / Math.PI).toFixed(1)}°`);
             }
         }
         
@@ -825,16 +828,16 @@ class LevelSelection3D {
             if (this.diskRotationAnimation && this.diskRotationAnimation.isAnimating) {
                 const posChanged = Math.abs(oldModelPos.x - x) > 0.01 || Math.abs(oldModelPos.z - z) > 0.01;
                 if (posChanged) {
-                    console.log(`Level ${level} position updated:`, {
-                        level: level,
-                        diskRotation: (this.diskRotation * 180 / Math.PI).toFixed(1) + '°',
-                        baseAngle: (baseAngle * 180 / Math.PI).toFixed(1) + '°',
-                        finalAngle: (angle * 180 / Math.PI).toFixed(1) + '°',
-                        oldPos: { x: oldModelPos.x.toFixed(2), y: oldModelPos.y.toFixed(2), z: oldModelPos.z.toFixed(2) },
-                        newPos: { x: x.toFixed(2), y: y.toFixed(2), z: z.toFixed(2) },
-                        actualPos: { x: model.position.x.toFixed(2), y: model.position.y.toFixed(2), z: model.position.z.toFixed(2) },
-                        radius: radius.toFixed(2)
-                    });
+                    // console.log(`Level ${level} position updated:`, {
+                    //     level: level,
+                    //     diskRotation: (this.diskRotation * 180 / Math.PI).toFixed(1) + '°',
+                    //     baseAngle: (baseAngle * 180 / Math.PI).toFixed(1) + '°',
+                    //     finalAngle: (angle * 180 / Math.PI).toFixed(1) + '°',
+                    //     oldPos: { x: oldModelPos.x.toFixed(2), y: oldModelPos.y.toFixed(2), z: oldModelPos.z.toFixed(2) },
+                    //     newPos: { x: x.toFixed(2), y: y.toFixed(2), z: z.toFixed(2) },
+                    //     actualPos: { x: model.position.x.toFixed(2), y: model.position.y.toFixed(2), z: model.position.z.toFixed(2) },
+                    //     radius: radius.toFixed(2)
+                    // });
                 }
             }
             
@@ -962,42 +965,42 @@ class LevelSelection3D {
                 // 检查是否点击了左箭头按钮
                 if (this.uiInstance && this.uiInstance.leftArrowButton) {
                     const leftBtn = this.uiInstance.leftArrowButton;
-                    console.log('Checking left arrow button:', {
-                        clickX, clickY,
-                        buttonX: leftBtn.x,
-                        buttonY: leftBtn.y,
-                        buttonWidth: leftBtn.width,
-                        buttonHeight: leftBtn.height,
-                        inBounds: clickX >= leftBtn.x && clickX <= leftBtn.x + leftBtn.width &&
-                                  clickY >= leftBtn.y && clickY <= leftBtn.y + leftBtn.height
-                    });
+                    // console.log('Checking left arrow button:', {
+                    //     clickX, clickY,
+                    //     buttonX: leftBtn.x,
+                    //     buttonY: leftBtn.y,
+                    //     buttonWidth: leftBtn.width,
+                    //     buttonHeight: leftBtn.height,
+                    //     inBounds: clickX >= leftBtn.x && clickX <= leftBtn.x + leftBtn.width &&
+                    //               clickY >= leftBtn.y && clickY <= leftBtn.y + leftBtn.height
+                    // });
                     
                     if (clickX >= leftBtn.x && clickX <= leftBtn.x + leftBtn.width &&
                         clickY >= leftBtn.y && clickY <= leftBtn.y + leftBtn.height) {
                         // 触发左箭头点击：同时更新 UI 的 level、文本动画和 3D 模型
-                        console.log('Left arrow clicked!', {
-                            currentUILevel: this.uiInstance.level,
-                            current3DLevel: this.currentLevel,
-                            animationAnimating: this.uiInstance.levelAnimation.isAnimating
-                        });
+                        // console.log('Left arrow clicked!', {
+                        //     currentUILevel: this.uiInstance.level,
+                        //     current3DLevel: this.currentLevel,
+                        //     animationAnimating: this.uiInstance.levelAnimation.isAnimating
+                        // });
                         
                         if (this.uiInstance && !this.uiInstance.levelAnimation.isAnimating) {
                             if (this.uiInstance.level > 1) {
                                 // 更新 UI 的 level
                                 this.uiInstance.level--;
-                                console.log(`UI level changed to ${this.uiInstance.level}`);
+                                // console.log(`UI level changed to ${this.uiInstance.level}`);
                                 
                                 // 更新 UI 的 label 动画
                                 this.uiInstance.updateLevelLabel();
                                 
                                 // 更新 3D 模型的 level（会触发旋转动画）
-                                console.log(`Calling updateLevel(${this.uiInstance.level})`);
+                                // console.log(`Calling updateLevel(${this.uiInstance.level})`);
                                 this.updateLevel(this.uiInstance.level);
                             } else {
-                                console.log('Cannot go left: already at level 1');
+                                // console.log('Cannot go left: already at level 1');
                             }
                         } else {
-                            console.log('Cannot go left: animation is animating or no UI instance');
+                            // console.log('Cannot go left: animation is animating or no UI instance');
                         }
                         return;
                     }
@@ -1006,42 +1009,42 @@ class LevelSelection3D {
                 // 检查是否点击了右箭头按钮
                 if (this.uiInstance && this.uiInstance.rightArrowButton) {
                     const rightBtn = this.uiInstance.rightArrowButton;
-                    console.log('Checking right arrow button:', {
-                        clickX, clickY,
-                        buttonX: rightBtn.x,
-                        buttonY: rightBtn.y,
-                        buttonWidth: rightBtn.width,
-                        buttonHeight: rightBtn.height,
-                        inBounds: clickX >= rightBtn.x && clickX <= rightBtn.x + rightBtn.width &&
-                                  clickY >= rightBtn.y && clickY <= rightBtn.y + rightBtn.height
-                    });
+                    // console.log('Checking right arrow button:', {
+                    //     clickX, clickY,
+                    //     buttonX: rightBtn.x,
+                    //     buttonY: rightBtn.y,
+                    //     buttonWidth: rightBtn.width,
+                    //     buttonHeight: rightBtn.height,
+                    //     inBounds: clickX >= rightBtn.x && clickX <= rightBtn.x + rightBtn.width &&
+                    //               clickY >= rightBtn.y && clickY <= rightBtn.y + rightBtn.height
+                    // });
                     
                     if (clickX >= rightBtn.x && clickX <= rightBtn.x + rightBtn.width &&
                         clickY >= rightBtn.y && clickY <= rightBtn.y + rightBtn.height) {
                         // 触发右箭头点击：同时更新 UI 的 level、文本动画和 3D 模型
-                        console.log('Right arrow clicked!', {
-                            currentUILevel: this.uiInstance.level,
-                            current3DLevel: this.currentLevel,
-                            animationAnimating: this.uiInstance.levelAnimation.isAnimating
-                        });
+                        // console.log('Right arrow clicked!', {
+                        //     currentUILevel: this.uiInstance.level,
+                        //     current3DLevel: this.currentLevel,
+                        //     animationAnimating: this.uiInstance.levelAnimation.isAnimating
+                        // });
                         
                         if (this.uiInstance && !this.uiInstance.levelAnimation.isAnimating) {
                             if (this.uiInstance.level < 5) {
                                 // 更新 UI 的 level
                                 this.uiInstance.level++;
-                                console.log(`UI level changed to ${this.uiInstance.level}`);
+                                // console.log(`UI level changed to ${this.uiInstance.level}`);
                                 
                                 // 更新 UI 的 label 动画
                                 this.uiInstance.updateLevelLabel();
                                 
                                 // 更新 3D 模型的 level（会触发旋转动画）
-                                console.log(`Calling updateLevel(${this.uiInstance.level})`);
+                                // console.log(`Calling updateLevel(${this.uiInstance.level})`);
                                 this.updateLevel(this.uiInstance.level);
                             } else {
-                                console.log('Cannot go right: already at level 5');
+                                // console.log('Cannot go right: already at level 5');
                             }
                         } else {
-                            console.log('Cannot go right: animation is animating or no UI instance');
+                            // console.log('Cannot go right: animation is animating or no UI instance');
                         }
                         return;
                     }
@@ -1137,7 +1140,7 @@ class LevelSelection3D {
                 if (intersects.length > 0) {
                     // 只响应主选模型（当前level）
                     if (parseInt(level) === this.currentLevel) {
-                        console.log(`Clicked model level ${level}, phase: ${currentPhase}`);
+                        // console.log(`Clicked model level ${level}, phase: ${currentPhase}`);
                         
                         const clickedLevel = parseInt(level);
                         
@@ -1249,11 +1252,11 @@ class LevelSelection3D {
         const THREE = window.THREE;
         if (!THREE) return;
         
-        console.log(`Preparing level ${level} - generating maze and starting block animation`);
+        // console.log(`Preparing level ${level} - generating maze and starting block animation`);
         
         // 确保 LevelContent3D 已经初始化
         if (!this.levelContent) {
-            console.log('LevelSelection3D: LevelContent3D not initialized yet, waiting...');
+            // console.log('LevelSelection3D: LevelContent3D not initialized yet, waiting...');
             // 等待 LevelContent3D 初始化（最多等待5秒）
             let waitCount = 0;
             const maxWait = 100; // 最多等待5秒 (100 * 50ms)
@@ -1262,18 +1265,18 @@ class LevelSelection3D {
                 await new Promise(resolve => setTimeout(resolve, 50));
                 waitCount++;
                 if (waitCount % 20 === 0) {
-                    console.log(`LevelSelection3D: Still waiting for LevelContent3D... (${waitCount * 50}ms)`);
+                    // console.log(`LevelSelection3D: Still waiting for LevelContent3D... (${waitCount * 50}ms)`);
                 }
             }
             
             if (!this.levelContent) {
-                console.error('LevelSelection3D: LevelContent3D not initialized after waiting. Attempting to initialize...');
+                // console.error('LevelSelection3D: LevelContent3D not initialized after waiting. Attempting to initialize...');
                 await this.initLevelContent();
             }
         }
         
         if (!this.levelContent) {
-            console.error('LevelSelection3D: LevelContent3D still not initialized, cannot prepare level');
+            // console.error('LevelSelection3D: LevelContent3D still not initialized, cannot prepare level');
             return;
         }
         
@@ -1306,20 +1309,20 @@ class LevelSelection3D {
                 this.camera.getWorldDirection(direction);
                 this.previousCameraTarget = this.camera.position.clone().add(direction.multiplyScalar(5));
             }
-            console.log(`Saved camera position before entering level:`, {
-                position: this.previousCameraPosition,
-                target: this.previousCameraTarget
-            });
+            // console.log(`Saved camera position before entering level:`, {
+            //     position: this.previousCameraPosition,
+            //     target: this.previousCameraTarget
+            // });
         }
         
         // 注意：不在这里移动相机，保持相机在原位置
         // 相机将在1.5秒后（在 enterLevel 中）移动到新位置
         
         // 使用 LevelContent3D 生成迷宫（这会启动方块生长动画）
-        console.log(`LevelSelection3D: Calling generateMaze for level ${level}`);
+        // console.log(`LevelSelection3D: Calling generateMaze for level ${level}`);
         // 只生成迷宫，不创建玩家等其他内容
         await this.levelContent.generateMaze(level);
-        console.log(`LevelSelection3D: generateMaze completed for level ${level}`);
+        // console.log(`LevelSelection3D: generateMaze completed for level ${level}`);
         // 不添加关卡灯（已移除）
         
         // 标记为准备状态（但不完全进入关卡模式）
@@ -1333,11 +1336,11 @@ class LevelSelection3D {
         const THREE = window.THREE;
         if (!THREE) return;
         
-        console.log(`Entering level ${level}`);
+        // console.log(`Entering level ${level}`);
         
         // 确保 LevelContent3D 已经初始化
         if (!this.levelContent) {
-            console.log('LevelSelection3D: LevelContent3D not initialized yet, waiting...');
+            // console.log('LevelSelection3D: LevelContent3D not initialized yet, waiting...');
             // 等待 LevelContent3D 初始化（最多等待5秒）
             let waitCount = 0;
             const maxWait = 100; // 最多等待5秒 (100 * 50ms)
@@ -1346,18 +1349,18 @@ class LevelSelection3D {
                 await new Promise(resolve => setTimeout(resolve, 50));
                 waitCount++;
                 if (waitCount % 20 === 0) {
-                    console.log(`LevelSelection3D: Still waiting for LevelContent3D... (${waitCount * 50}ms)`);
+                    // console.log(`LevelSelection3D: Still waiting for LevelContent3D... (${waitCount * 50}ms)`);
                 }
             }
             
             if (!this.levelContent) {
-                console.error('LevelSelection3D: LevelContent3D not initialized after waiting. Attempting to initialize...');
+                // console.error('LevelSelection3D: LevelContent3D not initialized after waiting. Attempting to initialize...');
                 await this.initLevelContent();
             }
         }
         
         if (!this.levelContent) {
-            console.error('LevelSelection3D: LevelContent3D still not initialized, cannot enter level');
+            // console.error('LevelSelection3D: LevelContent3D still not initialized, cannot enter level');
             return;
         }
         
@@ -1389,11 +1392,11 @@ class LevelSelection3D {
             if (this.levelContent) {
                 await this.levelContent.enterLevel(level);
             } else {
-                console.error('LevelContent3D not initialized');
+                // console.error('LevelContent3D not initialized');
             }
         } else {
             // 迷宫已经生成，跳过玩家创建和碰撞世界设置
-            console.log(`LevelSelection3D: Maze already generated for level ${level}, skipping player creation and collision world setup`);
+            // console.log(`LevelSelection3D: Maze already generated for level ${level}, skipping player creation and collision world setup`);
         }
         
         // 注意：相机移动动画已经在方块动画完成后自动启动（在LevelContent3D中）
@@ -1468,7 +1471,7 @@ class LevelSelection3D {
         
         // 如果不在关卡模式中，直接返回（避免重复操作）
         if (!this.inLevelMode) {
-            console.log('Exited level mode (was not in level mode), cleared all maze blocks');
+            // console.log('Exited level mode (was not in level mode), cleared all maze blocks');
             return;
         }
         
@@ -1483,12 +1486,12 @@ class LevelSelection3D {
         // 恢复相机位置到进入关卡前的位置
         if (this.previousCameraPosition) {
             this.camera.position.copy(this.previousCameraPosition);
-            console.log(`Restored camera position:`, this.previousCameraPosition);
+            // console.log(`Restored camera position:`, this.previousCameraPosition);
             
             if (this.controls && this.previousCameraTarget) {
                 this.controls.target.copy(this.previousCameraTarget);
                 this.controls.update();
-                console.log(`Restored camera target:`, this.previousCameraTarget);
+                // console.log(`Restored camera target:`, this.previousCameraTarget);
             } else if (this.previousCameraTarget) {
                 this.camera.lookAt(this.previousCameraTarget);
             }
@@ -1501,7 +1504,7 @@ class LevelSelection3D {
             } else {
                 this.camera.lookAt(0, 0.5, 2);
             }
-            console.log(`No saved camera position, using default`);
+            // console.log(`No saved camera position, using default`);
         }
         
         // 注意：不清除保存的相机位置，以便下次进入时使用相同位置
@@ -1510,7 +1513,7 @@ class LevelSelection3D {
         // 记录退出的关卡（在设置inLevelMode为false之前）
         if (this.inLevelMode && this.currentLevel) {
             this.lastExitedLevel = this.currentLevel;
-            console.log(`LevelSelection3D: Recorded last exited level: ${this.lastExitedLevel}`);
+            // console.log(`LevelSelection3D: Recorded last exited level: ${this.lastExitedLevel}`);
         }
         
         this.inLevelMode = false;
@@ -1526,7 +1529,7 @@ class LevelSelection3D {
             }
         }
         
-        console.log('Exited level mode, cleared all maze blocks and reset camera position');
+        // console.log('Exited level mode, cleared all maze blocks and reset camera position');
     }
     
     render() {
@@ -1585,7 +1588,7 @@ class LevelSelection3D {
                     // 调试：打印 player.camera 位置
                     const playerCamPos = player.camera.position;
                     if (!this.lastPlayerCamY || Math.abs(this.lastPlayerCamY - playerCamPos.y) > 0.01) {
-                        console.log(`[Player Camera] Y: ${playerCamPos.y.toFixed(4)} | Pos: (${playerCamPos.x.toFixed(3)}, ${playerCamPos.y.toFixed(3)}, ${playerCamPos.z.toFixed(3)})`);
+                        // console.log(`[Player Camera] Y: ${playerCamPos.y.toFixed(4)} | Pos: (${playerCamPos.x.toFixed(3)}, ${playerCamPos.y.toFixed(3)}, ${playerCamPos.z.toFixed(3)})`);
                         this.lastPlayerCamY = playerCamPos.y;
                     }
                     this.renderer.render(this.scene, player.camera);
@@ -1613,7 +1616,7 @@ class LevelSelection3D {
                         
                         // 调试：每次检查都打印相机位置和 PlayerVis 位置（限制频率）
                         if (!this.lastCameraY || Math.abs(this.lastCameraY - currentCameraPos.y) > 0.05) {
-                            console.log(`[Camera Check] Camera Y: ${currentCameraPos.y.toFixed(4)} | Target Y: ${targetCameraPos.y.toFixed(4)} | PlayerVis Y: ${visualizationPos.y.toFixed(4)} | Distance: ${currentCameraPos.distanceTo(targetCameraPos).toFixed(4)} | Update: ${needsPositionUpdate}`);
+                            // console.log(`[Camera Check] Camera Y: ${currentCameraPos.y.toFixed(4)} | Target Y: ${targetCameraPos.y.toFixed(4)} | PlayerVis Y: ${visualizationPos.y.toFixed(4)} | Distance: ${currentCameraPos.distanceTo(targetCameraPos).toFixed(4)} | Update: ${needsPositionUpdate}`);
                             this.lastCameraY = currentCameraPos.y;
                         }
                         
@@ -1632,7 +1635,7 @@ class LevelSelection3D {
                                 const oldY = this.camera.position.y;
                                 const newY = targetCameraPos.y;
                                 const yDelta = newY - oldY;
-                                console.log(`[Camera UPDATE] Y: ${oldY.toFixed(4)} -> ${newY.toFixed(4)} (delta: ${yDelta.toFixed(4)}) | PlayerVis Y: ${visualizationPos.y.toFixed(4)} | Pos: (${this.camera.position.x.toFixed(2)}, ${oldY.toFixed(2)}, ${this.camera.position.z.toFixed(2)}) -> (${targetCameraPos.x.toFixed(2)}, ${newY.toFixed(2)}, ${targetCameraPos.z.toFixed(2)})`);
+                                // console.log(`[Camera UPDATE] Y: ${oldY.toFixed(4)} -> ${newY.toFixed(4)} (delta: ${yDelta.toFixed(4)}) | PlayerVis Y: ${visualizationPos.y.toFixed(4)} | Pos: (${this.camera.position.x.toFixed(2)}, ${oldY.toFixed(2)}, ${this.camera.position.z.toFixed(2)}) -> (${targetCameraPos.x.toFixed(2)}, ${newY.toFixed(2)}, ${targetCameraPos.z.toFixed(2)})`);
                                 this.camera.position.copy(targetCameraPos);
                                 this.lastCameraY = newY;
                             }

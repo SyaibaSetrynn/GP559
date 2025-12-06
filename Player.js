@@ -405,54 +405,44 @@ const PLAYER_JUMP_SPEED = 0.03;
 const WORLD_BOUNDARY = 20;
 const GRAVITY = (PLAYER_JUMP_SPEED * PLAYER_JUMP_SPEED) / (2 * PLAYER_JUMP_HEIGHT);
 
+// 所有初始化代码将在initPlayerMap中执行，不在模块加载时执行
+// 这样可以避免在选关时加载Player.js，也避免PointerLockControls锁定鼠标
+
+// 声明全局变量（但不初始化，将在initPlayerMap中初始化）
+let renderer = null;
+let scene = null;
+let collisionWorld = null;
+let mapMode = 1;
+let criticalPointSystem = null;
+let criticalPointsEnabled = true;
+let agentManager = null;
+let levelObj = null;
+let objectsInScene = [];
+let player1 = null;
+let agent1 = null;
+let agent2 = null;
+let lighting = null;
 let startGame = false;
-
-// to switch between different levels
-let level1 = false;
-let level2 = false;
-let useMapGenerator = true; // Toggle to use MapGenerator instead of pre-built terrain
-
-// set up renderer
-let renderer = new T.WebGLRenderer({preserveDrawingBuffer:true});
-renderer.setSize(1280, 720);
-document.getElementById("div1").appendChild(renderer.domElement);
-renderer.domElement.id = "canvas";
-
-// set up scene
-let scene = new T.Scene();
-
-// perspective camera for debugging
-// let perspCam = new T.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-// perspCam.position.set(20, 5, 0);
-// let controls = new OrbitControls(perspCam, renderer.domElement);
-// controls.target.set(0, 5, 0);
-// controls.update();
 
 // simple start menu
 const menuOverlay = document.getElementById("menuOverlay");
 
-// handling collision
-const collisionWorld = new Octree();
+// 所有初始化代码移到initPlayerMap中，不在模块加载时执行
+// 以下代码将被移到initPlayerMap函数中
 
-// map mode
-let mapMode = 1;
+// 等待initPlayerMap被调用的辅助函数
+async function loadMapFromLevelContent3D() {
+    // 从LevelContent3D获取地图数据
+    // 这个函数将在initPlayerMap中实现
+    return true;
+}
 
-// Initialize Critical Point System
-const criticalPointSystem = new window.CriticalPointSystem(scene);
-let criticalPointsEnabled = true; // Toggle for critical points
+// initPlayerMap函数已在上面定义（第441行），这里不需要重复定义
 
-// Initialize Agent Manager
-const agentManager = new AgentManager(scene, collisionWorld, criticalPointSystem);
-
-// Expose globals for consistency with DQN version
-window.globalCPSystem = criticalPointSystem;
-window.gameManager = agentManager;
-
-// loading terrain
-let levelObj = null;
-let objectsInScene = [];
-
-if (useMapGenerator) {
+// 以下代码不再在模块加载时执行，已移到initPlayerMap中
+// 注释掉所有模块加载时执行的代码，避免在选关时加载Player.js
+/*
+if (false && useMapGenerator) {
     // Import MapGenerator functions
     const { createFloor, createWalls, createBlock } = await import('./MapGenerator.js');
     
@@ -589,42 +579,9 @@ if (useMapGenerator) {
         }
     });
 }
+*/
 
-// set up sky texture
-M.setSkyTexture(mapMode, scene);
-
-// add lighting to scene
-let lighting = new MapLighting(scene);
-
-scene.add(levelObj);
-
-// create playable player and put in scene
-let player1 = new Player(0, renderer, collisionWorld);
-scene.add(player1.object);
-
-// Create multiple agents using the agent manager (inside the maze walls)
-const agent1 = agentManager.createAgent(new T.Vector3(-4, 1, -4));  // Red agent - back left corner
-const agent2 = agentManager.createAgent(new T.Vector3(4, 1, 4));    // Green agent - front right corner (opposite)
-
-// Debug summary after agent creation
-console.log('=== AGENT CREATION SUMMARY ===');
-console.log(`Created ${agentManager.agents.length} agents`);
-agentManager.agents.forEach((agent, i) => {
-    const pos = agent.getPosition();
-    console.log(`Agent ${i} (ID: ${agent.agentId}): Position (${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)}), Mode: ${agent.getMode()}`);
-});
-console.log(`AgentManager has ${agentManager.criticalPoints.length} critical points`);
-console.log(`Critical Point System has ${criticalPointSystem.cpRegistry.size} CPs in registry`);
-
-// Ensure agents are in random mode (trained)
-agentManager.setAllAgentsMode('random');
-console.log('All agents set to random mode');
-console.log('===============================');
-
-// Initialize score display
-setTimeout(() => {
-    updateScoreDisplay();
-}, 100);
+// initPlayerMap函数已在上面定义（第441行），这里不需要重复定义
 
 // Function to toggle critical points on/off
 function toggleCriticalPoints(enabled) {
@@ -720,6 +677,9 @@ document.addEventListener('mousemove', function (event) {
 
 });
 
+// 这些事件监听器已移到setupPlayerEventListeners函数中，只在进入关卡后设置
+// 注释掉以避免在模块加载时执行（此时player1还是null）
+/*
 // enable and disable PoiniterLockControls
 document.body.addEventListener('click', () => {
     menuOverlay.style.display = "none";
@@ -731,6 +691,7 @@ player1.controls.addEventListener('unlock', () => {
     menuOverlay.style.display = 'block';
     startGame = false;
 });
+*/
 
 // laser firing controls
 document.addEventListener('mousedown', (event) => {
@@ -753,7 +714,7 @@ document.addEventListener('mouseup', (event) => {
 // const cameraHelper = new T.CameraHelper(player1.camera);
 // scene.add(cameraHelper);
 
-let previousTime = 0;
+// previousTime 已在顶部声明，这里不需要重复声明
 
 // scene.add(new T.SpotLight("green", 3, 50, Math.PI / 4, 0.1, 2));
 
@@ -766,8 +727,10 @@ function animate(timestamp) {
 
     player1.update(objectsInScene, criticalPointSystem.criticalPoints);
     
-    // Update all agents and their line of sight
-    agentManager.update();
+    // Update all agents and their line of sight (only if agents are created)
+    if (agentManager && agent1 && agent2) {
+        agentManager.update();
+    }
     
     // Update critical points animation
     if (criticalPointSystem) {

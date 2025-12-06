@@ -59,7 +59,7 @@ export function createWalls(scene, width, depth, height) {
     
     const walls = [];
     const wallThickness = 1; // 围墙厚度
-    console.log(`MapGenerator: Creating walls with thickness = ${wallThickness}`);
+    //console.log(`MapGenerator: Creating walls with thickness = ${wallThickness}`);
     const wallMaterial = new THREE.MeshStandardMaterial({
         color: 0x666666, // 深灰色
         roughness: 0.7,
@@ -122,7 +122,7 @@ export function createWalls(scene, width, depth, height) {
         new THREE.BoxGeometry(wallThickness, height, depth + wallThickness * 2),
         wallMaterial
     );
-    console.log(`MapGenerator: Left wall geometry: width=${wallThickness}, height=${height}, depth=${depth + wallThickness * 2}`);
+    //console.log(`MapGenerator: Left wall geometry: width=${wallThickness}, height=${height}, depth=${depth + wallThickness * 2}`);
     leftWall.position.set(-halfWidth - halfWallThickness, height / 2, 0);
     leftWall.castShadow = true;
     leftWall.receiveShadow = true;
@@ -145,7 +145,7 @@ export function createWalls(scene, width, depth, height) {
         new THREE.BoxGeometry(wallThickness, height, depth + wallThickness * 2),
         wallMaterial
     );
-    console.log(`MapGenerator: Right wall geometry: width=${wallThickness}, height=${height}, depth=${depth + wallThickness * 2}`);
+    //console.log(`MapGenerator: Right wall geometry: width=${wallThickness}, height=${height}, depth=${depth + wallThickness * 2}`);
     rightWall.position.set(halfWidth + halfWallThickness, height / 2, 0);
     rightWall.castShadow = true;
     rightWall.receiveShadow = true;

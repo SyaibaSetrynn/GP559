@@ -134,7 +134,7 @@ class Agent {
     update(agentManager = null) {
         // DEBUG: Track mode switches to detect rapid switching
         if (this._lastMode !== this.mode) {
-            console.log(`Agent ${this.agentId} mode changed from ${this._lastMode} to ${this.mode}`);
+            // console.log(`Agent ${this.agentId} mode changed from ${this._lastMode} to ${this.mode}`);
             this._lastMode = this.mode;
         }
         
@@ -144,9 +144,9 @@ class Agent {
         this._modeCallCount[this.mode]++;
         
         // Log every 60 frames for each mode
-        if (this._modeCallCount[this.mode] % 60 === 0) {
-            console.log(`Agent ${this.agentId} in ${this.mode} mode: ${this._modeCallCount[this.mode]} updates`);
-        }
+        // if (this._modeCallCount[this.mode] % 60 === 0) {
+        //     console.log(`Agent ${this.agentId} in ${this.mode} mode: ${this._modeCallCount[this.mode]} updates`);
+        // }
         
         // Handle different modes
         switch(this.mode) {
@@ -311,7 +311,7 @@ class Agent {
                 if (this.randomMoveTimer % 180 === 0) { // Every 3 seconds
                     const ownerText = !window.globalCPSystem.criticalPoints.find(cp => cp.cp.position === targetCP)?.ownedBy ? 
                         'unclaimed' : `owned by agent ${window.globalCPSystem.criticalPoints.find(cp => cp.cp.position === targetCP)?.ownedBy}`;
-                    console.log(`Agent ${this.agentId} targeting CP at (${targetCP.x.toFixed(1)}, ${targetCP.z.toFixed(1)}) - ${ownerText}`);
+                    // console.log(`Agent ${this.agentId} targeting CP at (${targetCP.x.toFixed(1)}, ${targetCP.z.toFixed(1)}) - ${ownerText}`);
                 }
             }
         }
@@ -381,7 +381,7 @@ class Agent {
         
         // DEBUG: Track speed variations
         if (!this._lastLoggedSpeed || this._lastLoggedSpeed !== currentSpeed) {
-            console.log(`Agent ${this.agentId} (${this.mode}): speed = ${currentSpeed}, tuning:`, tuning);
+            // console.log(`Agent ${this.agentId} (${this.mode}): speed = ${currentSpeed}, tuning:`, tuning);
             this._lastLoggedSpeed = currentSpeed;
         }
 
@@ -880,7 +880,7 @@ class Agent {
         // Visual feedback for mode changes
         this.updateVisualMode(mode);
         
-        console.log(`Agent ${this.agentId} mode set to: ${mode}`);
+        // console.log(`Agent ${this.agentId} mode set to: ${mode}`);
     }
     
     /**
@@ -916,7 +916,7 @@ class Agent {
      */
     setDQNBehavior(dqnAgentBehavior) {
         this.dqnAgentBehavior = dqnAgentBehavior;
-        console.log(`Agent ${this.agentId} DQN behavior loaded`);
+        // console.log(`Agent ${this.agentId} DQN behavior loaded`);
     }
     
     /**

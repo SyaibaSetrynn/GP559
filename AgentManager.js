@@ -151,7 +151,7 @@ class AgentManager {
         this.agents.forEach(agent => {
             agent.setMode(mode, dqnDataCollector, dqnAgentBehavior);
         });
-        console.log(`All agents set to mode: ${mode}`);
+        // console.log(`All agents set to mode: ${mode}`);
     }
     
     /**
@@ -161,7 +161,7 @@ class AgentManager {
         this.agents.forEach(agent => {
             agent.setDQNBehavior(dqnAgentBehavior);
         });
-        console.log(`DQN behavior set for all agents`);
+        // console.log(`DQN behavior set for all agents`);
     }
     
     /**
