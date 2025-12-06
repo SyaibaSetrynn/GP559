@@ -177,21 +177,54 @@ class Player {
                     const oldestCpId = this.claimedPointsList.shift();
                     this.claimedCriticalPoints.delete(oldestCpId);
                     
-                    // Find and revert the color of the oldest point to white
-                    for (let oldPoint of criticalPoints) {
-                        const oldCpId = oldPoint.cp.userData?.cpId || oldPoint.cp.toString();
-                        if (oldCpId === oldestCpId) {
-                            oldPoint.cp.material.color.setHex(window.CP_COLORS.WHITE);
-                            if (oldPoint.cp.children && oldPoint.cp.children.length > 0) {
-                                oldPoint.cp.children.forEach(child => {
-                                    if (child.material) {
-                                        child.material.color.setHex(window.CP_COLORS.WHITE);
-                                    }
-                                });
+                    // Coordinate with AgentManager's globalClaimedPoints system
+                    if (window.gameManager && window.gameManager.globalClaimedPoints) {
+                        // Find the index of the oldest point and remove it from global tracking
+                        for (let i = 0; i < criticalPoints.length; i++) {
+                            const pointCpId = criticalPoints[i].cp.userData?.cpId || criticalPoints[i].cp.toString();
+                            if (pointCpId === oldestCpId) {
+                                window.gameManager.globalClaimedPoints.delete(i);
+                                console.log(`Player released CP ${i} from global tracking due to FIFO`);
+                                break;
                             }
-                            break;
                         }
                     }
+                    
+                    // Find and DON'T revert color - let ownership persist until claimed by another
+                    // This matches the Agent behavior for color persistence
+                    console.log(`Player released oldest CP ${oldestCpId} but color persists until claimed by another`);
+                }
+                
+                // Check if this point is already claimed by an agent
+                let pointIndex = -1;
+                for (let i = 0; i < criticalPoints.length; i++) {
+                    const pointCpId = criticalPoints[i].cp.userData?.cpId || criticalPoints[i].cp.toString();
+                    if (pointCpId === cpId) {
+                        pointIndex = i;
+                        break;
+                    }
+                }
+                
+                // Only claim if not already actively claimed by agents (via line of sight)
+                if (pointIndex >= 0 && window.gameManager && window.gameManager.globalClaimedPoints) {
+                    if (window.gameManager.globalClaimedPoints.has(pointIndex)) {
+                        // Check if any agent is actively claiming this point (has line of sight)
+                        let activelyClaimedByAgent = false;
+                        if (window.gameManager.agents) {
+                            for (let agent of window.gameManager.agents) {
+                                if (agent.claimedCriticalPoints && agent.claimedCriticalPoints.has(pointIndex)) {
+                                    activelyClaimedByAgent = true;
+                                    console.log(`Player tried to claim CP ${pointIndex} but it's actively claimed by Agent ${agent.agentId}`);
+                                    break;
+                                }
+                            }
+                        }
+                        if (activelyClaimedByAgent) {
+                            return; // Skip claiming this point
+                        }
+                    }
+                    // Add to global tracking
+                    window.gameManager.globalClaimedPoints.add(pointIndex);
                 }
                 
                 // Claim the new point

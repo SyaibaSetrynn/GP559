@@ -589,11 +589,35 @@ class Agent {
         // Clear existing lines
         this.clearLOSLines(scene);
         
+        // First, check if any of our claimed points have unexpectedly changed color
+        for (let claimedIndex of this.claimedPointsList) {
+            if (criticalPoints[claimedIndex] && criticalPoints[claimedIndex].mesh && criticalPoints[claimedIndex].mesh.material) {
+                const currentColor = criticalPoints[claimedIndex].mesh.material.color.getHex();
+                if (currentColor !== this.agentColor) {
+                    console.warn(`OWNERSHIP CONFLICT! Agent ${this.agentId} thought it owned CP ${claimedIndex} (expected: ${this.agentColor.toString(16)}, actual: ${currentColor.toString(16)})`);
+                    // Remove from our tracking since we lost ownership
+                    this.claimedCriticalPoints.delete(claimedIndex);
+                    const listIndex = this.claimedPointsList.indexOf(claimedIndex);
+                    if (listIndex > -1) {
+                        this.claimedPointsList.splice(listIndex, 1);
+                    }
+                }
+            }
+        }
+        
         // Step 1: Find all currently visible critical points
         const visibleCPs = [];
         criticalPoints.forEach((cp, index) => {
             // Skip if claimed by another agent (not this agent)
             if (globalClaimedPoints.has(index) && !this.claimedCriticalPoints.has(index)) {
+                return;
+            }
+            
+            // Check if claimed by player - look for player's color
+            const cpColorHex = cp.mesh?.material?.color?.getHex();
+            const isClaimedByPlayer = cpColorHex === window.CP_COLORS?.BLUE && !this.claimedCriticalPoints.has(index);
+            if (isClaimedByPlayer) {
+                console.log(`Agent ${this.agentId} skipping CP ${index} - claimed by player (color: ${cpColorHex?.toString(16)})`);
                 return;
             }
             
@@ -616,8 +640,10 @@ class Agent {
         
         // Release points that lost line of sight
         toRelease.forEach(index => {
+            const cpColorBefore = criticalPoints[index]?.mesh?.material?.color?.getHex();
             this.releaseCriticalPoint(index, criticalPoints, globalClaimedPoints);
-            console.log(`Agent ${this.agentId} lost line of sight, released CP ${index}`);
+            const cpColorAfter = criticalPoints[index]?.mesh?.material?.color?.getHex();
+            console.log(`Agent ${this.agentId} lost line of sight, released CP ${index} (color before: ${cpColorBefore?.toString(16)}, after: ${cpColorAfter?.toString(16)})`);
         });
         
         // Step 3: Process visible CPs - draw lines only to owned ones, claim new ones up to limit
@@ -668,12 +694,17 @@ class Agent {
             return;
         }
         
+        // Check if this point was previously owned by the player
+        const cpColorHex = cp.mesh?.material?.color?.getHex();
+        const wasPlayerOwned = cpColorHex === window.CP_COLORS?.BLUE;
+        
         this.claimedCriticalPoints.add(index);
         this.claimedPointsList.push(index);
         globalClaimedPoints.add(index);
         
         // Color the critical point first (most reliable method)
         if (cp.mesh && cp.mesh.material) {
+            const previousColor = cp.mesh.material.color.getHex();
             cp.mesh.material.color.setHex(this.agentColor);
             if (cp.mesh.children && cp.mesh.children.length > 0) {
                 cp.mesh.children.forEach(child => {
@@ -682,7 +713,11 @@ class Agent {
                     }
                 });
             }
-            console.log(`Agent ${this.agentId} set CP color to ${this.agentColor.toString(16).padStart(6, '0')}`);
+            if (wasPlayerOwned) {
+                console.log(`Agent ${this.agentId} claimed CP ${index} from Player (was blue: ${previousColor.toString(16).padStart(6, '0')}, now: ${this.agentColor.toString(16).padStart(6, '0')})`);
+            } else {
+                console.log(`Agent ${this.agentId} set CP ${index} color to ${this.agentColor.toString(16).padStart(6, '0')}`);
+            }
         }
         
         // Update centralized system if available
@@ -711,7 +746,17 @@ class Agent {
         
         // DO NOT revert color - the point should stay the agent's color until claimed by another agent
         // This maintains ownership even when line of sight is lost
-        console.log(`Agent ${this.agentId} lost line of sight to CP ${index} but color/ownership preserved`);
+        
+        // Debug: Check if color actually persists
+        if (criticalPoints[index] && criticalPoints[index].mesh && criticalPoints[index].mesh.material) {
+            const currentColor = criticalPoints[index].mesh.material.color.getHex();
+            const expectedColor = this.agentColor;
+            if (currentColor !== expectedColor) {
+                console.warn(`UNEXPECTED COLOR CHANGE! Agent ${this.agentId} released CP ${index}, expected color ${expectedColor.toString(16)}, actual color ${currentColor.toString(16)}`);
+            } else {
+                console.log(`Agent ${this.agentId} lost line of sight to CP ${index} but color/ownership preserved (${currentColor.toString(16)})`);
+            }
+        }
     }
 
 

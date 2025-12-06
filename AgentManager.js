@@ -94,7 +94,7 @@ class AgentManager {
         if (this.updateCounter === undefined) this.updateCounter = 0;
         this.updateCounter++;
         
-        if (this.updateCounter % 5 === 0) { // Update LOS every 5 frames
+        if (this.updateCounter % 3 === 0) { // Update LOS every 3 frames (reduced from 5 to minimize race conditions)
             this.updateAllLineOfSight();
         }
     }
