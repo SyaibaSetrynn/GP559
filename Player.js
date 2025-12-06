@@ -406,6 +406,15 @@ const GRAVITY = window.GRAVITY || ((window.PLAYER_JUMP_SPEED || 0.03) * (window.
 
 // Function to initialize the indexjake game (called from UI transition)
 window.startIndexJakeGame = async function(selectedLevel = 1) {
+    // --- Ensure only one animation loop is running and UI is reset ---
+    if (window.currentAnimationFrameId) {
+        cancelAnimationFrame(window.currentAnimationFrameId);
+        window.currentAnimationFrameId = null;
+    }
+    // Hide UI overlays from previous screen
+    const menuOverlay = document.getElementById("menuOverlay");
+    if (menuOverlay) menuOverlay.style.display = "none";
+    // --------------------------------------------------------------
     console.log(`Initializing indexjake game for level ${selectedLevel}`);
     
 // global variables
