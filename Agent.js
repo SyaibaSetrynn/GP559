@@ -646,14 +646,10 @@ class Agent {
             console.log(`Agent ${this.agentId} lost line of sight, released CP ${index} (color before: ${cpColorBefore?.toString(16)}, after: ${cpColorAfter?.toString(16)})`);
         });
         
-        // Step 3: Process visible CPs - draw lines only to owned ones, claim new ones up to limit
-        let claimedCount = 0;
-        
-        // First, draw lines to points we already own and count them
+        // Step 3: Draw lines to all visible points we already own
         visibleCPs.forEach(({ cp, index }) => {
             if (this.claimedCriticalPoints.has(index)) {
                 this.createLOSLine(cp.position, scene);
-                claimedCount++;
             }
         });
         
@@ -665,21 +661,16 @@ class Agent {
             }
             
             // Skip if we've reached our maximum claimed points
-            if (claimedCount >= this.maxClaimedPoints) {
-                return;
-            }
-            
-            // If at max capacity, release the oldest point (FIFO)
             if (this.claimedPointsList.length >= this.maxClaimedPoints) {
+                // At max capacity, release the oldest point (FIFO) to make room
                 const oldestIndex = this.claimedPointsList.shift();
                 this.releaseCriticalPoint(oldestIndex, criticalPoints, globalClaimedPoints);
-                console.log(`Agent ${this.agentId} at capacity, released oldest CP ${oldestIndex} to make room`);
+                console.log(`Agent ${this.agentId} at capacity, released oldest CP ${oldestIndex} to make room for CP ${index}`);
             }
             
             // Claim new point
             this.claimCriticalPoint(index, cp, globalClaimedPoints);
             this.createLOSLine(cp.position, scene);
-            claimedCount++;
             console.log(`Agent ${this.agentId} claimed new CP ${index}, now has ${this.claimedPointsList.length}/${this.maxClaimedPoints}`);
         });
     }

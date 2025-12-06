@@ -73,13 +73,8 @@
 		<div id="losUI">
 			<div id="agentScores">Loading scores...</div>
 		</div>
-		
-	<!-- Load UI.js first so the class is available -->
-	<script src="StateManager.js"></script>
-	<script src="LevelContent3D.js"></script>
-	<script src="LevelSelection3D.js"></script>
-	<script src="UI.js"></script>
 	
+	<!-- Import map MUST come first before any module scripts -->
 	<script type="importmap">
 		{
 			"imports": {
@@ -266,6 +261,13 @@
 		window.startGameNow = startGameNow;
 	</script>
 
+	<!-- Load non-module scripts AFTER the module script so dependencies are available -->
+	<script src="StateManager.js"></script>
+	<script src="LevelContent3D.js"></script>
+	<script src="LevelSelection3D.js"></script>
+	<script src="UI.js"></script>
+
 	<!-- Player.js is a module that loads after other scripts -->
 	<script src="Player.js" type="module"></script>
 	</body>
+</html>
