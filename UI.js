@@ -316,6 +316,18 @@ class UI {
         // 初始化 3D 场景（仅在 phase=1 时使用）
         this.levelSelection3D = null;
         
+        // Load cubers.png for help page
+        this.cubersImage = new Image();
+        this.cubersImage.src = 'Textures/cubers.png';
+        this.cubersImageLoaded = false;
+        this.cubersImage.onload = () => {
+            this.cubersImageLoaded = true;
+            console.log('UI: cubers.png loaded successfully');
+        };
+        this.cubersImage.onerror = () => {
+            console.error('UI: Failed to load cubers.png');
+        };
+        
         this.setupEventListeners();
         this.startRenderLoop();
     }
@@ -1454,16 +1466,64 @@ class UI {
         this.updateButtonHoverSize(this.backButtonPhase2, 'backButtonPhase2HoverFontSize');
         // tutorialButton 已删除
         
-        // 左上角标题（边距扩大）
+        // Title
         this.ctx.fillStyle = '#ffffff';
-        this.ctx.font = 'bold 48px Arial';
+        this.ctx.font = 'bold 48px monospace';
         this.ctx.textAlign = 'left';
         this.ctx.textBaseline = 'top';
-        this.ctx.fillText('Title', 60, 40);  // 左边距扩大3倍：20->60，上边距扩大2倍：20->40
+        this.ctx.fillText('Cubers #9825 - Brief Introduction', 60, 40);
         
-        // 左上角正文（在标题下方，间距扩大2倍）
-        this.ctx.font = '24px Arial';
-        this.ctx.fillText('Empty', 60, 140);  // 与标题间距从60扩大2倍到100，所以是40+100=140
+        // Introduction text
+        this.ctx.font = '20px monospace';
+        let yPos = 120;
+        const lineHeight = 30;
+        const leftMargin = 60;
+        
+        // Paragraph 1
+        this.ctx.fillText('You are spawned in a cube world in year 9825, where everyone is an', leftMargin, yPos);
+        yPos += lineHeight;
+        this.ctx.fillText('emissive cube! Try to occupy the world as much as you can.', leftMargin, yPos);
+        yPos += lineHeight * 1.5;
+        
+        // Controls
+        this.ctx.fillText('WASD to move. LEFT CLICK to emit laser.', leftMargin, yPos);
+        yPos += lineHeight * 1.5;
+        
+        // Paragraph 2
+        this.ctx.fillText('Once your laser hits a critical point on the wall, it turns to YOUR color.', leftMargin, yPos);
+        yPos += lineHeight;
+        this.ctx.fillText('The counter on the right top tells you how many points everyone had', leftMargin, yPos);
+        yPos += lineHeight;
+        this.ctx.fillText('occupied. After 35 seconds, the one with the most number of critical', leftMargin, yPos);
+        yPos += lineHeight;
+        this.ctx.fillText('points wins.', leftMargin, yPos);
+        yPos += lineHeight * 1.5;
+        
+        // Closing
+        this.ctx.fillText('Happy playing!', leftMargin, yPos);
+        
+        // Draw cubers.png in bottom right area - larger and extending left and up
+        if (this.cubersImageLoaded && this.cubersImage) {
+            const paddingRight = 20; // Padding from right edge
+            const paddingBottom = 20; // Padding from bottom edge
+            
+            // Calculate size while maintaining aspect ratio - much larger
+            const maxWidth = 500; // Increased from 300 to 500
+            const maxHeight = 450; // Increased from 300 to 450
+            
+            let imgWidth = this.cubersImage.width;
+            let imgHeight = this.cubersImage.height;
+            
+            // Scale to fit within max dimensions while maintaining aspect ratio
+            const scale = Math.min(maxWidth / imgWidth, maxHeight / imgHeight);
+            imgWidth = imgWidth * scale;
+            imgHeight = imgHeight * scale;
+            
+            const imgX = this.width - imgWidth - paddingRight;
+            const imgY = this.height - imgHeight - paddingBottom;
+            
+            this.ctx.drawImage(this.cubersImage, imgX, imgY, imgWidth, imgHeight);
+        }
         
         // 左下角Back按钮（使用统一箭头按钮样式，使用hover字体大小）
         this.renderArrowButton(this.backButtonPhase2, this.backButtonPhase2HoverFontSize);

@@ -736,8 +736,15 @@ const handleBodyClick = () => {
 };
 
 const handleUnlock = () => {
-    menuOverlay.style.display = 'block';
-    startGame = false;
+    // Only show menuOverlay if game is over or hasn't started yet
+    // Don't show it during active gameplay (prevents "Click to Start" when ESC is pressed)
+    if (window.gameOver) {
+        menuOverlay.style.display = 'block';
+        startGame = false;
+    } else {
+        // Game is active, keep menuOverlay hidden
+        menuOverlay.style.display = 'none';
+    }
 };
 
 // Laser firing controls (use named functions)

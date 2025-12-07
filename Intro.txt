@@ -1,6 +1,6 @@
 Cubers #9825- Brief Introduction
 
-You are spawned in a cyberpunk world in 9825, where everyone is an emissive cube! Try to occupy the world as much as you can.
+You are spawned in a sube world in year 9825, where everyone is an emissive cube! Try to occupy the world as much as you can.
 
 WASD to move. LEFT CLICK to emit laser.
 

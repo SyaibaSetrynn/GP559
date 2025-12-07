@@ -1235,6 +1235,13 @@ class LevelContent3D {
                     // If game is not over, immediately re-lock to prevent "Click to Start" screen
                     if (!window.gameOver) {
                         console.log('LevelContent3D: Game is active, re-locking pointer immediately');
+                        
+                        // Ensure menuOverlay stays hidden during active gameplay
+                        const menuOverlay = document.getElementById('menuOverlay');
+                        if (menuOverlay) {
+                            menuOverlay.style.display = 'none';
+                        }
+                        
                         setTimeout(() => {
                             if (this.player && this.player.controls && !this.player.controls.isLocked) {
                                 this.player.controls.lock();
