@@ -7,15 +7,18 @@ class UI {
         this.width = canvas.width;
         this.height = canvas.height;
         
-        // 按钮间距
-        const buttonSpacing = 20;
+        // 按钮间距 - Even spacing for 3 buttons
+        const buttonHeight = 100;
+        const buttonSpacing = 30; // Space between buttons
+        const totalHeight = (buttonHeight * 3) + (buttonSpacing * 2); // 3 buttons + 2 gaps
+        const startY = (this.height - totalHeight) / 2 + 100; // Center vertically, then lower by 100px
         
         // Play按钮属性
         this.playButton = {
             x: this.width / 2 - 125,  // 居中，250宽度的一半
-            y: this.height / 2 - 100,  // 居中偏上
+            y: startY,  // First button at top
             width: 250,
-            height: 100,
+            height: buttonHeight,
             cornerRadius: 10,
             baseColor: '#000000',      // 黑色填充
             hoverColor: '#2a2a2a',     // hover时稍微变浅
@@ -33,9 +36,9 @@ class UI {
         // Help按钮属性
         this.helpButton = {
             x: this.width / 2 - 125,  // 居中，250宽度的一半
-            y: this.height / 2 + buttonSpacing + 50,  // Play按钮下方，下移50
+            y: startY + buttonHeight + buttonSpacing,  // Second button
             width: 250,
-            height: 100,
+            height: buttonHeight,
             cornerRadius: 10,
             baseColor: '#000000',      // 黑色填充
             hoverColor: '#2a2a2a',     // hover时稍微变浅
@@ -53,9 +56,9 @@ class UI {
         // DQN Training按钮属性
         this.dqnButton = {
             x: this.width / 2 - 125,  // 居中，250宽度的一半
-            y: this.height / 2 + (buttonSpacing + 50) * 2 + 20,  // Help按钮下方
+            y: startY + (buttonHeight + buttonSpacing) * 2,  // Third button
             width: 250,
-            height: 100,
+            height: buttonHeight,
             cornerRadius: 10,
             baseColor: '#000000',      // 黑色填充
             hoverColor: '#2a2a2a',     // hover时稍微变浅
