@@ -50,6 +50,27 @@ class UI {
             targetPhase: 2
         };
         
+        // DQN Training按钮属性
+        this.dqnButton = {
+            x: this.width / 2 - 125,  // 居中，250宽度的一半
+            y: this.height / 2 + (buttonSpacing + 50) * 2 + 20,  // Help按钮下方
+            width: 250,
+            height: 100,
+            cornerRadius: 10,
+            baseColor: '#000000',      // 黑色填充
+            hoverColor: '#2a2a2a',     // hover时稍微变浅
+            strokeColor: '#ffffff',    // 白色描边
+            strokeWidth: 6,            // 边框宽度（3倍）
+            text: 'DQN Training',
+            fontSize: 28,
+            baseFontSize: 28,
+            clickFontSize: 24,
+            isHovered: false,
+            isClicked: false,
+            targetPhase: -1,  // -1 means open in new tab
+            url: 'indexdqn.html'  // URL to open
+        };
+        
         // 统一箭头按钮样式配置
         this.arrowButtonStyle = {
             fontSize: 40,  // 扩大2倍：20 -> 40
@@ -140,12 +161,15 @@ class UI {
         // 动画相关
         this.playButtonColor = this.playButton.baseColor;
         this.helpButtonColor = this.helpButton.baseColor;
+        this.dqnButtonColor = this.dqnButton.baseColor;
         this.playButtonFontSize = this.playButton.baseFontSize;
         this.helpButtonFontSize = this.helpButton.baseFontSize;
+        this.dqnButtonFontSize = this.dqnButton.baseFontSize;
         
         // 主界面按钮从左到右变白动画
         this.playButtonFillProgress = 0;  // 0-1，填充进度
         this.helpButtonFillProgress = 0;
+        this.dqnButtonFillProgress = 0;
         this.playButtonFillAnimation = {
             isAnimating: false,
             startTime: 0,
@@ -154,6 +178,13 @@ class UI {
             startProgress: 0
         };
         this.helpButtonFillAnimation = {
+            isAnimating: false,
+            startTime: 0,
+            duration: 100,  // 0.1秒
+            targetProgress: 0,
+            startProgress: 0
+        };
+        this.dqnButtonFillAnimation = {
             isAnimating: false,
             startTime: 0,
             duration: 100,  // 0.1秒
@@ -335,6 +366,8 @@ class UI {
                     this.handleClick(this.playButton);
                 } else if (this.isPointInButton(x, y, this.helpButton)) {
                     this.handleClick(this.helpButton);
+                } else if (this.isPointInButton(x, y, this.dqnButton)) {
+                    this.handleClick(this.dqnButton);
                 }
             } else if (currentPhase === 1) {
                 if (this.isPointInButton(x, y, this.backButton)) {
@@ -380,8 +413,10 @@ class UI {
         // 重置所有hover状态
         const prevPlayHovered = this.playButton.isHovered;
         const prevHelpHovered = this.helpButton.isHovered;
+        const prevDqnHovered = this.dqnButton.isHovered;
         this.playButton.isHovered = false;
         this.helpButton.isHovered = false;
+        this.dqnButton.isHovered = false;
         // tutorialButton 已删除
         this.backButton.isHovered = false;
         this.leftArrowButton.isHovered = false;
@@ -393,6 +428,7 @@ class UI {
             // 主界面：检查Play和Help按钮
             this.playButton.isHovered = this.isPointInButton(x, y, this.playButton);
             this.helpButton.isHovered = this.isPointInButton(x, y, this.helpButton);
+            this.dqnButton.isHovered = this.isPointInButton(x, y, this.dqnButton);
             
             // 如果hover状态改变，启动填充动画
             if (this.playButton.isHovered !== prevPlayHovered) {
@@ -400,6 +436,9 @@ class UI {
             }
             if (this.helpButton.isHovered !== prevHelpHovered) {
                 this.startFillAnimation('help');
+            }
+            if (this.dqnButton.isHovered !== prevDqnHovered) {
+                this.startFillAnimation('dqn');
             }
         } else if (currentPhase === 1) {
             // Level Selection界面：检查所有按钮
@@ -445,6 +484,8 @@ class UI {
             this.playButtonFontSize = button.clickFontSize;
         } else if (button === this.helpButton) {
             this.helpButtonFontSize = button.clickFontSize;
+        } else if (button === this.dqnButton) {
+            this.dqnButtonFontSize = button.clickFontSize;
         }
         
         // 恢复字体大小并切换phase
@@ -453,12 +494,19 @@ class UI {
                 this.playButtonFontSize = button.baseFontSize;
             } else if (button === this.helpButton) {
                 this.helpButtonFontSize = button.baseFontSize;
+            } else if (button === this.dqnButton) {
+                this.dqnButtonFontSize = button.baseFontSize;
             }
             button.isClicked = false;
             
-            // 切换phase
-            if (typeof StateManager !== 'undefined') {
-                StateManager.setPhase(button.targetPhase);
+            // Handle DQN button - open in new tab
+            if (button === this.dqnButton) {
+                window.open(button.url, '_blank');
+            } else {
+                // 切换phase
+                if (typeof StateManager !== 'undefined') {
+                    StateManager.setPhase(button.targetPhase);
+                }
             }
         }, 150);
     }
@@ -826,6 +874,7 @@ class UI {
             // phase变化时重置hover状态
             this.playButton.isHovered = false;
             this.helpButton.isHovered = false;
+            this.dqnButton.isHovered = false;
             // tutorialButton 已删除
             this.backButton.isHovered = false;
             this.backButtonPhase2.isHovered = false;
@@ -838,8 +887,10 @@ class UI {
             if (currentPhase === 0) {
                 this.playButtonFillProgress = 0;
                 this.helpButtonFillProgress = 0;
+                this.dqnButtonFillProgress = 0;
                 this.playButtonFillAnimation.isAnimating = false;
                 this.helpButtonFillAnimation.isAnimating = false;
+                this.dqnButtonFillAnimation.isAnimating = false;
             }
             
             // 离开phase 10-15时，重置暂停状态并退出关卡模式
@@ -950,19 +1001,26 @@ class UI {
         // 更新颜色（平滑过渡）
         this.updateButtonColor(this.playButton, 'playButtonColor');
         this.updateButtonColor(this.helpButton, 'helpButtonColor');
+        this.updateButtonColor(this.dqnButton, 'dqnButtonColor');
         
         // 渲染Play按钮
         this.renderButton(this.playButton, this.playButtonColor, this.playButtonFontSize);
         
         // 渲染Help按钮
         this.renderButton(this.helpButton, this.helpButtonColor, this.helpButtonFontSize);
+        
+        // 渲染DQN Training按钮
+        this.renderButton(this.dqnButton, this.dqnButtonColor, this.dqnButtonFontSize);
     }
     
     startFillAnimation(buttonType) {
         const isPlay = buttonType === 'play';
-        const button = isPlay ? this.playButton : this.helpButton;
-        const animation = isPlay ? this.playButtonFillAnimation : this.helpButtonFillAnimation;
-        const progressProperty = isPlay ? 'playButtonFillProgress' : 'helpButtonFillProgress';
+        const isHelp = buttonType === 'help';
+        const isDqn = buttonType === 'dqn';
+        
+        const button = isPlay ? this.playButton : (isHelp ? this.helpButton : this.dqnButton);
+        const animation = isPlay ? this.playButtonFillAnimation : (isHelp ? this.helpButtonFillAnimation : this.dqnButtonFillAnimation);
+        const progressProperty = isPlay ? 'playButtonFillProgress' : (isHelp ? 'helpButtonFillProgress' : 'dqnButtonFillProgress');
         
         // 设置动画目标
         animation.startProgress = this[progressProperty];
@@ -1010,6 +1068,22 @@ class UI {
                 this.helpButtonFillProgress = start + (target - start) * progress;
             }
         }
+        
+        // 更新 DQN 按钮填充进度
+        if (this.dqnButtonFillAnimation.isAnimating) {
+            const elapsed = Date.now() - this.dqnButtonFillAnimation.startTime;
+            const progress = Math.min(elapsed / this.dqnButtonFillAnimation.duration, 1);
+            
+            if (progress >= 1) {
+                this.dqnButtonFillProgress = this.dqnButtonFillAnimation.targetProgress;
+                this.dqnButtonFillAnimation.isAnimating = false;
+            } else {
+                // 线性插值
+                const start = this.dqnButtonFillAnimation.startProgress;
+                const target = this.dqnButtonFillAnimation.targetProgress;
+                this.dqnButtonFillProgress = start + (target - start) * progress;
+            }
+        }
     }
     
     updateButtonColor(button, colorProperty) {
@@ -1024,7 +1098,9 @@ class UI {
     
     renderButton(button, currentColor, currentFontSize, customX = null) {
         const isPlay = (button === this.playButton);
-        const fillProgress = isPlay ? this.playButtonFillProgress : this.helpButtonFillProgress;
+        const isHelp = (button === this.helpButton);
+        const isDqn = (button === this.dqnButton);
+        const fillProgress = isPlay ? this.playButtonFillProgress : (isHelp ? this.helpButtonFillProgress : (isDqn ? this.dqnButtonFillProgress : 0));
         const x = customX !== null ? customX : button.x;
         
         // 绘制按钮（黑色填充）
