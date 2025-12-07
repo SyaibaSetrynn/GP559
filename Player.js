@@ -418,6 +418,7 @@ window.startIndexJakeGame = async function(selectedLevel = 1) {
     }
     
     console.log(`✓ Initializing indexjake game for level ${selectedLevel}`);
+    console.log(`🎨 Loading map textures for mode ${selectedLevel}`);
     
     // Mark game as running
     window.gameInstance = { running: true };
@@ -452,8 +453,9 @@ const menuOverlay = document.getElementById("menuOverlay");
 // handling collision
 const collisionWorld = new Octree();
 
-// map mode
-let mapMode = 1;
+// map mode - USE THE SELECTED LEVEL TO DETERMINE TEXTURE SET
+let mapMode = selectedLevel; // Level 1-5 maps to texture modes 1-5
+console.log(`✅ Map mode set to: ${mapMode} (${['', 'LAB', 'HEDGE', 'GLASS', 'EYES', 'LIBRARY'][mapMode] || 'UNKNOWN'})`);
 
 // Initialize Critical Point System
 const criticalPointSystem = new window.CriticalPointSystem(scene);
@@ -788,8 +790,17 @@ function animate(timestamp) {
         previousTime = timestamp;
     let delta = (timestamp - previousTime) / 1000;
 
-    // Only update game objects if the game has actually started
-    if (startGame) {
+    // Check if game should end (35 seconds elapsed)
+    if (startGame && gameStartTime && !gameOver) {
+        const elapsedMs = Date.now() - gameStartTime;
+        if (elapsedMs >= GAME_DURATION) {
+            gameOver = true;
+            showGameOver();
+        }
+    }
+
+    // Only update game objects if the game has actually started and not over
+    if (startGame && !gameOver) {
         player1.update(objectsInScene, criticalPointSystem.criticalPoints);
         
         // Update all agents and their line of sight
@@ -823,6 +834,8 @@ document.addEventListener('keydown', function(event) {
 
 // Game start time for tracking elapsed time
 let gameStartTime = null;
+const GAME_DURATION = 35000; // 35 seconds in milliseconds
+let gameOver = false;
 
 // Function to update score display
 function updateScoreDisplay() {
@@ -877,6 +890,108 @@ function updateScoreDisplay() {
     
     // Update display
     scoreDiv.innerHTML = text.replace(/\n/g, '<br>');
+}
+
+// Function to show game over screen
+function showGameOver() {
+    console.log('🏁 GAME OVER - 35 seconds elapsed');
+    
+    // Calculate final scores
+    const scores = { Red: 0, Green: 0, Blue: 0 };
+    
+    // Get agent scores
+    if (agentManager && agentManager.agents) {
+        agentManager.agents.forEach((agent) => {
+            try {
+                const score = agent.getScore();
+                const hexColor = agent.agentColor.toString(16).padStart(6, '0');
+                const colorName = getColorName(hexColor);
+                if (scores.hasOwnProperty(colorName)) {
+                    scores[colorName] = score;
+                }
+            } catch (e) {
+                // Skip if error getting agent data
+            }
+        });
+    }
+    
+    // Get player score (Blue)
+    if (player1) {
+        scores.Blue = player1.score;
+    }
+    
+    // Determine winner
+    let winner = 'Blue';
+    let highScore = scores.Blue;
+    if (scores.Red > highScore) {
+        winner = 'Red';
+        highScore = scores.Red;
+    }
+    if (scores.Green > highScore) {
+        winner = 'Green';
+        highScore = scores.Green;
+    }
+    
+    // Create game over overlay
+    const overlay = document.createElement('div');
+    overlay.id = 'gameOverOverlay';
+    overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: rgba(0, 0, 0, 0.9);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 10002;
+        font-family: monospace;
+        color: white;
+    `;
+    
+    // Create content container
+    const content = document.createElement('div');
+    content.style.cssText = `
+        text-align: center;
+        padding: 40px;
+        border: 2px solid white;
+        background: black;
+        min-width: 400px;
+    `;
+    
+    content.innerHTML = `
+        <h1 style="font-size: 48px; margin-bottom: 30px; letter-spacing: 4px;">GAME OVER</h1>
+        <div style="font-size: 24px; margin-bottom: 40px;">
+            <div style="margin: 15px 0;">RED: ${scores.Red}</div>
+            <div style="margin: 15px 0;">GREEN: ${scores.Green}</div>
+            <div style="margin: 15px 0;">BLUE: ${scores.Blue}</div>
+        </div>
+        <div style="font-size: 32px; margin-top: 30px; padding-top: 30px; border-top: 1px solid white;">
+            WINNER: <span style="color: ${winner.toLowerCase()};">${winner.toUpperCase()}</span>
+        </div>
+        <div style="font-size: 16px; margin-top: 30px; opacity: 0.7;">
+            Press ESC to exit
+        </div>
+    `;
+    
+    overlay.appendChild(content);
+    document.body.appendChild(overlay);
+    
+    // Release pointer lock if active
+    if (document.pointerLockElement) {
+        document.exitPointerLock();
+    }
+    
+    // Add escape key handler
+    const escHandler = (e) => {
+        if (e.key === 'Escape') {
+            location.reload(); // Reload page to restart
+        }
+    };
+    document.addEventListener('keydown', escHandler);
+    
+    console.log(`🏆 Winner: ${winner} with ${highScore} points`);
 }
 
 // Show LOS UI when game starts (only add listener once)

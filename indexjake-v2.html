@@ -69,35 +69,42 @@
 				max-width: 300px;
 			}
 		
+		#skipToGame {
+			position: fixed;
+			top: 50%;
+			left: 50%;
+			transform: translate(-50%, -50%);
+			z-index: 10001;
+			padding: 15px 40px;
+			background: #000;
+			color: #fff;
+			border: 2px solid #fff;
+			border-radius: 0;
+			cursor: pointer;
+			font-size: 18px;
+			font-weight: normal;
+			font-family: monospace;
+			letter-spacing: 2px;
+			text-transform: uppercase;
+			transition: all 0.2s ease;
+			display: none;
+		}
+		
 		#skipToGame:hover {
-			transform: translate(-50%, -50%) scale(1.05);
-			box-shadow: 0 12px 40px rgba(102, 126, 234, 0.8);
-			background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+			background: #fff;
+			color: #000;
+			border-color: #000;
 		}
 		
 		#skipToGame:active {
-			transform: translate(-50%, -50%) scale(0.98);
-		}
-		
-		/* Pulse animation for button appearance */
-		@keyframes pulse {
-			0%, 100% {
-				transform: translate(-50%, -50%) scale(1);
-				box-shadow: 0 8px 30px rgba(102, 126, 234, 0.6);
-			}
-			50% {
-				transform: translate(-50%, -50%) scale(1.05);
-				box-shadow: 0 12px 40px rgba(102, 126, 234, 0.9);
-			}
+			transform: translate(-50%, -50%) scale(0.95);
 		}
 		</style>
 	</head>
 
 	<body>
-		<!-- START GAME BUTTON - Appears after 5 seconds in center -->
-		<button id="skipToGame" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 10001; padding: 20px 40px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 15px; cursor: pointer; font-size: 24px; font-weight: bold; box-shadow: 0 8px 30px rgba(102, 126, 234, 0.6); transition: all 0.3s ease; display: none;">
-			🎮 START GAME
-		</button>
+		<!-- START GAME BUTTON - Appears after 3.5 seconds in center -->
+		<button id="skipToGame">START GAME</button>
 		
 		<div id="gameContainer">
 			<canvas id="gameCanvas" width="1280" height="720"></canvas>
@@ -555,16 +562,10 @@
 					console.log(`   Current visibility: "${startButton.style.visibility}"`);
 					console.log(`   Current opacity: "${startButton.style.opacity}"`);
 					
-					// Make button visible with multiple approaches
+					// Make button visible
 					startButton.style.display = 'block';
 					startButton.style.visibility = 'visible';
 					startButton.style.opacity = '1';
-					
-					// Add a subtle animation to draw attention
-					startButton.style.animation = 'none';
-					setTimeout(() => {
-						startButton.style.animation = 'pulse 1s ease-in-out 3';
-					}, 10);
 					
 					console.log(`✅ Button properties set:`);
 					console.log(`   display: ${startButton.style.display}`);
