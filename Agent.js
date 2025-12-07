@@ -608,18 +608,18 @@ class Agent {
         // Step 1: Find all currently visible critical points
         const visibleCPs = [];
         criticalPoints.forEach((cp, index) => {
-            // Skip if claimed by another agent (not this agent)
+            // Skip ONLY if claimed by another agent (not this agent) - agents can steal from player and other agents!
+            // Note: If a point is actively claimed by another entity with line of sight, 
+            // the claiming will handle the stealing/competing logic
             if (globalClaimedPoints.has(index) && !this.claimedCriticalPoints.has(index)) {
+                // This point is currently actively claimed by another agent with line of sight
+                // We'll skip it for now (can't steal from active claims)
                 return;
             }
             
-            // Check if claimed by player - look for player's color
-            const cpColorHex = cp.mesh?.material?.color?.getHex();
-            const isClaimedByPlayer = cpColorHex === window.CP_COLORS?.BLUE && !this.claimedCriticalPoints.has(index);
-            if (isClaimedByPlayer) {
-                console.log(`Agent ${this.agentId} skipping CP ${index} - claimed by player (color: ${cpColorHex?.toString(16)})`);
-                return;
-            }
+            // Agents CAN claim points that were previously owned by player or other agents
+            // (color is just visual ownership, not an active claim)
+            // So we don't skip based on color anymore!
             
             if (this.hasLineOfSight(cp.position, obstacles)) {
                 visibleCPs.push({ cp, index });
@@ -654,25 +654,28 @@ class Agent {
         });
         
         // Step 4: Claim new visible points up to our limit (3 total)
-        visibleCPs.forEach(({ cp, index }) => {
+        // IMPORTANT: Only claim new points if we have capacity, don't exceed limit
+        const pointsNeeded = this.maxClaimedPoints - this.claimedPointsList.length;
+        let newlyClaimed = 0;
+        
+        for (let i = 0; i < visibleCPs.length && newlyClaimed < pointsNeeded; i++) {
+            const { cp, index } = visibleCPs[i];
+            
             // Skip if we already own this point
             if (this.claimedCriticalPoints.has(index)) {
-                return;
+                continue;
             }
             
-            // Skip if we've reached our maximum claimed points
-            if (this.claimedPointsList.length >= this.maxClaimedPoints) {
-                // At max capacity, release the oldest point (FIFO) to make room
-                const oldestIndex = this.claimedPointsList.shift();
-                this.releaseCriticalPoint(oldestIndex, criticalPoints, globalClaimedPoints);
-                console.log(`Agent ${this.agentId} at capacity, released oldest CP ${oldestIndex} to make room for CP ${index}`);
-            }
-            
-            // Claim new point
+            // Claim new point (we have capacity)
             this.claimCriticalPoint(index, cp, globalClaimedPoints);
             this.createLOSLine(cp.position, scene);
+            newlyClaimed++;
             console.log(`Agent ${this.agentId} claimed new CP ${index}, now has ${this.claimedPointsList.length}/${this.maxClaimedPoints}`);
-        });
+        }
+        
+        if (newlyClaimed > 0) {
+            console.log(`Agent ${this.agentId} claimed ${newlyClaimed} new points, total: ${this.claimedPointsList.length}/${this.maxClaimedPoints}`);
+        }
     }
     
     /**
@@ -685,9 +688,11 @@ class Agent {
             return;
         }
         
-        // Check if this point was previously owned by the player
+        // Check if this point was previously owned by another entity
         const cpColorHex = cp.mesh?.material?.color?.getHex();
         const wasPlayerOwned = cpColorHex === window.CP_COLORS?.BLUE;
+        const wasNeutral = cpColorHex === window.CP_COLORS?.NEUTRAL;
+        const previousOwner = wasPlayerOwned ? 'Player' : (wasNeutral ? 'Neutral' : 'Other Agent');
         
         this.claimedCriticalPoints.add(index);
         this.claimedPointsList.push(index);
@@ -704,10 +709,10 @@ class Agent {
                     }
                 });
             }
-            if (wasPlayerOwned) {
-                console.log(`Agent ${this.agentId} claimed CP ${index} from Player (was blue: ${previousColor.toString(16).padStart(6, '0')}, now: ${this.agentColor.toString(16).padStart(6, '0')})`);
+            if (!wasNeutral) {
+                console.log(`Agent ${this.agentId} STOLE CP ${index} from ${previousOwner} (was: ${previousColor.toString(16).padStart(6, '0')}, now: ${this.agentColor.toString(16).padStart(6, '0')})`);
             } else {
-                console.log(`Agent ${this.agentId} set CP ${index} color to ${this.agentColor.toString(16).padStart(6, '0')}`);
+                console.log(`Agent ${this.agentId} claimed CP ${index} (was neutral, now: ${this.agentColor.toString(16).padStart(6, '0')})`);
             }
         }
         
@@ -719,6 +724,11 @@ class Agent {
             } catch (error) {
                 // Silent error handling
             }
+        }
+        
+        // Trigger score display update when claiming a point
+        if (window.updateScoreDisplay) {
+            window.updateScoreDisplay();
         }
     }
     
@@ -735,6 +745,18 @@ class Agent {
             this.claimedPointsList.splice(listIndex, 1);
         }
         
+        // Update centralized system to release the active claim (but keep ownership/color)
+        if (criticalPoints[index] && criticalPoints[index].mesh && criticalPoints[index].mesh.userData.cpId !== undefined) {
+            if (window.globalCPSystem) {
+                try {
+                    window.globalCPSystem.releaseCriticalPoint(criticalPoints[index].mesh.userData.cpId, `Agent${this.agentId}`);
+                    console.log(`Agent ${this.agentId} released active claim on CP ${index}, but ownership/color preserved`);
+                } catch (error) {
+                    // Silent error handling
+                }
+            }
+        }
+        
         // DO NOT revert color - the point should stay the agent's color until claimed by another agent
         // This maintains ownership even when line of sight is lost
         
@@ -747,6 +769,11 @@ class Agent {
             } else {
                 console.log(`Agent ${this.agentId} lost line of sight to CP ${index} but color/ownership preserved (${currentColor.toString(16)})`);
             }
+        }
+        
+        // Trigger score display update
+        if (window.updateScoreDisplay) {
+            window.updateScoreDisplay();
         }
     }
 

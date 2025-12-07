@@ -36,28 +36,38 @@
 			
 			#div1 {
 				display: none;
+				position: fixed;
+				top: 50%;
+				left: 50%;
+				transform: translate(-50%, -50%);
+				width: 1280px;
+				height: 720px;
+				border: 2px solid #333;
+				background-color: transparent;
 			}
 			
 			#menuOverlay {
 				display: none;
 			}
-					#losUI {
-			position: fixed; 
-			top: 10px; 
-			right: 10px; 
-			color: white; 
-			font-family: monospace; 
-			font-size: 14px; 
-			font-weight: bold; 
-			text-align: right; 
-			text-shadow: 2px 2px 4px rgba(0,0,0,0.8); 
-			display: none; 
-			pointer-events: none;
-			z-index: 10000;
-			background: rgba(0, 0, 0, 0.5);
-			padding: 10px;
-			border-radius: 5px;
-		}
+			
+			#losUI {
+				position: fixed;
+				top: calc(50% - 360px + 10px); /* Top of centered game (50% - 720px/2) + 10px padding */
+				right: calc(50% - 640px + 10px); /* Right edge of centered game (50% - 1280px/2) + 10px padding */
+				color: white;
+				font-family: monospace;
+				font-size: 14px;
+				font-weight: bold;
+				text-align: right;
+				text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+				display: none;
+				pointer-events: none;
+				z-index: 10001; /* Above game scene */
+				background: rgba(0, 0, 0, 0.7);
+				padding: 12px;
+				border-radius: 8px;
+				max-width: 300px;
+			}
 		
 		#skipToGame:hover {
 			transform: translate(-50%, -50%) scale(1.05);
@@ -466,28 +476,21 @@
 			if (gameCanvas) gameCanvas.style.display = 'none';
 			if (gameContainer) gameContainer.style.display = 'none';
 			if (menuOverlay) menuOverlay.style.display = 'none';
-					// Show game container
-		const div1 = document.getElementById('div1');
-		if (div1) {
-			div1.style.display = 'block';
-			div1.style.position = 'fixed';
-			div1.style.top = '0';
-			div1.style.left = '0';
-			div1.style.width = '100vw';
-			div1.style.height = '100vh';
-			div1.style.zIndex = '9999';
-		}
-		
-		// Show game UI (make it visible and ensure z-index)
-		const losUI = document.getElementById('losUI');
-		if (losUI) {
-			losUI.style.display = 'block';
-			losUI.style.position = 'fixed';
-			losUI.style.zIndex = '10000';
-			losUI.style.top = '10px';
-			losUI.style.right = '10px';
-			console.log('Game UI shown');
-		}
+			
+			// Show game container (centered like UI)
+			const div1 = document.getElementById('div1');
+			if (div1) {
+				div1.style.display = 'block';
+				// Don't override position/transform - CSS already centers it
+			}
+			
+			// Show game UI (positioned in top-right of game scene by CSS)
+			const losUI = document.getElementById('losUI');
+			if (losUI) {
+				losUI.style.display = 'block';
+				// Don't override position - CSS already positions it correctly
+				console.log('Game UI shown');
+			}
 		
 			// Start the game
 			if (window.startIndexJakeGame) {
