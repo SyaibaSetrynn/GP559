@@ -267,6 +267,12 @@ class LevelContent3D {
                     const actualX = -halfWidth + x + 0.5;
                     const actualZ = -halfDepth + z + 0.5;
                     
+                    // Skip block generation at (0, 0) to keep spawn point clear
+                    if (Math.abs(actualX) < 0.6 && Math.abs(actualZ) < 0.6) {
+                        console.log(`Skipping block at (${actualX.toFixed(2)}, ${actualZ.toFixed(2)}) - spawn point reserved`);
+                        continue;
+                    }
+                    
                     // 直接创建高度为2的block，初始位置在地板下方（y=-2，完全看不见）
                     const tempScene = new THREE.Scene();
                     const block = createBlock(tempScene, actualX, actualZ, 2); // 高度为2
@@ -516,8 +522,8 @@ class LevelContent3D {
             return;
         }
         
-        // 随机选择一个非障碍位置
-        const randomPos = emptyPositions[Math.floor(Math.random() * emptyPositions.length)];
+        // Always spawn at position (0, 0) instead of random position
+        const randomPos = { x: 0, z: 0 };
         
         // 获取模型，用于计算世界坐标
         const model = this.models[level];
@@ -543,13 +549,7 @@ class LevelContent3D {
         
         console.log(`LevelContent3D: All block positions for level ${level} (${blocks.length} blocks):`, blockPositions);
         
-        // 验证选中的位置确实在emptyPositions中（双重检查）
-        const isInEmptyPositions = emptyPositions.some(pos => 
-            Math.abs(pos.x - randomPos.x) < 0.01 && Math.abs(pos.z - randomPos.z) < 0.01
-        );
-        if (!isInEmptyPositions) {
-            console.warn(`LevelContent3D: Selected position (${randomPos.x.toFixed(2)}, ${randomPos.z.toFixed(2)}) is not in emptyPositions, but continuing anyway`);
-        }
+        // Note: Using fixed position (0, 0) for spawning
         
         // 验证世界坐标位置不会与方块重叠（更严格的检查）
         let isOverlapping = false;
@@ -640,13 +640,12 @@ class LevelContent3D {
         const startLookAt = this.controls ? this.controls.target.clone() : 
                            startPos.clone().add(new THREE.Vector3(0, 0, -5));
         
-        console.log(`LevelContent3D: Starting camera move animation to random maze position:`, {
-            randomLocalPos: { x: randomPos.x.toFixed(2), z: randomPos.z.toFixed(2) },
+        console.log(`LevelContent3D: Starting camera move animation to fixed maze position (0, 0):`, {
+            fixedLocalPos: { x: randomPos.x.toFixed(2), z: randomPos.z.toFixed(2) },
             worldPos: { x: localPos.x.toFixed(2), y: localPos.y.toFixed(2), z: localPos.z.toFixed(2) },
             targetPos: { x: targetPos.x.toFixed(2), y: targetPos.y.toFixed(2), z: targetPos.z.toFixed(2) },
             lookAtTarget: { x: lookAtTarget.x.toFixed(2), y: lookAtTarget.y.toFixed(2), z: lookAtTarget.z.toFixed(2) },
             startPos: { x: startPos.x.toFixed(2), y: startPos.y.toFixed(2), z: startPos.z.toFixed(2) },
-            isEmptyPosition: isInEmptyPositions,
             isOverlapping: isOverlapping,
             totalEmptyPositions: emptyPositions.length
         });
@@ -1119,7 +1118,8 @@ class LevelContent3D {
             return;
         }
         
-        const randomPos = emptyPositions[Math.floor(Math.random() * emptyPositions.length)];
+        // Always spawn at position (0, 0) instead of random position
+        const randomPos = { x: 0, z: 0 };
         
         const model = this.models[level];
         if (!model) return;
@@ -1231,6 +1231,16 @@ class LevelContent3D {
             if (!this.pointerLockUnlockHandler) {
                 this.pointerLockUnlockHandler = () => {
                     console.log('LevelContent3D: PointerLockControls unlocked');
+                    
+                    // If game is not over, immediately re-lock to prevent "Click to Start" screen
+                    if (!window.gameOver) {
+                        console.log('LevelContent3D: Game is active, re-locking pointer immediately');
+                        setTimeout(() => {
+                            if (this.player && this.player.controls && !this.player.controls.isLocked) {
+                                this.player.controls.lock();
+                            }
+                        }, 10); // Small delay to allow unlock event to complete
+                    }
                 };
                 this.player.controls.addEventListener('unlock', this.pointerLockUnlockHandler);
             }
@@ -1304,34 +1314,17 @@ class LevelContent3D {
         }
         
         this.playerKeydownHandler = (event) => {
-            // ESC 键处理：进入暂停界面（如果未暂停）或关闭暂停界面（如果已暂停）
+            // ESC 键处理：Only works on game over screen
             if (event.key === 'Escape' || event.key === 'Esc') {
-                console.log(`LevelContent3D: ESC key pressed, isPaused: ${this.uiInstance ? this.uiInstance.isPaused : 'N/A'}`);
-                
-                if (this.uiInstance) {
-                    // 如果 PointerLockControls 已锁定，先解锁
-                    if (this.player && this.player.controls && this.player.controls.isLocked) {
-                        console.log('LevelContent3D: Unlocking PointerLockControls due to ESC key');
-                        this.player.controls.unlock();
-                    }
-                    
-                    // 如果已经暂停，按 ESC 应该关闭暂停界面（恢复游戏）
-                    if (this.uiInstance.isPaused) {
-                        console.log('LevelContent3D: ESC key - closing pause menu (resuming game)');
-                        if (typeof this.uiInstance.handleResumeClick === 'function') {
-                            this.uiInstance.handleResumeClick();
-                        }
-                    } else {
-                        // 如果未暂停，按 ESC 应该打开暂停界面
-                        console.log('LevelContent3D: ESC key - opening pause menu');
-                        if (typeof this.uiInstance.handlePauseClick === 'function') {
-                            this.uiInstance.handlePauseClick();
-                        }
-                    }
-                } else {
-                    console.warn('LevelContent3D: ESC key pressed but uiInstance is not available');
+                // Only allow ESC to work when game is over
+                if (window.gameOver) {
+                    console.log(`LevelContent3D: ESC key pressed on game over screen`);
+                    location.reload(); // Reload page to restart
+                    event.preventDefault();
+                    return;
                 }
-                // 阻止默认行为（防止浏览器退出全屏等）
+                // During active gameplay, do nothing
+                console.log('LevelContent3D: ESC key pressed during gameplay - ignored');
                 event.preventDefault();
                 return;
             }
@@ -1710,34 +1703,18 @@ class LevelContent3D {
         }
         
         this.globalKeydownHandler = (event) => {
-            // ESC 键处理：进入暂停界面（如果未暂停）或关闭暂停界面（如果已暂停）
+            // ESC 键处理：Only works on game over screen
             if (event.key === 'Escape' || event.key === 'Esc') {
-                console.log(`LevelContent3D: ESC key pressed (global handler), isPaused: ${this.uiInstance ? this.uiInstance.isPaused : 'N/A'}`);
-                
-                if (this.uiInstance) {
-                    // 如果 PointerLockControls 已锁定，先解锁
-                    if (this.player && this.player.controls && this.player.controls.isLocked) {
-                        console.log('LevelContent3D: Unlocking PointerLockControls due to ESC key');
-                        this.player.controls.unlock();
-                    }
-                    
-                    // 如果已经暂停，按 ESC 应该关闭暂停界面（恢复游戏）
-                    if (this.uiInstance.isPaused) {
-                        console.log('LevelContent3D: ESC key - closing pause menu (resuming game)');
-                        if (typeof this.uiInstance.handleResumeClick === 'function') {
-                            this.uiInstance.handleResumeClick();
-                        }
-                    } else {
-                        // 如果未暂停，按 ESC 应该打开暂停界面
-                        console.log('LevelContent3D: ESC key - opening pause menu');
-                        if (typeof this.uiInstance.handlePauseClick === 'function') {
-                            this.uiInstance.handlePauseClick();
-                        }
-                    }
-                } else {
-                    console.warn('LevelContent3D: ESC key pressed but uiInstance is not available');
+                // Only allow ESC to work when game is over
+                if (window.gameOver) {
+                    console.log(`LevelContent3D: ESC key pressed on game over screen (global handler)`);
+                    location.reload(); // Reload page to restart
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return;
                 }
-                // 阻止默认行为（防止浏览器退出全屏等）
+                // During active gameplay, do nothing
+                console.log('LevelContent3D: ESC key pressed during gameplay (global handler) - ignored');
                 event.preventDefault();
                 event.stopPropagation();
                 return;

@@ -795,6 +795,7 @@ function animate(timestamp) {
         const elapsedMs = Date.now() - gameStartTime;
         if (elapsedMs >= GAME_DURATION) {
             gameOver = true;
+            window.gameOver = true; // Update global flag
             showGameOver();
         }
     }
@@ -836,6 +837,9 @@ document.addEventListener('keydown', function(event) {
 let gameStartTime = null;
 const GAME_DURATION = 35000; // 35 seconds in milliseconds
 let gameOver = false;
+
+// Make gameOver accessible globally so ESC handlers can check it
+window.gameOver = false;
 
 // Function to update score display
 function updateScoreDisplay() {

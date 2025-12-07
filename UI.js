@@ -998,6 +998,16 @@ class UI {
     }
     
     renderMainMenu() {
+        // 渲染标题
+        this.ctx.save();
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.font = 'bold 84px monospace';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        const titleY = this.playButton.y - 120; // 120px above the first button
+        this.ctx.fillText('Cubers (9825)', this.width / 2, titleY);
+        this.ctx.restore();
+        
         // 更新填充进度
         this.updateFillProgress();
         
@@ -1159,7 +1169,7 @@ class UI {
         // 绘制文字（根据填充进度从白色平滑变黑）
         const textColor = this.lerpColor('#ffffff', '#000000', fillProgress);
         this.ctx.fillStyle = textColor;
-        this.ctx.font = `bold ${currentFontSize}px Arial`;
+        this.ctx.font = `bold ${currentFontSize}px monospace`;
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
         this.ctx.fillText(
@@ -1225,7 +1235,7 @@ class UI {
         
         // 绘制文字（暂停菜单按钮文字始终白色）
         this.ctx.fillStyle = '#ffffff';
-        this.ctx.font = `bold ${currentFontSize}px Arial`;
+        this.ctx.font = `bold ${currentFontSize}px monospace`;
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
         this.ctx.fillText(

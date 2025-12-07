@@ -56,16 +56,17 @@
 				right: calc(50% - 640px + 10px); /* Right edge of centered game (50% - 1280px/2) + 10px padding */
 				color: white;
 				font-family: monospace;
-				font-size: 14px;
+				font-size: 16px;
 				font-weight: bold;
 				text-align: right;
-				text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+				text-shadow: none;
 				display: none;
 				pointer-events: none;
 				z-index: 10001; /* Above game scene */
-				background: rgba(0, 0, 0, 0.7);
-				padding: 12px;
-				border-radius: 8px;
+				background: rgba(0, 0, 0, 0.85);
+				padding: 15px;
+				border: 2px solid #fff;
+				border-radius: 0;
 				max-width: 300px;
 			}
 		
@@ -82,7 +83,7 @@
 			border-radius: 0;
 			cursor: pointer;
 			font-size: 18px;
-			font-weight: normal;
+			font-weight: bold;
 			font-family: monospace;
 			letter-spacing: 2px;
 			text-transform: uppercase;
