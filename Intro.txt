@@ -1,0 +1,9 @@
+Cubers #9825- Brief Introduction
+
+You are spawned in a cyberpunk world in 9825, where everyone is an emissive cube! Try to occupy the world as much as you can.
+
+WASD to move. LEFT CLICK to emit laser.
+
+Once your laser hits a critical point on the wall, it turns to YOUR color. The counter on the right top tells you how many points everyone had occupied. After 35 seconds, the one with the most number of critical points wins.
+
+Happy playing!
