@@ -28,8 +28,10 @@ class Player {
      * this.mesh need to move with the camera, but can only rotate on z axis
      * @param {number} isFirstPerson 0 if is first person player, 1 if npc (the difference is only in PointerLockControls)
      * @param {*} renderer 
+     * @param {*} collisionWorld
+     * @param {*} criticalPointSystem - The critical point system instance for managing points
      */
-    constructor(isFirstPerson, renderer, collisionWorld) {
+    constructor(isFirstPerson, renderer, collisionWorld, criticalPointSystem = null) {
 
         this.movement = {w: false, a: false, s: false, d: false, space: false, spaceHold: false};
         this.speedY = 0;
@@ -57,6 +59,9 @@ class Player {
             this.controls = new P.PointerLockControls(this.camera, renderer.domElement);
     
         this.score = 0;
+        
+        // Store critical point system reference for use in methods
+        this.criticalPointSystem = criticalPointSystem;
 
         // 3-point claiming system
         this.maxClaimedPoints = 3;
@@ -234,12 +239,12 @@ class Player {
                 console.log(`Player claimed CP, now has ${this.claimedPointsList.length}/${this.maxClaimedPoints} points`);
                 
                 // Use the new critical point registry system if available
-                if (criticalPointSystem && point.cp && point.cp.userData.cpId !== undefined) {
+                if (this.criticalPointSystem && point.cp && point.cp.userData.cpId !== undefined) {
                     // Claim the CP in the registry (line drawn to it)
-                    criticalPointSystem.claimCriticalPoint(cpId, this.color, 'Player');
+                    this.criticalPointSystem.claimCriticalPoint(cpId, this.color, 'Player');
                     
                     // Capture the CP (change ownership/color)
-                    criticalPointSystem.captureCriticalPoint(cpId, this.color, 'Player');
+                    this.criticalPointSystem.captureCriticalPoint(cpId, this.color, 'Player');
                 } else {
                     // Fallback to old color system if registry not available
                     if (point.cp && point.cp.material) {
@@ -406,7 +411,17 @@ const GRAVITY = window.GRAVITY || ((window.PLAYER_JUMP_SPEED || 0.03) * (window.
 
 // Function to initialize the indexjake game (called from UI transition)
 window.startIndexJakeGame = async function(selectedLevel = 1) {
-    console.log(`Initializing indexjake game for level ${selectedLevel}`);
+    // Prevent multiple game instances from being created
+    if (window.gameInstance && window.gameInstance.running) {
+        console.warn('⚠️ Game is already running! Ignoring duplicate start request.');
+        return;
+    }
+    
+    console.log(`✓ Initializing indexjake game for level ${selectedLevel}`);
+    console.log(`🎨 Loading map textures for mode ${selectedLevel}`);
+    
+    // Mark game as running
+    window.gameInstance = { running: true };
     
 // global variables
 let startGame = false;
@@ -438,8 +453,9 @@ const menuOverlay = document.getElementById("menuOverlay");
 // handling collision
 const collisionWorld = new Octree();
 
-// map mode
-let mapMode = 1;
+// map mode - USE THE SELECTED LEVEL TO DETERMINE TEXTURE SET
+let mapMode = selectedLevel; // Level 1-5 maps to texture modes 1-5
+console.log(`✅ Map mode set to: ${mapMode} (${['', 'LAB', 'HEDGE', 'GLASS', 'EYES', 'LIBRARY'][mapMode] || 'UNKNOWN'})`);
 
 // Initialize Critical Point System
 const criticalPointSystem = new window.CriticalPointSystem(scene);
@@ -602,8 +618,8 @@ let lighting = new MapLighting(scene);
 
 scene.add(levelObj);
 
-// create playable player and put in scene
-let player1 = new Player(0, renderer, collisionWorld);
+// create playable player and put in scene (pass criticalPointSystem)
+let player1 = new Player(0, renderer, collisionWorld, criticalPointSystem);
 scene.add(player1.object);
 
 // Create multiple agents using the agent manager (inside the maze walls)
@@ -653,8 +669,8 @@ function toggleCriticalPoints(enabled) {
 // Make toggle function globally accessible (for debugging)
 window.toggleCriticalPoints = toggleCriticalPoints;
 
-// WASD controls: keydwon
-document.addEventListener('keydown', function (event) {
+// WASD controls: keydown (use named function to prevent duplicates)
+const handleKeyDown = function (event) {
     if(startGame) {
         switch(event.key) {
             case 'w':
@@ -673,19 +689,12 @@ document.addEventListener('keydown', function (event) {
             case 'D':
                 player1.movement.d = true;
                 break;
-            // case ' ':
-            //     if(player1.movement.spaceHold)
-            //         break;
-            //     player1.movement.space = true;
-            //     player1.movement.spaceHold = true;
-            //     player1.speedY = PLAYER_JUMP_SPEED;
-            //     break;
         }        
     }
+};
 
-});
-// WASD controls: keyup
-document.addEventListener('keyup', function (event) {
+// WASD controls: keyup (use named function to prevent duplicates)
+const handleKeyUp = function (event) {
     if(startGame) {
         switch(event.key) {
             case 'w':
@@ -704,16 +713,12 @@ document.addEventListener('keyup', function (event) {
             case 'D':
                 player1.movement.d = false;
                 break;
-            // case ' ':
-            //     player1.movement.space = false;
-            //     break;
         }
     }
+};
 
-});
-
-// playe mesh rotates with first person perspective
-document.addEventListener('mousemove', function (event) {
+// Player mesh rotates with first person perspective (use named function)
+const handleMouseMove = function (event) {
     if(startGame) {
         let camDir = new T.Vector3();
         player1.camera.getWorldDirection(camDir);
@@ -721,34 +726,54 @@ document.addEventListener('mousemove', function (event) {
         camDir.normalize();
         player1.mesh.rotation.y = Math.atan2(camDir.x, camDir.z);
     }
+};
 
-});
-
-// enable and disable PoiniterLockControls
-document.body.addEventListener('click', () => {
+// Enable and disable PointerLockControls (use named function)
+const handleBodyClick = () => {
     menuOverlay.style.display = "none";
     player1.controls.lock();
     startGame = true;
+};
 
-});
-player1.controls.addEventListener('unlock', () => {
-    menuOverlay.style.display = 'block';
-    startGame = false;
-});
+const handleUnlock = () => {
+    // Only show menuOverlay if game is over or hasn't started yet
+    // Don't show it during active gameplay (prevents "Click to Start" when ESC is pressed)
+    if (window.gameOver) {
+        menuOverlay.style.display = 'block';
+        startGame = false;
+    } else {
+        // Game is active, keep menuOverlay hidden
+        menuOverlay.style.display = 'none';
+    }
+};
 
-// laser firing controls
-document.addEventListener('mousedown', (event) => {
+// Laser firing controls (use named functions)
+const handleMouseDown = (event) => {
     if(event.button === 0) {
         player1.laserFire = true;
     }
-});
+};
 
-document.addEventListener('mouseup', (event) => {
+const handleMouseUp = (event) => {
     if(event.button === 0) {
         player1.laserFire = false;
         player1.laser.visible = false;
     }
-});
+};
+
+// Add event listeners only once
+if (!window.gameEventListenersAdded) {
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('keyup', handleKeyUp);
+    document.addEventListener('mousemove', handleMouseMove);
+    document.body.addEventListener('click', handleBodyClick);
+    player1.controls.addEventListener('unlock', handleUnlock);
+    document.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('mouseup', handleMouseUp);
+    
+    window.gameEventListenersAdded = true;
+    console.log('✓ Game event listeners added');
+}
 
 // // some helpers, leaving in for now so I don't have to type it again
 // const helper = new OctreeHelper( collisionWorld );
@@ -772,8 +797,18 @@ function animate(timestamp) {
         previousTime = timestamp;
     let delta = (timestamp - previousTime) / 1000;
 
-    // Only update game objects if the game has actually started
-    if (startGame) {
+    // Check if game should end (35 seconds elapsed)
+    if (startGame && gameStartTime && !gameOver) {
+        const elapsedMs = Date.now() - gameStartTime;
+        if (elapsedMs >= GAME_DURATION) {
+            gameOver = true;
+            window.gameOver = true; // Update global flag
+            showGameOver();
+        }
+    }
+
+    // Only update game objects if the game has actually started and not over
+    if (startGame && !gameOver) {
         player1.update(objectsInScene, criticalPointSystem.criticalPoints);
         
         // Update all agents and their line of sight
@@ -807,6 +842,11 @@ document.addEventListener('keydown', function(event) {
 
 // Game start time for tracking elapsed time
 let gameStartTime = null;
+const GAME_DURATION = 35000; // 35 seconds in milliseconds
+let gameOver = false;
+
+// Make gameOver accessible globally so ESC handlers can check it
+window.gameOver = false;
 
 // Function to update score display
 function updateScoreDisplay() {
@@ -863,17 +903,129 @@ function updateScoreDisplay() {
     scoreDiv.innerHTML = text.replace(/\n/g, '<br>');
 }
 
-// Show LOS UI when game starts
-document.body.addEventListener('click', () => {
+// Function to show game over screen
+function showGameOver() {
+    console.log('🏁 GAME OVER - 35 seconds elapsed');
+    
+    // Calculate final scores
+    const scores = { Red: 0, Green: 0, Blue: 0 };
+    
+    // Get agent scores
+    if (agentManager && agentManager.agents) {
+        agentManager.agents.forEach((agent) => {
+            try {
+                const score = agent.getScore();
+                const hexColor = agent.agentColor.toString(16).padStart(6, '0');
+                const colorName = getColorName(hexColor);
+                if (scores.hasOwnProperty(colorName)) {
+                    scores[colorName] = score;
+                }
+            } catch (e) {
+                // Skip if error getting agent data
+            }
+        });
+    }
+    
+    // Get player score (Blue)
+    if (player1) {
+        scores.Blue = player1.score;
+    }
+    
+    // Determine winner
+    let winner = 'Blue';
+    let highScore = scores.Blue;
+    if (scores.Red > highScore) {
+        winner = 'Red';
+        highScore = scores.Red;
+    }
+    if (scores.Green > highScore) {
+        winner = 'Green';
+        highScore = scores.Green;
+    }
+    
+    // Create game over overlay
+    const overlay = document.createElement('div');
+    overlay.id = 'gameOverOverlay';
+    overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: rgba(0, 0, 0, 0.9);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 10002;
+        font-family: monospace;
+        color: white;
+    `;
+    
+    // Create content container
+    const content = document.createElement('div');
+    content.style.cssText = `
+        text-align: center;
+        padding: 40px;
+        border: 2px solid white;
+        background: black;
+        min-width: 400px;
+    `;
+    
+    content.innerHTML = `
+        <h1 style="font-size: 48px; margin-bottom: 30px; letter-spacing: 4px;">GAME OVER</h1>
+        <div style="font-size: 24px; margin-bottom: 40px;">
+            <div style="margin: 15px 0;">RED: ${scores.Red}</div>
+            <div style="margin: 15px 0;">GREEN: ${scores.Green}</div>
+            <div style="margin: 15px 0;">BLUE: ${scores.Blue}</div>
+        </div>
+        <div style="font-size: 32px; margin-top: 30px; padding-top: 30px; border-top: 1px solid white;">
+            WINNER: <span style="color: ${winner.toLowerCase()};">${winner.toUpperCase()}</span>
+        </div>
+        <div style="font-size: 16px; margin-top: 30px; opacity: 0.7;">
+            Press ESC to exit
+        </div>
+    `;
+    
+    overlay.appendChild(content);
+    document.body.appendChild(overlay);
+    
+    // Release pointer lock if active
+    if (document.pointerLockElement) {
+        document.exitPointerLock();
+    }
+    
+    // Add escape key handler
+    const escHandler = (e) => {
+        if (e.key === 'Escape') {
+            location.reload(); // Reload page to restart
+        }
+    };
+    document.addEventListener('keydown', escHandler);
+    
+    console.log(`🏆 Winner: ${winner} with ${highScore} points`);
+}
+
+// Show LOS UI when game starts (only add listener once)
+const showLOSUI = () => {
     setTimeout(() => {
         const losUI = document.getElementById('losUI');
         if (losUI) {
             losUI.style.display = 'block';
         }
     }, 1000);
-});
+};
 
-window.requestAnimationFrame(animate);
+if (!window.losUIListenerAdded) {
+    document.body.addEventListener('click', showLOSUI);
+    window.losUIListenerAdded = true;
+}
+
+// Start animation loop only once
+if (!window.gameAnimationStarted) {
+    window.requestAnimationFrame(animate);
+    window.gameAnimationStarted = true;
+    console.log('✓ Animation loop started');
+}
 
 // Pathfinding utilities for agents (globally accessible)
 window.MapPathfinding = {

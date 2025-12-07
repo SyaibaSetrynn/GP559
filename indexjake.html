@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- Version: 2024-01-FINAL-V3 - Prevent multiple game instances -->
 <html>
 	<head>
 		<link rel="stylesheet" href="./style.css" />
@@ -37,21 +38,34 @@
 			#menuOverlay {
 				display: none; /* Will be controlled by the UI system */
 			}
-			
-			#losUI {
-				position: absolute; 
-				top: 10px; 
-				right: 420px; 
-				color: white; 
-				font-family: monospace; 
-				font-size: 14px; 
-				font-weight: bold; 
-				text-align: right; 
-				text-shadow: 2px 2px 4px rgba(0,0,0,0.8); 
-				display: none; 
-				pointer-events: none;
-			}
-		</style>
+					#losUI {
+			position: fixed; 
+			top: 10px; 
+			right: 10px; 
+			color: white; 
+			font-family: monospace; 
+			font-size: 14px; 
+			font-weight: bold; 
+			text-align: right; 
+			text-shadow: 2px 2px 4px rgba(0,0,0,0.8); 
+			display: none; 
+			pointer-events: none;
+			z-index: 10000;
+			background: rgba(0, 0, 0, 0.5);
+			padding: 10px;
+			border-radius: 5px;
+		}
+		
+		#startGameButton:hover {
+			transform: translate(-50%, -50%) scale(1.05);
+			box-shadow: 0 12px 40px rgba(102, 126, 234, 0.8);
+			background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+		}
+		
+		#startGameButton:active {
+			transform: translate(-50%, -50%) scale(0.98);
+		}
+	</style>
 	</head>
 
 	<body>
@@ -69,6 +83,12 @@
 			<div id="agentScores">Loading scores...</div>
 		</div>
 		
+		<!-- Start Game Button (appears after 5 seconds) -->
+		<button id="startGameButton" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 10001; padding: 20px 40px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 15px; cursor: pointer; font-size: 24px; font-weight: bold; box-shadow: 0 8px 30px rgba(102, 126, 234, 0.6); transition: all 0.3s ease; display: none;">
+			🎮 START GAME
+		</button>
+	
+	<!-- Import map MUST come first before any module scripts -->
 	<script type="importmap">
 		{
 			"imports": {
@@ -136,10 +156,15 @@
 		
 		function setupLevelTransition() {
 			// Check if LevelSelection3D has been created and override enterLevel
+			console.log('🔧 Checking for LevelSelection3D...');
 			if (window.uiInstance && window.uiInstance.levelSelection3D) {
+				console.log('✓ LevelSelection3D found! Setting up override...');
 				const originalEnterLevel = window.uiInstance.levelSelection3D.enterLevel.bind(window.uiInstance.levelSelection3D);
 				window.uiInstance.levelSelection3D.enterLevel = function(level) {
-					console.log(`Level ${level} selected, continuing UI flow for 5 seconds before transitioning to indexjake game`);
+					console.log(`✓ enterLevel called for level ${level}! Starting transition...`);
+					
+					// ALWAYS trigger the button transition when enterLevel is called
+					window.transitionToIndexJakeGame(level);
 					
 					// Call the original enterLevel to continue normal UI flow
 					originalEnterLevel(level).then(() => {
@@ -147,75 +172,162 @@
 					}).catch(error => {
 						console.error(`Error in original enterLevel:`, error);
 					});
-					
-					// Start the 5-second timer to transition to indexjake
-					window.transitionToIndexJakeGame(level);
 				};
-				console.log('Level transition override set up successfully');
+				console.log('✓ Level transition override set up successfully');
+				console.log('✓ Click on a level to begin');
 			} else {
+				console.log('⏳ LevelSelection3D not ready yet, retrying in 500ms...');
 				// Try again in a bit if not ready
 				setTimeout(setupLevelTransition, 500);
 			}
 		}
 		
-		// Function to transition to indexjake game with selected level after 5 seconds
-		window.transitionToIndexJakeGame = function(selectedLevel) {
-			console.log(`Level ${selectedLevel} selected, UI will continue for 5 seconds before switching to main game`);
+		// Function to immediately start the game
+		function startGameNow(level) {
+			// Prevent duplicate starts
+			if (window.gameStarting || (window.gameInstance && window.gameInstance.running)) {
+				console.warn('⚠️ Game is already starting or running! Ignoring duplicate request.');
+				return;
+			}
 			
-			// Wait 5 seconds while the UI continues to work normally
-			setTimeout(() => {
-				console.log(`5 seconds elapsed, switching to indexjake game for level ${selectedLevel}`);
-				
-				// Stop the UI system's animation loop to prevent conflicts
-				if (window.uiInstance && window.uiInstance.stopRenderLoop) {
-					window.uiInstance.stopRenderLoop();
+			window.gameStarting = true;
+			
+			console.log(`========================================`);
+			console.log(`STARTING GAME IMMEDIATELY for level ${level}`);
+			console.log(`========================================`);
+			
+			// Hide the start button
+			const startBtn = document.getElementById('startGameButton');
+			if (startBtn) {
+				startBtn.style.display = 'none';
+			}
+			
+			// Stop the UI system
+			if (window.uiInstance && window.uiInstance.stopRenderLoop) {
+				window.uiInstance.stopRenderLoop();
+				console.log('UI stopped');
+			}
+			
+			// Hide UI elements
+			const gameCanvas = document.getElementById('gameCanvas');
+			const gameContainer = document.getElementById('gameContainer');
+			const menuOverlay = document.getElementById('menuOverlay');
+			
+			if (gameCanvas) gameCanvas.style.display = 'none';
+			if (gameContainer) gameContainer.style.display = 'none';
+			if (menuOverlay) menuOverlay.style.display = 'none';
+			
+			// Show game container
+			const div1 = document.getElementById('div1');
+			if (div1) {
+				div1.style.display = 'block';
+				div1.style.position = 'fixed';
+				div1.style.top = '0';
+				div1.style.left = '0';
+				div1.style.width = '100vw';
+				div1.style.height = '100vh';
+				div1.style.zIndex = '9999';
+				console.log('Game container shown');
+			}
+			
+			// Show game UI (make it visible and ensure z-index)
+			const losUI = document.getElementById('losUI');
+			if (losUI) {
+				losUI.style.display = 'block';
+				losUI.style.position = 'fixed';
+				losUI.style.zIndex = '10000';
+				losUI.style.top = '10px';
+				losUI.style.right = '10px';
+				console.log('Game UI shown');
+			}
+			
+			// Start the game
+			if (window.startIndexJakeGame) {
+				console.log('Calling startIndexJakeGame...');
+				try {
+					window.startIndexJakeGame(level);
+					console.log('✓ Game started successfully!');
+					window.gameStarting = false; // Reset flag after successful start
+				} catch (error) {
+					console.error('ERROR starting game:', error);
+					window.gameStarting = false; // Reset flag on error
+					window.gameInstance = null; // Clear instance on error
 				}
-				
-				// Clean up any existing animation loops or timers
-				if (window.uiAnimationId) {
-					cancelAnimationFrame(window.uiAnimationId);
-				}
-				
-				// Hide the UI canvas and container
-				const gameCanvas = document.getElementById('gameCanvas');
-				const gameContainer = document.getElementById('gameContainer');
-				if (gameCanvas) gameCanvas.style.display = 'none';
-				if (gameContainer) gameContainer.style.display = 'none';
-				
-				// Show the Three.js game container
-				const div1 = document.getElementById('div1');
-				if (div1) {
-					div1.style.display = 'block';
-					div1.style.position = 'fixed';
-					div1.style.top = '0';
-					div1.style.left = '0';
-					div1.style.width = '100vw';
-					div1.style.height = '100vh';
-				}
-				
-				// Show the game UI
-				const losUI = document.getElementById('losUI');
-				if (losUI) losUI.style.display = 'block';
-				
-				// Start the indexjake game (defined in Player.js)
-				console.log(`Starting indexjake game with level ${selectedLevel}`);
-				if (window.startIndexJakeGame) {
-					try {
-						window.startIndexJakeGame(selectedLevel);
-					} catch (error) {
-						console.error(`Error starting indexjake game:`, error);
-					}
-				} else {
-					console.error('startIndexJakeGame function not found in Player.js');
-				}
-			}, 5000); // 5 seconds delay
+			} else {
+				console.error('startIndexJakeGame function not found!');
+				window.gameStarting = false; // Reset flag
+			}
 		}
+		
+		// Function to transition to indexjake game with selected level after 3.5 seconds
+		window.transitionToIndexJakeGame = function(selectedLevel) {
+			console.log(`========================================`);
+			console.log(`🎯 TRANSITION TRIGGERED for Level ${selectedLevel}`);
+			console.log(`⏰ Button will appear in 3.5 seconds...`);
+			console.log(`========================================`);
+			
+			// Store the selected level for the button handler
+			window.selectedGameLevel = selectedLevel;
+			
+			// Clear any existing timeout to prevent duplicates
+			if (window.buttonShowTimeout) {
+				console.log('⚠️ Clearing existing button timeout');
+				clearTimeout(window.buttonShowTimeout);
+			}
+			
+			// Record the time when enterLevel was triggered
+			const startTime = Date.now();
+			
+			// Wait 3.5 seconds while the UI continues to work normally
+			window.buttonShowTimeout = setTimeout(() => {
+				const elapsed = Date.now() - startTime;
+				console.log(`⏰ ${elapsed}ms elapsed - showing START GAME button NOW`);
+				
+				// Show the start game button
+				const startButton = document.getElementById('startGameButton');
+				if (startButton) {
+					console.log('🔧 Button element found, current display:', startButton.style.display);
+					startButton.style.display = 'block';
+					console.log('✅ Button display set to: block');
+					
+					// Set up click handler (only if not already set up)
+					if (!window.startButtonHandlerSet) {
+						console.log('🔧 Setting up button click handler...');
+						startButton.addEventListener('click', function startGameHandler() {
+							console.log('🎮 START GAME button clicked!');
+							startButton.style.display = 'none'; // Hide button
+							
+							// Use the stored level from when the transition was scheduled
+							const level = window.selectedGameLevel || selectedLevel;
+							startGameNow(level);
+						});
+						window.startButtonHandlerSet = true;
+						console.log('✅ Click handler set up');
+					}
+					
+					console.log('✓ START GAME button shown - click to begin!');
+				} else {
+					// Fallback: auto-start if button not found
+					console.error('❌ Start button element not found!');
+					console.warn('Auto-starting game as fallback');
+					startGameNow(selectedLevel);
+				}
+			}, 3500); // EXACTLY 3.5 seconds after enterLevel is called
+			
+			console.log('⏳ Waiting 3.5 seconds for button to appear...');
+		}
+		
+		// Make startGameNow globally accessible for debugging
+		window.startGameNow = startGameNow;
 	</script>
 
+	<!-- Load non-module scripts AFTER the module script so dependencies are available -->
 	<script src="StateManager.js"></script>
-	<script src="Player.js" type="module"></script>
-	<!-- LevelContent3D.js must be loaded before LevelSelection3D.js -->
-	<script src="LevelContent3D.js" defer></script>
-	<script src="LevelSelection3D.js" defer></script>
+	<script src="LevelContent3D.js"></script>
+	<script src="LevelSelection3D.js"></script>
 	<script src="UI.js"></script>
+
+	<!-- Player.js is a module that loads after other scripts -->
+	<script src="Player.js" type="module"></script>
 	</body>
+</html>

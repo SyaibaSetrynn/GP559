@@ -7,15 +7,18 @@ class UI {
         this.width = canvas.width;
         this.height = canvas.height;
         
-        // 按钮间距
-        const buttonSpacing = 20;
+        // 按钮间距 - Even spacing for 3 buttons
+        const buttonHeight = 100;
+        const buttonSpacing = 30; // Space between buttons
+        const totalHeight = (buttonHeight * 3) + (buttonSpacing * 2); // 3 buttons + 2 gaps
+        const startY = (this.height - totalHeight) / 2 + 100; // Center vertically, then lower by 100px
         
         // Play按钮属性
         this.playButton = {
             x: this.width / 2 - 125,  // 居中，250宽度的一半
-            y: this.height / 2 - 100,  // 居中偏上
+            y: startY,  // First button at top
             width: 250,
-            height: 100,
+            height: buttonHeight,
             cornerRadius: 10,
             baseColor: '#000000',      // 黑色填充
             hoverColor: '#2a2a2a',     // hover时稍微变浅
@@ -33,9 +36,9 @@ class UI {
         // Help按钮属性
         this.helpButton = {
             x: this.width / 2 - 125,  // 居中，250宽度的一半
-            y: this.height / 2 + buttonSpacing + 50,  // Play按钮下方，下移50
+            y: startY + buttonHeight + buttonSpacing,  // Second button
             width: 250,
-            height: 100,
+            height: buttonHeight,
             cornerRadius: 10,
             baseColor: '#000000',      // 黑色填充
             hoverColor: '#2a2a2a',     // hover时稍微变浅
@@ -48,6 +51,27 @@ class UI {
             isHovered: false,
             isClicked: false,
             targetPhase: 2
+        };
+        
+        // DQN Training按钮属性
+        this.dqnButton = {
+            x: this.width / 2 - 125,  // 居中，250宽度的一半
+            y: startY + (buttonHeight + buttonSpacing) * 2,  // Third button
+            width: 250,
+            height: buttonHeight,
+            cornerRadius: 10,
+            baseColor: '#000000',      // 黑色填充
+            hoverColor: '#2a2a2a',     // hover时稍微变浅
+            strokeColor: '#ffffff',    // 白色描边
+            strokeWidth: 6,            // 边框宽度（3倍）
+            text: 'DQN Training',
+            fontSize: 28,
+            baseFontSize: 28,
+            clickFontSize: 24,
+            isHovered: false,
+            isClicked: false,
+            targetPhase: -1,  // -1 means open in new tab
+            url: 'indexdqn.html'  // URL to open
         };
         
         // 统一箭头按钮样式配置
@@ -140,12 +164,15 @@ class UI {
         // 动画相关
         this.playButtonColor = this.playButton.baseColor;
         this.helpButtonColor = this.helpButton.baseColor;
+        this.dqnButtonColor = this.dqnButton.baseColor;
         this.playButtonFontSize = this.playButton.baseFontSize;
         this.helpButtonFontSize = this.helpButton.baseFontSize;
+        this.dqnButtonFontSize = this.dqnButton.baseFontSize;
         
         // 主界面按钮从左到右变白动画
         this.playButtonFillProgress = 0;  // 0-1，填充进度
         this.helpButtonFillProgress = 0;
+        this.dqnButtonFillProgress = 0;
         this.playButtonFillAnimation = {
             isAnimating: false,
             startTime: 0,
@@ -154,6 +181,13 @@ class UI {
             startProgress: 0
         };
         this.helpButtonFillAnimation = {
+            isAnimating: false,
+            startTime: 0,
+            duration: 100,  // 0.1秒
+            targetProgress: 0,
+            startProgress: 0
+        };
+        this.dqnButtonFillAnimation = {
             isAnimating: false,
             startTime: 0,
             duration: 100,  // 0.1秒
@@ -282,6 +316,18 @@ class UI {
         // 初始化 3D 场景（仅在 phase=1 时使用）
         this.levelSelection3D = null;
         
+        // Load cubers.png for help page
+        this.cubersImage = new Image();
+        this.cubersImage.src = 'Textures/cubers.png';
+        this.cubersImageLoaded = false;
+        this.cubersImage.onload = () => {
+            this.cubersImageLoaded = true;
+            console.log('UI: cubers.png loaded successfully');
+        };
+        this.cubersImage.onerror = () => {
+            console.error('UI: Failed to load cubers.png');
+        };
+        
         this.setupEventListeners();
         this.startRenderLoop();
     }
@@ -335,6 +381,8 @@ class UI {
                     this.handleClick(this.playButton);
                 } else if (this.isPointInButton(x, y, this.helpButton)) {
                     this.handleClick(this.helpButton);
+                } else if (this.isPointInButton(x, y, this.dqnButton)) {
+                    this.handleClick(this.dqnButton);
                 }
             } else if (currentPhase === 1) {
                 if (this.isPointInButton(x, y, this.backButton)) {
@@ -380,8 +428,10 @@ class UI {
         // 重置所有hover状态
         const prevPlayHovered = this.playButton.isHovered;
         const prevHelpHovered = this.helpButton.isHovered;
+        const prevDqnHovered = this.dqnButton.isHovered;
         this.playButton.isHovered = false;
         this.helpButton.isHovered = false;
+        this.dqnButton.isHovered = false;
         // tutorialButton 已删除
         this.backButton.isHovered = false;
         this.leftArrowButton.isHovered = false;
@@ -393,6 +443,7 @@ class UI {
             // 主界面：检查Play和Help按钮
             this.playButton.isHovered = this.isPointInButton(x, y, this.playButton);
             this.helpButton.isHovered = this.isPointInButton(x, y, this.helpButton);
+            this.dqnButton.isHovered = this.isPointInButton(x, y, this.dqnButton);
             
             // 如果hover状态改变，启动填充动画
             if (this.playButton.isHovered !== prevPlayHovered) {
@@ -400,6 +451,9 @@ class UI {
             }
             if (this.helpButton.isHovered !== prevHelpHovered) {
                 this.startFillAnimation('help');
+            }
+            if (this.dqnButton.isHovered !== prevDqnHovered) {
+                this.startFillAnimation('dqn');
             }
         } else if (currentPhase === 1) {
             // Level Selection界面：检查所有按钮
@@ -445,6 +499,8 @@ class UI {
             this.playButtonFontSize = button.clickFontSize;
         } else if (button === this.helpButton) {
             this.helpButtonFontSize = button.clickFontSize;
+        } else if (button === this.dqnButton) {
+            this.dqnButtonFontSize = button.clickFontSize;
         }
         
         // 恢复字体大小并切换phase
@@ -453,12 +509,19 @@ class UI {
                 this.playButtonFontSize = button.baseFontSize;
             } else if (button === this.helpButton) {
                 this.helpButtonFontSize = button.baseFontSize;
+            } else if (button === this.dqnButton) {
+                this.dqnButtonFontSize = button.baseFontSize;
             }
             button.isClicked = false;
             
-            // 切换phase
-            if (typeof StateManager !== 'undefined') {
-                StateManager.setPhase(button.targetPhase);
+            // Handle DQN button - open in new tab
+            if (button === this.dqnButton) {
+                window.open(button.url, '_blank');
+            } else {
+                // 切换phase
+                if (typeof StateManager !== 'undefined') {
+                    StateManager.setPhase(button.targetPhase);
+                }
             }
         }, 150);
     }
@@ -589,27 +652,17 @@ class UI {
     }
     
     handlePauseClick() {
-        console.log('UI.js: handlePauseClick called');
-        console.log('UI.js: pauseButton.isClicked?', this.pauseButton.isClicked);
-        console.log('UI.js: isPaused before?', this.isPaused);
-        
-        if (this.pauseButton.isClicked || this.isPaused) {
-            console.log('UI.js: handlePauseClick early return');
-            return;
-        }
+        if (this.pauseButton.isClicked || this.isPaused) return;
         
         this.pauseButton.isClicked = true;
         this.isPaused = true;
-        console.log('UI.js: isPaused set to true');
         
         // 启动黑幕淡入动画
         this.startOverlayAnimation(0.5);
-        console.log('UI.js: startOverlayAnimation called');
         
         // 启动按钮淡入动画
         this.startButtonSlideAnimation('resume', true);
         this.startButtonSlideAnimation('quit', true);
-        console.log('UI.js: startButtonSlideAnimation called for resume and quit');
         
         setTimeout(() => {
             this.pauseButton.isClicked = false;
@@ -789,6 +842,14 @@ class UI {
         render();
     }
     
+    stopRenderLoop() {
+        if (this.animationFrame) {
+            cancelAnimationFrame(this.animationFrame);
+            this.animationFrame = null;
+            console.log('UI render loop stopped');
+        }
+    }
+    
     render() {
         // 获取当前phase
         const currentPhase = (typeof StateManager !== 'undefined') ? StateManager.getPhase() : 0;
@@ -828,6 +889,7 @@ class UI {
             // phase变化时重置hover状态
             this.playButton.isHovered = false;
             this.helpButton.isHovered = false;
+            this.dqnButton.isHovered = false;
             // tutorialButton 已删除
             this.backButton.isHovered = false;
             this.backButtonPhase2.isHovered = false;
@@ -840,8 +902,10 @@ class UI {
             if (currentPhase === 0) {
                 this.playButtonFillProgress = 0;
                 this.helpButtonFillProgress = 0;
+                this.dqnButtonFillProgress = 0;
                 this.playButtonFillAnimation.isAnimating = false;
                 this.helpButtonFillAnimation.isAnimating = false;
+                this.dqnButtonFillAnimation.isAnimating = false;
             }
             
             // 离开phase 10-15时，重置暂停状态并退出关卡模式
@@ -882,7 +946,7 @@ class UI {
                     // 如果有最后退出的关卡，自动切换到那个关卡；否则默认level为1
                     if (this.levelSelection3D && this.levelSelection3D.lastExitedLevel) {
                         this.level = this.levelSelection3D.lastExitedLevel;
-                        // console.log(`UI: Restoring to last exited level: ${this.level}`);
+                        console.log(`UI: Restoring to last exited level: ${this.level}`);
                     } else {
                         this.level = 1;
                     }
@@ -946,31 +1010,42 @@ class UI {
     }
     
     renderMainMenu() {
-        // 绘制标题 "Cubers" 在顶部居中
+        // 渲染标题
+        this.ctx.save();
         this.ctx.fillStyle = '#ffffff';
-        this.ctx.font = `bold 120px Arial`;
+        this.ctx.font = 'bold 84px monospace';
         this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'top';
-        this.ctx.fillText('Cubers', this.width / 2, 50);
+        this.ctx.textBaseline = 'middle';
+        const titleY = this.playButton.y - 120; // 120px above the first button
+        this.ctx.fillText('Cubers (9825)', this.width / 2, titleY);
+        this.ctx.restore();
+        
         // 更新填充进度
         this.updateFillProgress();
         
         // 更新颜色（平滑过渡）
         this.updateButtonColor(this.playButton, 'playButtonColor');
         this.updateButtonColor(this.helpButton, 'helpButtonColor');
+        this.updateButtonColor(this.dqnButton, 'dqnButtonColor');
         
         // 渲染Play按钮
         this.renderButton(this.playButton, this.playButtonColor, this.playButtonFontSize);
         
         // 渲染Help按钮
         this.renderButton(this.helpButton, this.helpButtonColor, this.helpButtonFontSize);
+        
+        // 渲染DQN Training按钮
+        this.renderButton(this.dqnButton, this.dqnButtonColor, this.dqnButtonFontSize);
     }
     
     startFillAnimation(buttonType) {
         const isPlay = buttonType === 'play';
-        const button = isPlay ? this.playButton : this.helpButton;
-        const animation = isPlay ? this.playButtonFillAnimation : this.helpButtonFillAnimation;
-        const progressProperty = isPlay ? 'playButtonFillProgress' : 'helpButtonFillProgress';
+        const isHelp = buttonType === 'help';
+        const isDqn = buttonType === 'dqn';
+        
+        const button = isPlay ? this.playButton : (isHelp ? this.helpButton : this.dqnButton);
+        const animation = isPlay ? this.playButtonFillAnimation : (isHelp ? this.helpButtonFillAnimation : this.dqnButtonFillAnimation);
+        const progressProperty = isPlay ? 'playButtonFillProgress' : (isHelp ? 'helpButtonFillProgress' : 'dqnButtonFillProgress');
         
         // 设置动画目标
         animation.startProgress = this[progressProperty];
@@ -1018,6 +1093,22 @@ class UI {
                 this.helpButtonFillProgress = start + (target - start) * progress;
             }
         }
+        
+        // 更新 DQN 按钮填充进度
+        if (this.dqnButtonFillAnimation.isAnimating) {
+            const elapsed = Date.now() - this.dqnButtonFillAnimation.startTime;
+            const progress = Math.min(elapsed / this.dqnButtonFillAnimation.duration, 1);
+            
+            if (progress >= 1) {
+                this.dqnButtonFillProgress = this.dqnButtonFillAnimation.targetProgress;
+                this.dqnButtonFillAnimation.isAnimating = false;
+            } else {
+                // 线性插值
+                const start = this.dqnButtonFillAnimation.startProgress;
+                const target = this.dqnButtonFillAnimation.targetProgress;
+                this.dqnButtonFillProgress = start + (target - start) * progress;
+            }
+        }
     }
     
     updateButtonColor(button, colorProperty) {
@@ -1032,7 +1123,9 @@ class UI {
     
     renderButton(button, currentColor, currentFontSize, customX = null) {
         const isPlay = (button === this.playButton);
-        const fillProgress = isPlay ? this.playButtonFillProgress : this.helpButtonFillProgress;
+        const isHelp = (button === this.helpButton);
+        const isDqn = (button === this.dqnButton);
+        const fillProgress = isPlay ? this.playButtonFillProgress : (isHelp ? this.helpButtonFillProgress : (isDqn ? this.dqnButtonFillProgress : 0));
         const x = customX !== null ? customX : button.x;
         
         // 绘制按钮（黑色填充）
@@ -1088,7 +1181,7 @@ class UI {
         // 绘制文字（根据填充进度从白色平滑变黑）
         const textColor = this.lerpColor('#ffffff', '#000000', fillProgress);
         this.ctx.fillStyle = textColor;
-        this.ctx.font = `bold ${currentFontSize}px Arial`;
+        this.ctx.font = `bold ${currentFontSize}px monospace`;
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
         this.ctx.fillText(
@@ -1154,7 +1247,7 @@ class UI {
         
         // 绘制文字（暂停菜单按钮文字始终白色）
         this.ctx.fillStyle = '#ffffff';
-        this.ctx.font = `bold ${currentFontSize}px Arial`;
+        this.ctx.font = `bold ${currentFontSize}px monospace`;
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
         this.ctx.fillText(
@@ -1373,16 +1466,64 @@ class UI {
         this.updateButtonHoverSize(this.backButtonPhase2, 'backButtonPhase2HoverFontSize');
         // tutorialButton 已删除
         
-        // 左上角标题（边距扩大）
+        // Title
         this.ctx.fillStyle = '#ffffff';
-        this.ctx.font = 'bold 48px Arial';
+        this.ctx.font = 'bold 48px monospace';
         this.ctx.textAlign = 'left';
         this.ctx.textBaseline = 'top';
-        this.ctx.fillText('Title', 60, 40);  // 左边距扩大3倍：20->60，上边距扩大2倍：20->40
+        this.ctx.fillText('Cubers #9825 - Brief Introduction', 60, 40);
         
-        // 左上角正文（在标题下方，间距扩大2倍）
-        this.ctx.font = '24px Arial';
-        this.ctx.fillText('Empty', 60, 140);  // 与标题间距从60扩大2倍到100，所以是40+100=140
+        // Introduction text
+        this.ctx.font = '20px monospace';
+        let yPos = 120;
+        const lineHeight = 30;
+        const leftMargin = 60;
+        
+        // Paragraph 1
+        this.ctx.fillText('You are spawned in a cube world in year 9825, where everyone is an', leftMargin, yPos);
+        yPos += lineHeight;
+        this.ctx.fillText('emissive cube! Try to occupy the world as much as you can.', leftMargin, yPos);
+        yPos += lineHeight * 1.5;
+        
+        // Controls
+        this.ctx.fillText('WASD to move. LEFT CLICK to emit laser.', leftMargin, yPos);
+        yPos += lineHeight * 1.5;
+        
+        // Paragraph 2
+        this.ctx.fillText('Once your laser hits a critical point on the wall, it turns to YOUR color.', leftMargin, yPos);
+        yPos += lineHeight;
+        this.ctx.fillText('The counter on the right top tells you how many points everyone had', leftMargin, yPos);
+        yPos += lineHeight;
+        this.ctx.fillText('occupied. After 35 seconds, the one with the most number of critical', leftMargin, yPos);
+        yPos += lineHeight;
+        this.ctx.fillText('points wins.', leftMargin, yPos);
+        yPos += lineHeight * 1.5;
+        
+        // Closing
+        this.ctx.fillText('Happy playing!', leftMargin, yPos);
+        
+        // Draw cubers.png in bottom right area - larger and extending left and up
+        if (this.cubersImageLoaded && this.cubersImage) {
+            const paddingRight = 20; // Padding from right edge
+            const paddingBottom = 20; // Padding from bottom edge
+            
+            // Calculate size while maintaining aspect ratio - much larger
+            const maxWidth = 500; // Increased from 300 to 500
+            const maxHeight = 450; // Increased from 300 to 450
+            
+            let imgWidth = this.cubersImage.width;
+            let imgHeight = this.cubersImage.height;
+            
+            // Scale to fit within max dimensions while maintaining aspect ratio
+            const scale = Math.min(maxWidth / imgWidth, maxHeight / imgHeight);
+            imgWidth = imgWidth * scale;
+            imgHeight = imgHeight * scale;
+            
+            const imgX = this.width - imgWidth - paddingRight;
+            const imgY = this.height - imgHeight - paddingBottom;
+            
+            this.ctx.drawImage(this.cubersImage, imgX, imgY, imgWidth, imgHeight);
+        }
         
         // 左下角Back按钮（使用统一箭头按钮样式，使用hover字体大小）
         this.renderArrowButton(this.backButtonPhase2, this.backButtonPhase2HoverFontSize);

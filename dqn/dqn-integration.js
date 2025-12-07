@@ -426,7 +426,7 @@ export class DQNIntegration {
             return;
         }
         
-        // Create new status display
+        // Create new status display - Clean Black & White Theme
         const statusDiv = document.createElement('div');
         statusDiv.id = 'dqn-status-display';
         statusDiv.style.cssText = `
@@ -434,49 +434,50 @@ export class DQNIntegration {
             bottom: 10px;
             left: 10px;
             right: 330px;
-            background: #161b22;
-            border: 1px solid #30363d;
-            border-radius: 6px;
-            padding: 8px;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            font-size: 9px;
+            background: #000;
+            border: 2px solid #fff;
+            border-radius: 0;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 10px;
             z-index: 1000;
-            height: 65px;
-            color: #c9d1d9;
+            height: auto;
+            min-height: 65px;
+            color: #fff;
             box-sizing: border-box;
             pointer-events: auto;
         `;
         
         statusDiv.innerHTML = `
-            <div style="display: grid; grid-template-columns: auto 1fr auto; gap: 12px; height: 100%; align-items: center;">
+            <div style="display: grid; grid-template-columns: auto 1fr auto; gap: 15px; align-items: center;">
                 <!-- DQN Status Section -->
                 <div style="min-width: 200px;">
-                    <div style="font-weight: 600; font-size: 9px; color: #c9d1d9; margin-bottom: 4px;">DQN Status</div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; font-size: 8px; margin-bottom: 3px;">
-                        <div><span style="color: #8b949e;">Status:</span><br><span id="dqn-status" style="color: #f85149;">Not Started</span></div>
-                        <div><span style="color: #8b949e;">Episode:</span><br><span id="dqn-episode" style="color: #c9d1d9;">0</span></div>
-                        <div><span style="color: #8b949e;">Reward:</span><br><span id="dqn-reward" style="color: #3fb950;">0.00</span></div>
+                    <div style="font-weight: normal; font-size: 10px; color: #fff; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px;">DQN Status</div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; font-size: 9px; margin-bottom: 5px;">
+                        <div><span style="color: #999;">Status:</span><br><span id="dqn-status" style="color: #fff;">Not Started</span></div>
+                        <div><span style="color: #999;">Episode:</span><br><span id="dqn-episode" style="color: #fff;">0</span></div>
+                        <div><span style="color: #999;">Reward:</span><br><span id="dqn-reward" style="color: #fff;">0.00</span></div>
                     </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 2px;">
-                        <button id="dqn-start-btn" style="padding: 2px 4px; background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 3px; cursor: pointer; font-size: 8px;">Start</button>
-                        <button id="dqn-stop-btn" style="padding: 2px 4px; background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 3px; cursor: pointer; font-size: 8px;">Stop</button>
-                        <button id="dqn-save-btn" style="padding: 2px 4px; background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 3px; cursor: pointer; font-size: 8px;">Save</button>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px;">
+                        <button id="dqn-start-btn" style="padding: 4px 6px; background: #000; color: #fff; border: 1px solid #fff; border-radius: 0; cursor: pointer; font-size: 8px; font-family: monospace; text-transform: uppercase; transition: all 0.2s ease;">Start</button>
+                        <button id="dqn-stop-btn" style="padding: 4px 6px; background: #000; color: #fff; border: 1px solid #fff; border-radius: 0; cursor: pointer; font-size: 8px; font-family: monospace; text-transform: uppercase; transition: all 0.2s ease;">Stop</button>
+                        <button id="dqn-save-btn" style="padding: 4px 6px; background: #000; color: #fff; border: 1px solid #fff; border-radius: 0; cursor: pointer; font-size: 8px; font-family: monospace; text-transform: uppercase; transition: all 0.2s ease;">Save</button>
                     </div>
                 </div>
                 
                 <!-- Red Agent State Section -->
                 <div style="flex: 1;">
-                    <div style="font-weight: 600; font-size: 9px; color: #c9d1d9; margin-bottom: 4px;">Red Agent State</div>
-                    <div id="red-state-vector" style="font-family: 'Courier New', monospace; font-size: 8px; color: #f0f6fc; word-break: break-all; line-height: 1.1; background: #0d1117; padding: 4px; border-radius: 3px; border: 1px solid #58a6ff; box-shadow: 0 0 3px rgba(88, 166, 255, 0.2); white-space: pre-wrap; max-height: 32px; overflow: hidden;">[Loading...]</div>
+                    <div style="font-weight: normal; font-size: 10px; color: #fff; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px;">Red Agent State</div>
+                    <div id="red-state-vector" style="font-family: monospace; font-size: 9px; color: #fff; word-break: break-all; line-height: 1.3; background: #000; padding: 5px; border-radius: 0; border: 1px solid #fff; white-space: pre-wrap; max-height: 32px; overflow: hidden;">[Loading...]</div>
                 </div>
                 
                 <!-- Additional Info Section -->
-                <div style="min-width: 120px; font-size: 8px;">
-                    <div style="font-weight: 600; font-size: 9px; color: #c9d1d9; margin-bottom: 4px;">Agent Info</div>
-                    <div style="color: #8b949e; line-height: 1.2;">
-                        <div>Mode: <span id="agent-mode" style="color: #c9d1d9;">Training</span></div>
-                        <div>Score: <span id="agent-score" style="color: #3fb950;">0</span></div>
-                        <div>Position: <span id="agent-pos" style="color: #58a6ff;">-,-,-</span></div>
+                <div style="min-width: 120px; font-size: 9px;">
+                    <div style="font-weight: normal; font-size: 10px; color: #fff; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px;">Agent Info</div>
+                    <div style="color: #999; line-height: 1.4;">
+                        <div>Mode: <span id="agent-mode" style="color: #fff;">Training</span></div>
+                        <div>Score: <span id="agent-score" style="color: #fff;">0</span></div>
+                        <div>Position: <span id="agent-pos" style="color: #fff;">-,-,-</span></div>
                     </div>
                 </div>
             </div>
@@ -515,22 +516,38 @@ export class DQNIntegration {
         const stopBtn = document.getElementById('dqn-stop-btn');
         const saveBtn = document.getElementById('dqn-save-btn');
         
+        // Helper to add black & white hover effects
+        const addHoverEffect = (btn) => {
+            if (!btn) return;
+            btn.addEventListener('mouseenter', () => {
+                btn.style.background = '#fff';
+                btn.style.color = '#000';
+            });
+            btn.addEventListener('mouseleave', () => {
+                btn.style.background = '#000';
+                btn.style.color = '#fff';
+            });
+        };
+        
         if (startBtn) {
             startBtn.onclick = () => {
                 this.startTraining(0); // Train red agent by default
             };
+            addHoverEffect(startBtn);
         }
         
         if (stopBtn) {
             stopBtn.onclick = () => {
                 this.stopTraining();
             };
+            addHoverEffect(stopBtn);
         }
         
         if (saveBtn) {
             saveBtn.onclick = () => {
                 this.saveModel('dqn_model_' + Date.now());
             };
+            addHoverEffect(saveBtn);
         }
     }
 

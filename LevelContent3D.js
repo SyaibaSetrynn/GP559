@@ -33,9 +33,6 @@ class LevelContent3D {
         this.mazeBlocks = {}; // 每个level的迷宫障碍物 { level: [blocks...] }
         this.emptyPositions = {}; // 每个level的空闲位置 { level: [{x, z}, ...] }
         this.blockAnimations = {}; // 方块生长动画 { level: { isAnimating, startTime, duration, blocks: [{ block, startHeight, targetHeight }, ...] } }
-        this.mazeSeeds = {}; // 每个level的随机种子 { level: seed }
-        this.currentSeed = null; // 当前使用的随机种子
-        this.seedRandom = null; // 基于种子的随机数生成器
         
         // 时间管理
         this.lastUpdateTime = null;
@@ -73,7 +70,7 @@ class LevelContent3D {
                 this._applyUV(block.geometry);
             }
         } catch (error) {
-            // console.warn(`LevelContent3D: Failed to reapply UV to block:`, error);
+            console.warn(`LevelContent3D: Failed to reapply UV to block:`, error);
         }
     }
     
@@ -88,52 +85,12 @@ class LevelContent3D {
         this.uiInstance = uiInstance;
     }
     
-    // 获取当前关卡的地图数据（用于Player.js）
-    getMapData(level) {
-        if (!this.mazeBlocks[level]) {
-            return null;
-        }
-        
-        const model = this.models[level];
-        if (!model) {
-            return null;
-        }
-        
-        // 获取walls和floor
-        const walls = this.blockTextureInfo[level]?.walls || [];
-        const floor = this.blockTextureInfo[level]?.floor || null;
-        const mazeBlocks = this.mazeBlocks[level] || [];
-        
-        return {
-            blocks: mazeBlocks,
-            walls: walls,
-            floor: floor,
-            model: model,
-            mapWidth: 10, // 所有关卡都是10x10
-            mapDepth: 10
-        };
-    }
-    
-    // 获取当前关卡（从LevelSelection3D获取）
-    getCurrentLevel() {
-        // 尝试从LevelSelection3D获取当前关卡
-        if (window.levelSelection3D && window.levelSelection3D.currentLevel) {
-            return window.levelSelection3D.currentLevel;
-        }
-        // 如果没有，返回第一个有数据的关卡
-        const levels = Object.keys(this.mazeBlocks);
-        if (levels.length > 0) {
-            return parseInt(levels[0]);
-        }
-        return 1; // 默认返回1
-    }
-    
     // 进入关卡：初始化关卡内容
     async enterLevel(level) {
         const THREE = window.THREE;
         if (!THREE) return;
         
-        // console.log(`LevelContent3D: Entering level ${level}`);
+        console.log(`LevelContent3D: Entering level ${level}`);
         
         // 设置全局ESC键监听（不依赖玩家是否创建）
         this.setupGlobalKeyboardControls();
@@ -142,12 +99,12 @@ class LevelContent3D {
         const mazeAlreadyGenerated = this.mazeBlocks[level] && this.mazeBlocks[level].length > 0;
         
         if (!mazeAlreadyGenerated) {
-        // 生成迷宫
-        await this.generateMaze(level);
-        
+            // 生成迷宫
+            await this.generateMaze(level);
+            
             // 不添加关卡灯（已移除）
         } else {
-            // console.log(`LevelContent3D: Maze already generated for level ${level}, skipping generation`);
+            console.log(`LevelContent3D: Maze already generated for level ${level}, skipping generation`);
         }
         
         // 注意：不创建碰撞检测世界和玩家，相机动画不依赖这些
@@ -241,81 +198,13 @@ class LevelContent3D {
         // 清除方块动画
         this.blockAnimations = {};
         
-        // console.log('LevelContent3D: Exited level, cleaned up all resources');
-    }
-    
-    // 清理动画地图（删除临时生成的地图）
-    cleanupAnimationMap(level) {
-        if (!level) return;
-        
-        console.log(`LevelContent3D: Cleaning up animation map for level ${level}`);
-        
-        // 删除该level的所有blocks
-        if (this.mazeBlocks[level]) {
-            this.mazeBlocks[level].forEach(block => {
-                if (block.parent) {
-                    block.parent.remove(block);
-                }
-                if (block.geometry) block.geometry.dispose();
-                if (block.material) {
-                    if (Array.isArray(block.material)) {
-                        block.material.forEach(m => m.dispose());
-                    } else {
-                        block.material.dispose();
-                    }
-                }
-            });
-            this.mazeBlocks[level] = [];
-        }
-        
-        // 删除该level的模型（如果存在）
-        if (this.models[level]) {
-            const model = this.models[level];
-            if (model.parent) {
-                model.parent.remove(model);
-            }
-            // 注意：不要dispose模型，因为它可能被LevelSelection3D使用
-        }
-        
-        console.log(`LevelContent3D: Animation map cleaned up for level ${level}`);
-    }
-    
-    // 初始化基于种子的随机数生成器
-    initSeedRandom(seed) {
-        // 简单的线性同余生成器
-        this.seedRandom = {
-            seed: seed,
-            next: function() {
-                this.seed = (this.seed * 1664525 + 1013904223) % Math.pow(2, 32);
-                return this.seed / Math.pow(2, 32);
-            }
-        };
-    }
-    
-    // 获取随机数（使用种子）
-    random() {
-        if (this.seedRandom) {
-            return this.seedRandom.next();
-        }
-        return Math.random();
+        console.log('LevelContent3D: Exited level, cleaned up all resources');
     }
     
     // 生成迷宫
     async generateMaze(level) {
         const THREE = window.THREE;
         if (!THREE) return;
-        
-        // 设置随机种子（如果还没有为这个level设置过）
-        if (!this.mazeSeeds[level]) {
-            // 使用level作为种子的一部分，确保每个level有不同的种子
-            const seed = level * 1000 + Date.now() % 1000;
-            this.mazeSeeds[level] = seed;
-            console.log(`LevelContent3D: Setting seed ${seed} for level ${level}`);
-        }
-        
-        // 使用保存的种子初始化随机数生成器
-        this.currentSeed = this.mazeSeeds[level];
-        this.initSeedRandom(this.currentSeed);
         
         // 清除旧的迷宫
         if (this.mazeBlocks[level]) {
@@ -341,7 +230,7 @@ class LevelContent3D {
             mapWidth = 10;
             mapDepth = 10;
         } else {
-            // console.error(`LevelContent3D: Unknown level: ${level}`);
+            console.error(`LevelContent3D: Unknown level: ${level}`);
             return;
         }
         
@@ -378,6 +267,12 @@ class LevelContent3D {
                     const actualX = -halfWidth + x + 0.5;
                     const actualZ = -halfDepth + z + 0.5;
                     
+                    // Skip block generation at (0, 0) to keep spawn point clear
+                    if (Math.abs(actualX) < 0.6 && Math.abs(actualZ) < 0.6) {
+                        console.log(`Skipping block at (${actualX.toFixed(2)}, ${actualZ.toFixed(2)}) - spawn point reserved`);
+                        continue;
+                    }
+                    
                     // 直接创建高度为2的block，初始位置在地板下方（y=-2，完全看不见）
                     const tempScene = new THREE.Scene();
                     const block = createBlock(tempScene, actualX, actualZ, 2); // 高度为2
@@ -405,12 +300,10 @@ class LevelContent3D {
         for (let x = 0; x < innerWidth; x++) {
             for (let z = 0; z < innerDepth; z++) {
                 if (maze[x][z] === 0) {
-                    // emptyPositions记录网格的整数坐标（网格的某个角）
-                    // block的中心在这个角+0.5,+0.5的位置
-                    // Player应该生成在block的中心，所以生成时需要+0.5
-                    const gridX = -halfWidth + x;
-                    const gridZ = -halfDepth + z;
-                    emptyPositions.push({ x: gridX, z: gridZ });
+                    // 使用与方块相同的坐标计算方式
+                    const actualX = -halfWidth + x + 0.5;
+                    const actualZ = -halfDepth + z + 0.5;
+                    emptyPositions.push({ x: actualX, z: actualZ });
                 }
             }
         }
@@ -451,9 +344,9 @@ class LevelContent3D {
         try {
             const { setMapTexture, applyUV } = await import('./MapTextures.js');
             setMapTexture(mapMode, mazeBlocks, walls, mapWidth, mapDepth, floor);
-            // console.log(`LevelContent3D: Applied texture mode ${mapMode} to level ${level} (blocks, walls, floor)`);
+            console.log(`LevelContent3D: Applied texture mode ${mapMode} to level ${level} (blocks, walls, floor)`);
         } catch (error) {
-            // console.warn(`LevelContent3D: Failed to apply texture to level ${level}:`, error);
+            console.warn(`LevelContent3D: Failed to apply texture to level ${level}:`, error);
         }
         
         // 启动方块生长动画（从地板下方冒出来）
@@ -464,13 +357,13 @@ class LevelContent3D {
     startBlockGrowthAnimation(level) {
         const blocks = this.mazeBlocks[level];
         if (!blocks || blocks.length === 0) {
-            // console.warn(`LevelContent3D: No blocks found for level ${level}, cannot start animation`);
+            console.warn(`LevelContent3D: No blocks found for level ${level}, cannot start animation`);
             return;
         }
         
         const THREE = window.THREE;
         if (!THREE) {
-            // console.error('LevelContent3D: THREE is not available');
+            console.error('LevelContent3D: THREE is not available');
             return;
         }
         
@@ -511,7 +404,7 @@ class LevelContent3D {
     updateBlockGrowthAnimation() {
         const THREE = window.THREE;
         if (!THREE) {
-            // console.warn('LevelContent3D: updateBlockGrowthAnimation called but THREE is not available');
+            console.warn('LevelContent3D: updateBlockGrowthAnimation called but THREE is not available');
             return;
         }
         
@@ -539,7 +432,7 @@ class LevelContent3D {
                         }
                         // 清除过期的动画
                         delete this.blockAnimations[level];
-                        // console.log(`LevelContent3D: Force set all blocks to height 2 for level ${level} (animation expired)`);
+                        console.log(`LevelContent3D: Force set all blocks to height 2 for level ${level} (animation expired)`);
                     }
                 } else if (!anim) {
                     // 没有动画，直接设置所有方块到最终位置y=1
@@ -618,113 +511,111 @@ class LevelContent3D {
     startCameraMoveToRandomMazePosition(level) {
         const THREE = window.THREE;
         if (!THREE || !this.camera) {
-            // console.warn('LevelContent3D: Camera not available for move animation');
+            console.warn('LevelContent3D: Camera not available for move animation');
             return;
         }
         
         // 获取非障碍位置列表
         const emptyPositions = this.emptyPositions[level];
         if (!emptyPositions || emptyPositions.length === 0) {
-            // console.warn(`LevelContent3D: No empty positions available for level ${level}, cannot move camera`);
+            console.warn(`LevelContent3D: No empty positions available for level ${level}, cannot move camera`);
             return;
         }
         
-        // 随机选择一个非障碍位置
-        const randomPos = emptyPositions[Math.floor(this.random() * emptyPositions.length)];
+        // Always spawn at position (0, 0) instead of random position
+        const randomPos = { x: 0, z: 0 };
         
         // 获取模型，用于计算世界坐标
         const model = this.models[level];
         if (!model) {
-            // console.warn(`LevelContent3D: Model not found for level ${level}, cannot move camera`);
+            console.warn(`LevelContent3D: Model not found for level ${level}, cannot move camera`);
             return;
         }
         
         // 计算目标位置
-        // emptyPositions记录的是网格整数坐标，block中心在+0.5,+0.5
-        const blockCenterX = randomPos.x + 0.5;
-        const blockCenterZ = randomPos.z + 0.5;
-        const localPos = new THREE.Vector3(blockCenterX, 0, blockCenterZ);
+        // 注意：emptyPositions 中的坐标是相对于模型中心的局部坐标
+        // 需要转换为世界坐标
+        const localPos = new THREE.Vector3(randomPos.x, 0, randomPos.z);
         model.updateMatrixWorld(true);
         localPos.applyMatrix4(model.matrixWorld);
         
-        // 获取所有block的位置列表，并打印block的整数坐标（grid坐标）
+        // 获取所有block的位置列表
         const blocks = this.mazeBlocks[level] || [];
-        // block的position是block中心的坐标，需要转换为grid坐标
-        // block.position.x = -halfWidth + x + 0.5，所以 gridX = block.position.x - 0.5 = -halfWidth + x
-        // 使用Math.floor确保正确计算（因为x是整数，-halfWidth + x也是整数）
-        const blockGridPositions = blocks.map(block => {
-            // block.position是本地坐标（相对于model）
-            // block.position.x = -halfWidth + x + 0.5
-            // 所以 gridX = Math.floor(block.position.x - 0.5) = Math.floor(-halfWidth + x + 0.5 - 0.5) = -halfWidth + x
-            const gridX = Math.floor(block.position.x - 0.5);
-            const gridZ = Math.floor(block.position.z - 0.5);
-            return { 
-                x: gridX, 
-                z: gridZ,
-                blockPos: { x: block.position.x, z: block.position.z } // 用于调试
-            };
-        });
-        console.log('LevelContent3D: All block grid positions (x, z):', blockGridPositions.map(b => ({ x: b.x, z: b.z })));
+        const blockPositions = blocks.map(block => ({
+            x: block.position.x.toFixed(2),
+            y: block.position.y.toFixed(2),
+            z: block.position.z.toFixed(2)
+        }));
         
-        // 验证选中的位置确实在emptyPositions中，并且该位置没有block
-        // emptyPositions中存储的就是grid坐标，所以可以直接比较
-        const selectedGridPos = { x: randomPos.x, z: randomPos.z };
-        console.log('LevelContent3D: Checking selected grid position:', selectedGridPos);
+        console.log(`LevelContent3D: All block positions for level ${level} (${blocks.length} blocks):`, blockPositions);
         
-        // 验证该位置是否在emptyPositions中
-        const isInEmptyPositions = emptyPositions.some(pos => pos.x === selectedGridPos.x && pos.z === selectedGridPos.z);
-        console.log('LevelContent3D: Is in emptyPositions?', isInEmptyPositions);
-        if (!isInEmptyPositions) {
-            console.error('LevelContent3D: Selected position is NOT in emptyPositions! This should not happen.');
+        // Note: Using fixed position (0, 0) for spawning
+        
+        // 验证世界坐标位置不会与方块重叠（更严格的检查）
+        let isOverlapping = false;
+        let closestBlockDistance = Infinity;
+        let closestBlockPos = null;
+        
+        for (const block of blocks) {
+            const blockPos = block.position;
+            const distance = Math.sqrt(
+                Math.pow(localPos.x - blockPos.x, 2) + 
+                Math.pow(localPos.z - blockPos.z, 2)
+            );
+            
+            if (distance < closestBlockDistance) {
+                closestBlockDistance = distance;
+                closestBlockPos = blockPos;
+            }
+            
+            // 方块大小是1x1，所以距离小于0.6就认为重叠（留一些安全边距）
+            if (distance < 0.6) {
+                isOverlapping = true;
+                console.warn(`LevelContent3D: Selected position (${localPos.x.toFixed(2)}, ${localPos.z.toFixed(2)}) is too close to a block at (${blockPos.x.toFixed(2)}, ${blockPos.y.toFixed(2)}, ${blockPos.z.toFixed(2)}), distance: ${distance.toFixed(2)}`);
+            }
         }
         
-        // 检查该位置是否有block
-        const hasBlockAtPosition = blockGridPositions.some(blockGrid => {
-            const match = blockGrid.x === selectedGridPos.x && blockGrid.z === selectedGridPos.z;
-            if (match) {
-                console.error('LevelContent3D: Found matching block at grid position:', selectedGridPos, 'block position:', blockGrid.blockPos);
-                // 验证：从grid坐标反推maze索引
-                const mazeX = selectedGridPos.x + 5; // halfWidth = 5
-                const mazeZ = selectedGridPos.z + 5; // halfDepth = 5
-                console.error('LevelContent3D: This corresponds to maze index:', { x: mazeX, z: mazeZ });
-            }
-            return match;
-        });
-        
-        if (hasBlockAtPosition) {
-            console.warn('LevelContent3D: Selected position has a block! Finding a new position...');
-            // 如果该位置有block，从emptyPositions中重新选择一个
+        // 如果位置与block重叠，重新选择一个位置
+        if (isOverlapping) {
+            console.warn(`LevelContent3D: Selected position overlaps with a block, finding a new position...`);
+            // 尝试找到距离所有block都足够远的位置
             let attempts = 0;
             let foundSafePosition = false;
-            while (attempts < emptyPositions.length && !foundSafePosition) {
-                const newRandomPos = emptyPositions[Math.floor(this.random() * emptyPositions.length)];
-                const newGridPos = { x: newRandomPos.x, z: newRandomPos.z };
+            while (attempts < 10 && !foundSafePosition) {
+                const newRandomPos = emptyPositions[Math.floor(Math.random() * emptyPositions.length)];
+                const newLocalPos = new THREE.Vector3(newRandomPos.x, 0, newRandomPos.z);
+                newLocalPos.applyMatrix4(model.matrixWorld);
                 
-                // 检查这个grid位置是否有block（只需要检查grid坐标是否相同）
-                const hasBlock = blockGridPositions.some(blockGrid => 
-                    blockGrid.x === newGridPos.x && blockGrid.z === newGridPos.z
-                );
+                let safe = true;
+                for (const block of blocks) {
+                    const blockPos = block.position;
+                    const distance = Math.sqrt(
+                        Math.pow(newLocalPos.x - blockPos.x, 2) + 
+                        Math.pow(newLocalPos.z - blockPos.z, 2)
+                    );
+                    if (distance < 0.6) {
+                        safe = false;
+                        break;
+                    }
+                }
                 
-                if (!hasBlock) {
-                    // 这个位置是空的，可以使用
+                if (safe) {
                     randomPos.x = newRandomPos.x;
                     randomPos.z = newRandomPos.z;
-                    // 重新计算blockCenter和localPos
-                    const newBlockCenterX = randomPos.x + 0.5;
-                    const newBlockCenterZ = randomPos.z + 0.5;
-                    localPos.set(newBlockCenterX, 0, newBlockCenterZ);
-                    localPos.applyMatrix4(model.matrixWorld);
+                    localPos.copy(newLocalPos);
                     foundSafePosition = true;
-                    console.log(`LevelContent3D: Found empty position at grid (${randomPos.x}, ${randomPos.z}) after ${attempts + 1} attempts`);
+                    console.log(`LevelContent3D: Found safe position at (${localPos.x.toFixed(2)}, ${localPos.z.toFixed(2)}) after ${attempts + 1} attempts`);
                 }
                 attempts++;
             }
             
             if (!foundSafePosition) {
-                console.error(`LevelContent3D: Could not find an empty position after ${attempts} attempts!`);
+                console.error(`LevelContent3D: Could not find a safe position after ${attempts} attempts, using original position`);
             }
-        } else {
-            console.log(`LevelContent3D: Selected position at grid (${selectedGridPos.x}, ${selectedGridPos.z}) is empty, using it.`);
+        }
+        
+        if (closestBlockPos) {
+            console.log(`LevelContent3D: Closest block to selected position: (${closestBlockPos.x.toFixed(2)}, ${closestBlockPos.y.toFixed(2)}, ${closestBlockPos.z.toFixed(2)}), distance: ${closestBlockDistance.toFixed(2)}`);
         }
         
         // 相机高度设置为0.12（在地面上方）
@@ -734,13 +625,6 @@ class LevelContent3D {
             cameraY,
             localPos.z
         );
-        
-        // 打印camera动画的目标位置，用于与Player位置对比
-        console.log('LevelContent3D: Camera animation target position:', {
-            grid_pos: { x: randomPos.x, z: randomPos.z },
-            blockCenter_local: { x: blockCenterX.toFixed(2), z: blockCenterZ.toFixed(2) },
-            targetPos_world: { x: targetPos.x.toFixed(2), y: targetPos.y.toFixed(2), z: targetPos.z.toFixed(2) }
-        });
         
         // 计算lookAt目标（x轴正方向，相对于模型）
         const localLookAt = new THREE.Vector3(randomPos.x + 5, 0, randomPos.z);
@@ -756,16 +640,15 @@ class LevelContent3D {
         const startLookAt = this.controls ? this.controls.target.clone() : 
                            startPos.clone().add(new THREE.Vector3(0, 0, -5));
         
-        // console.log(`LevelContent3D: Starting camera move animation to random maze position:`, {
-        //     randomLocalPos: { x: randomPos.x.toFixed(2), z: randomPos.z.toFixed(2) },
-        //     worldPos: { x: localPos.x.toFixed(2), y: localPos.y.toFixed(2), z: localPos.z.toFixed(2) },
-        //     targetPos: { x: targetPos.x.toFixed(2), y: targetPos.y.toFixed(2), z: targetPos.z.toFixed(2) },
-        //     lookAtTarget: { x: lookAtTarget.x.toFixed(2), y: lookAtTarget.y.toFixed(2), z: lookAtTarget.z.toFixed(2) },
-        //     startPos: { x: startPos.x.toFixed(2), y: startPos.y.toFixed(2), z: startPos.z.toFixed(2) },
-        //     isEmptyPosition: isInEmptyPositions,
-        //     isOverlapping: isOverlapping,
-        //     totalEmptyPositions: emptyPositions.length
-        // });
+        console.log(`LevelContent3D: Starting camera move animation to fixed maze position (0, 0):`, {
+            fixedLocalPos: { x: randomPos.x.toFixed(2), z: randomPos.z.toFixed(2) },
+            worldPos: { x: localPos.x.toFixed(2), y: localPos.y.toFixed(2), z: localPos.z.toFixed(2) },
+            targetPos: { x: targetPos.x.toFixed(2), y: targetPos.y.toFixed(2), z: targetPos.z.toFixed(2) },
+            lookAtTarget: { x: lookAtTarget.x.toFixed(2), y: lookAtTarget.y.toFixed(2), z: lookAtTarget.z.toFixed(2) },
+            startPos: { x: startPos.x.toFixed(2), y: startPos.y.toFixed(2), z: startPos.z.toFixed(2) },
+            isOverlapping: isOverlapping,
+            totalEmptyPositions: emptyPositions.length
+        });
         
         this.cameraMoveToMazeAnimation = {
             isAnimating: true,
@@ -777,14 +660,6 @@ class LevelContent3D {
             startLookAt: startLookAt,
             targetLookAt: lookAtTarget
         };
-        
-        // 保存camera动画的目标位置，供Player使用
-        this.cameraTargetPosition = {
-            worldPos: targetPos.clone(),
-            localPos: new THREE.Vector3(blockCenterX, 0, blockCenterZ),
-            gridPos: randomPos,
-            level: level
-        };
     }
     
     // 更新相机移动到迷宫位置的动画
@@ -795,7 +670,7 @@ class LevelContent3D {
         
         const THREE = window.THREE;
         if (!THREE || !this.camera) {
-            // console.warn('LevelContent3D: updateCameraMoveToMazeAnimation - THREE or camera not available');
+            console.warn('LevelContent3D: updateCameraMoveToMazeAnimation - THREE or camera not available');
             return;
         }
         
@@ -815,7 +690,7 @@ class LevelContent3D {
                 this.camera.getWorldDirection(direction);
                 anim.startLookAt = anim.startPos.clone().add(direction.multiplyScalar(5));
             }
-            // console.log(`LevelContent3D: Camera move animation started at ${anim.startTime}, startPos: (${anim.startPos.x.toFixed(2)}, ${anim.startPos.y.toFixed(2)}, ${anim.startPos.z.toFixed(2)})`);
+            console.log(`LevelContent3D: Camera move animation started at ${anim.startTime}, startPos: (${anim.startPos.x.toFixed(2)}, ${anim.startPos.y.toFixed(2)}, ${anim.startPos.z.toFixed(2)})`);
         }
         
         const elapsed = Date.now() - anim.startTime;
@@ -860,7 +735,7 @@ class LevelContent3D {
         
         if (progressPercent !== lastProgressPercent) {
             this._lastCameraMoveProgressPercent[anim.startTime] = progressPercent;
-            // console.log(`LevelContent3D: Camera update - position: (${currentPos.x.toFixed(3)}, ${currentPos.y.toFixed(3)}, ${currentPos.z.toFixed(3)}), lookAt: (${currentLookAt.x.toFixed(3)}, ${currentLookAt.y.toFixed(3)}, ${currentLookAt.z.toFixed(3)}), direction: (${lookAtDirection.x.toFixed(3)}, ${lookAtDirection.y.toFixed(3)}, ${lookAtDirection.z.toFixed(3)}), progress: ${(progress * 100).toFixed(1)}%, elapsed: ${elapsed}ms, posChanged: ${posChanged}`);
+            console.log(`LevelContent3D: Camera update - position: (${currentPos.x.toFixed(3)}, ${currentPos.y.toFixed(3)}, ${currentPos.z.toFixed(3)}), lookAt: (${currentLookAt.x.toFixed(3)}, ${currentLookAt.y.toFixed(3)}, ${currentLookAt.z.toFixed(3)}), direction: (${lookAtDirection.x.toFixed(3)}, ${lookAtDirection.y.toFixed(3)}, ${lookAtDirection.z.toFixed(3)}), progress: ${(progress * 100).toFixed(1)}%, elapsed: ${elapsed}ms, posChanged: ${posChanged}`);
         }
         
         if (progress >= 1) {
@@ -875,62 +750,7 @@ class LevelContent3D {
             
             anim.isAnimating = false;
             anim.completed = true;
-            // console.log(`LevelContent3D: Camera move animation completed, camera at (${anim.targetPos.x.toFixed(2)}, ${anim.targetPos.y.toFixed(2)}, ${anim.targetPos.z.toFixed(2)}), looking at x+ direction`);
-            
-            // 动画完成后，删除动画地图，加载indexjake.html的所有内容
-            const level = anim.level;
-            
-            // 异步处理：删除动画地图并重新生成
-            (async () => {
-                // 1. 删除动画地图（LevelContent3D生成的临时地图）
-                this.cleanupAnimationMap(level);
-                
-                // 2. 重新生成地图（使用相同的随机种子，确保地图相同）
-                if (level && this.mazeSeeds && this.mazeSeeds[level]) {
-                    // 使用之前保存的种子重新生成
-                    const savedSeed = this.mazeSeeds[level];
-                    this.currentSeed = savedSeed;
-                    console.log(`LevelContent3D: Regenerating map for level ${level} with seed ${savedSeed}`);
-                    await this.generateMaze(level);
-                }
-                
-                // 3. 动态加载Player.js（如果还没有加载）
-                if (!window.PlayerLoaded) {
-                    console.log('LevelContent3D: Loading Player.js dynamically');
-                    const script = document.createElement('script');
-                    script.src = './Player.js';
-                    script.type = 'module';
-                    script.defer = true;
-                    script.onload = () => {
-                        console.log('LevelContent3D: Player.js loaded, waiting for initPlayerMap');
-                        // 等待initPlayerMap可用
-                        let waitCount = 0;
-                        const maxWait = 100;
-                        const checkInitPlayerMap = () => {
-                            if (window.initPlayerMap && typeof window.initPlayerMap === 'function') {
-                                console.log('LevelContent3D: Calling initPlayerMap after Player.js loaded');
-                                window.initPlayerMap();
-                            } else if (waitCount < maxWait) {
-                                waitCount++;
-                                setTimeout(checkInitPlayerMap, 50);
-                            } else {
-                                console.warn('LevelContent3D: window.initPlayerMap not available after loading Player.js');
-                            }
-                        };
-                        checkInitPlayerMap();
-                    };
-                    document.head.appendChild(script);
-                    window.PlayerLoaded = true;
-                } else {
-                    // Player.js已经加载，直接调用initPlayerMap
-                    if (window.initPlayerMap && typeof window.initPlayerMap === 'function') {
-                        console.log('LevelContent3D: Calling initPlayerMap after camera animation completed');
-                        window.initPlayerMap();
-                    } else {
-                        console.warn('LevelContent3D: window.initPlayerMap is not available, Player.js may not be loaded yet');
-                    }
-                }
-            })();
+            console.log(`LevelContent3D: Camera move animation completed, camera at (${anim.targetPos.x.toFixed(2)}, ${anim.targetPos.y.toFixed(2)}, ${anim.targetPos.z.toFixed(2)}), looking at x+ direction`);
         }
     }
     
@@ -947,8 +767,8 @@ class LevelContent3D {
             { dx: -1, dz: 0 }
         ];
         
-        const startX = Math.floor(this.random() * width);
-        const startZ = Math.floor(this.random() * depth);
+        const startX = Math.floor(Math.random() * width);
+        const startZ = Math.floor(Math.random() * depth);
         
         const stack = [[startX, startZ]];
         let pathCells = 0;
@@ -980,7 +800,7 @@ class LevelContent3D {
             }
             
             if (neighbors.length > 0) {
-                const next = neighbors[Math.floor(this.random() * neighbors.length)];
+                const next = neighbors[Math.floor(Math.random() * neighbors.length)];
                 maze[next.midX][next.midZ] = 0;
                 maze[next.x][next.z] = 0;
                 visited[next.x][next.z] = true;
@@ -1028,7 +848,7 @@ class LevelContent3D {
         
         // 随机扩展墙壁，直到达到目标路径数量
         while (pathCells < (width * depth - targetWallCount) && expandableWalls.length > 0) {
-            const randomIndex = Math.floor(this.random() * expandableWalls.length);
+            const randomIndex = Math.floor(Math.random() * expandableWalls.length);
             const [wallX, wallZ] = expandableWalls[randomIndex];
             
             maze[wallX][wallZ] = 0;
@@ -1109,7 +929,7 @@ class LevelContent3D {
         
         // 如果存在不连通的区域，找到最近的路径单元格并连接它们
         if (connectedCount < pathCells.length) {
-            // console.warn(`Maze has ${pathCells.length - connectedCount} disconnected cells, connecting them...`);
+            console.warn(`Maze has ${pathCells.length - connectedCount} disconnected cells, connecting them...`);
             
             // 找到未访问的路径单元格
             const disconnectedCells = [];
@@ -1179,9 +999,9 @@ class LevelContent3D {
             }
             
             if (finalConnectedCount < pathCells.length) {
-                // console.error(`Maze still has ${pathCells.length - finalConnectedCount} disconnected cells after connection attempt!`);
+                console.error(`Maze still has ${pathCells.length - finalConnectedCount} disconnected cells after connection attempt!`);
             } else {
-                // console.log(`Maze is fully connected with ${finalConnectedCount} path cells.`);
+                console.log(`Maze is fully connected with ${finalConnectedCount} path cells.`);
             }
         }
     }
@@ -1231,7 +1051,7 @@ class LevelContent3D {
         this.levelLight = spotlight;
         this.levelLightTarget = target;
         
-        // console.log(`LevelContent3D: Added level light at (${lightPosition.x.toFixed(2)}, ${lightPosition.y.toFixed(2)}, ${lightPosition.z.toFixed(2)})`);
+        console.log(`LevelContent3D: Added level light at (${lightPosition.x.toFixed(2)}, ${lightPosition.y.toFixed(2)}, ${lightPosition.z.toFixed(2)})`);
     }
     
     // 设置碰撞检测世界
@@ -1254,7 +1074,7 @@ class LevelContent3D {
             }
         });
         
-        // console.log('LevelContent3D: Collision world set up for level', level);
+        console.log('LevelContent3D: Collision world set up for level', level);
     }
     
     // 创建玩家
@@ -1276,29 +1096,30 @@ class LevelContent3D {
             await new Promise(resolve => setTimeout(resolve, 50));
             waitCount++;
             if (waitCount % 20 === 0) {
-                // console.log(`LevelContent3D: Waiting for Player class... (${waitCount * 50}ms)`);
+                console.log(`LevelContent3D: Waiting for Player class... (${waitCount * 50}ms)`);
             }
         }
         
         PlayerClass = window.Player || null;
         
         if (!PlayerClass) {
-            // console.error('LevelContent3D: Player class not found after waiting.');
+            console.error('LevelContent3D: Player class not found after waiting.');
             return;
         }
         
         if (typeof PlayerClass !== 'function') {
-            // console.error('LevelContent3D: window.Player is not a function:', typeof PlayerClass);
+            console.error('LevelContent3D: window.Player is not a function:', typeof PlayerClass);
             return;
         }
         
         const emptyPositions = this.emptyPositions[level];
         if (!emptyPositions || emptyPositions.length === 0) {
-            // console.error(`LevelContent3D: No empty positions available for level ${level}`);
+            console.error(`LevelContent3D: No empty positions available for level ${level}`);
             return;
         }
         
-        const randomPos = emptyPositions[Math.floor(this.random() * emptyPositions.length)];
+        // Always spawn at position (0, 0) instead of random position
+        const randomPos = { x: 0, z: 0 };
         
         const model = this.models[level];
         if (!model) return;
@@ -1322,9 +1143,8 @@ class LevelContent3D {
             mapDepth = 18;
         }
         
-        // emptyPositions记录的是网格整数坐标，block中心在+0.5,+0.5
-        const localX = randomPos.x + 0.5;
-        const localZ = randomPos.z + 0.5;
+        const localX = randomPos.x;
+        const localZ = randomPos.z;
         const localY = startY;
         
         const localPos = new THREE.Vector3(localX, localY, localZ);
@@ -1356,9 +1176,9 @@ class LevelContent3D {
                 new THREE.Vector3(playerWorldX, groundWorldY + COLLIDER_HEIGHT, playerWorldZ),
                 COLLIDER_RADIUS
             );
-            // console.log('LevelContent3D: Collider resized to match red cube size');
+            console.log('LevelContent3D: Collider resized to match red cube size');
         } catch (e) {
-            // console.warn('LevelContent3D: Failed to import Capsule, adjusting collider position only:', e);
+            console.warn('LevelContent3D: Failed to import Capsule, adjusting collider position only:', e);
             this.player.collider.start.set(playerWorldX, groundWorldY, playerWorldZ);
             this.player.collider.end.set(playerWorldX, groundWorldY + COLLIDER_HEIGHT, playerWorldZ);
         }
@@ -1390,7 +1210,7 @@ class LevelContent3D {
         
         this.setupPlayerKeyboardControls();
         
-        // console.log(`LevelContent3D: Player created at (${playerWorldX.toFixed(2)}, ${playerWorldY.toFixed(2)}, ${playerWorldZ.toFixed(2)})`);
+        console.log(`LevelContent3D: Player created at (${playerWorldX.toFixed(2)}, ${playerWorldY.toFixed(2)}, ${playerWorldZ.toFixed(2)})`);
         
         this.createPlayerVisualization(playerWorldX, playerWorldY, playerWorldZ);
         
@@ -1402,7 +1222,7 @@ class LevelContent3D {
             this.pointerLockClickHandler = () => {
                 if (this.player && this.player.controls && !this.player.controls.isLocked) {
                     this.player.controls.lock();
-                    // console.log('LevelContent3D: PointerLockControls locked via click');
+                    console.log('LevelContent3D: PointerLockControls locked via click');
                 }
             };
             
@@ -1410,7 +1230,24 @@ class LevelContent3D {
             
             if (!this.pointerLockUnlockHandler) {
                 this.pointerLockUnlockHandler = () => {
-                    // console.log('LevelContent3D: PointerLockControls unlocked');
+                    console.log('LevelContent3D: PointerLockControls unlocked');
+                    
+                    // If game is not over, immediately re-lock to prevent "Click to Start" screen
+                    if (!window.gameOver) {
+                        console.log('LevelContent3D: Game is active, re-locking pointer immediately');
+                        
+                        // Ensure menuOverlay stays hidden during active gameplay
+                        const menuOverlay = document.getElementById('menuOverlay');
+                        if (menuOverlay) {
+                            menuOverlay.style.display = 'none';
+                        }
+                        
+                        setTimeout(() => {
+                            if (this.player && this.player.controls && !this.player.controls.isLocked) {
+                                this.player.controls.lock();
+                            }
+                        }, 10); // Small delay to allow unlock event to complete
+                    }
                 };
                 this.player.controls.addEventListener('unlock', this.pointerLockUnlockHandler);
             }
@@ -1447,7 +1284,7 @@ class LevelContent3D {
         this.scene.add(cube);
         this.playerVisualization = cube;
         
-        // console.log(`LevelContent3D: Player visualization cube created at (${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)})`);
+        console.log(`LevelContent3D: Player visualization cube created at (${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)})`);
     }
     
     // 更新player visualization位置
@@ -1464,7 +1301,7 @@ class LevelContent3D {
         
         // 调试：如果 y 坐标变化明显，打印
         if (dy > 0.001) {
-            // console.log(`[PlayerVis Y Change] Old Y: ${currentPos.y.toFixed(4)} -> New Y: ${centerY.toFixed(4)} (delta: ${(centerY - currentPos.y).toFixed(4)}) | Center: (${centerX.toFixed(3)}, ${centerY.toFixed(3)}, ${centerZ.toFixed(3)})`);
+            console.log(`[PlayerVis Y Change] Old Y: ${currentPos.y.toFixed(4)} -> New Y: ${centerY.toFixed(4)} (delta: ${(centerY - currentPos.y).toFixed(4)}) | Center: (${centerX.toFixed(3)}, ${centerY.toFixed(3)}, ${centerZ.toFixed(3)})`);
         }
         
         if (dx > distanceThreshold || dy > distanceThreshold || dz > distanceThreshold) {
@@ -1484,34 +1321,17 @@ class LevelContent3D {
         }
         
         this.playerKeydownHandler = (event) => {
-            // ESC 键处理：进入暂停界面（如果未暂停）或关闭暂停界面（如果已暂停）
+            // ESC 键处理：Only works on game over screen
             if (event.key === 'Escape' || event.key === 'Esc') {
-                // console.log(`LevelContent3D: ESC key pressed, isPaused: ${this.uiInstance ? this.uiInstance.isPaused : 'N/A'}`);
-                
-                if (this.uiInstance) {
-                    // 如果 PointerLockControls 已锁定，先解锁
-                    if (this.player && this.player.controls && this.player.controls.isLocked) {
-                        // console.log('LevelContent3D: Unlocking PointerLockControls due to ESC key');
-                        this.player.controls.unlock();
-                    }
-                    
-                    // 如果已经暂停，按 ESC 应该关闭暂停界面（恢复游戏）
-                    if (this.uiInstance.isPaused) {
-                        // console.log('LevelContent3D: ESC key - closing pause menu (resuming game)');
-                        if (typeof this.uiInstance.handleResumeClick === 'function') {
-                            this.uiInstance.handleResumeClick();
-                        }
-                    } else {
-                        // 如果未暂停，按 ESC 应该打开暂停界面
-                        // console.log('LevelContent3D: ESC key - opening pause menu');
-                        if (typeof this.uiInstance.handlePauseClick === 'function') {
-                    this.uiInstance.handlePauseClick();
+                // Only allow ESC to work when game is over
+                if (window.gameOver) {
+                    console.log(`LevelContent3D: ESC key pressed on game over screen`);
+                    location.reload(); // Reload page to restart
+                    event.preventDefault();
+                    return;
                 }
-                    }
-                } else {
-                    // console.warn('LevelContent3D: ESC key pressed but uiInstance is not available');
-                }
-                // 阻止默认行为（防止浏览器退出全屏等）
+                // During active gameplay, do nothing
+                console.log('LevelContent3D: ESC key pressed during gameplay - ignored');
                 event.preventDefault();
                 return;
             }
@@ -1569,7 +1389,7 @@ class LevelContent3D {
         document.addEventListener('keydown', this.playerKeydownHandler);
         document.addEventListener('keyup', this.playerKeyupHandler);
         
-        // console.log('LevelContent3D: Player keyboard controls set up (WASD + Space)');
+        console.log('LevelContent3D: Player keyboard controls set up (WASD + Space)');
     }
     
     // 更新player（物理、碰撞等）
@@ -1624,7 +1444,7 @@ class LevelContent3D {
                 this.updatePlayerVisualization(newCenter.x, newCenter.y, newCenter.z);
                 
                 if (!this.cameraAnimationState || (!this.cameraAnimationState.isAnimating && !this.cameraAnimationState.completed)) {
-                    // console.log('LevelContent3D: Player initialized, starting camera animation');
+                    console.log('LevelContent3D: Player initialized, starting camera animation');
                     this.startCameraAnimation();
                 }
                 
@@ -1650,7 +1470,7 @@ class LevelContent3D {
                 this.updatePlayerVisualization(center.x, center.y, center.z);
                 
                 if (!this.cameraAnimationState || (!this.cameraAnimationState.isAnimating && !this.cameraAnimationState.completed)) {
-                    // console.log('LevelContent3D: Player reached floor, starting camera animation');
+                    console.log('LevelContent3D: Player reached floor, starting camera animation');
                     this.startCameraAnimation();
                 }
             } else {
@@ -1683,7 +1503,7 @@ class LevelContent3D {
                 this.updatePlayerVisualization(center.x, center.y, center.z);
                 
                 if (!this.cameraAnimationState || (!this.cameraAnimationState.isAnimating && !this.cameraAnimationState.completed)) {
-                    // console.log('LevelContent3D: Player reached floor, starting camera animation');
+                    console.log('LevelContent3D: Player reached floor, starting camera animation');
                     this.startCameraAnimation();
                 }
             } else if (result) {
@@ -1697,7 +1517,7 @@ class LevelContent3D {
                     this.player.speedY = 0;
                     
                     if (!this.cameraAnimationState || (!this.cameraAnimationState.isAnimating && !this.cameraAnimationState.completed)) {
-                        // console.log('LevelContent3D: Player landed, starting camera animation');
+                        console.log('LevelContent3D: Player landed, starting camera animation');
                         this.startCameraAnimation();
                     }
                 }
@@ -1709,7 +1529,7 @@ class LevelContent3D {
                 
                 // 调试：打印 center.y 和 collider 位置
                 if (Math.abs(center.y - (this.lastCenterY || center.y)) > 0.001) {
-                    // console.log(`[LevelContent3D updatePlayer] center.y: ${center.y.toFixed(4)} | collider.start.y: ${this.player.collider.start.y.toFixed(4)} | collider.end.y: ${this.player.collider.end.y.toFixed(4)}`);
+                    console.log(`[LevelContent3D updatePlayer] center.y: ${center.y.toFixed(4)} | collider.start.y: ${this.player.collider.start.y.toFixed(4)} | collider.end.y: ${this.player.collider.end.y.toFixed(4)}`);
                     this.lastCenterY = center.y;
                 }
                 
@@ -1742,7 +1562,7 @@ class LevelContent3D {
                 const center = this.player.collider.start.clone().add(this.player.collider.end).multiplyScalar(0.5);
                 this.updatePlayerVisualization(center.x, center.y, center.z);
             } else if (this.player && !this.player.controls) {
-                // console.warn('LevelContent3D: Player controls not available, cannot move');
+                console.warn('LevelContent3D: Player controls not available, cannot move');
             }
         }
     }
@@ -1795,7 +1615,7 @@ class LevelContent3D {
             targetLookAt: targetLookAt
         };
         
-        // console.log('LevelContent3D: Camera animation started');
+        console.log('LevelContent3D: Camera animation started');
     }
     
     // 更新camera动画
@@ -1847,9 +1667,9 @@ class LevelContent3D {
             if (this.player && this.player.controls) {
                 try {
                     this.player.controls.lock();
-                    // console.log('LevelContent3D: PointerLockControls locked, mouse movement enabled');
+                    console.log('LevelContent3D: PointerLockControls locked, mouse movement enabled');
                 } catch (e) {
-                    // console.warn('LevelContent3D: Failed to lock PointerLockControls:', e);
+                    console.warn('LevelContent3D: Failed to lock PointerLockControls:', e);
                 }
             }
             
@@ -1890,43 +1710,18 @@ class LevelContent3D {
         }
         
         this.globalKeydownHandler = (event) => {
-            // ESC 键处理：进入暂停界面（如果未暂停）或关闭暂停界面（如果已暂停）
-            console.log('LevelContent3D: Key pressed:', event.key, 'code:', event.code);
-            if (event.key === 'Escape' || event.key === 'Esc' || event.code === 'Escape') {
-                console.log('LevelContent3D: ESC key pressed (global handler)');
-                console.log('LevelContent3D: uiInstance exists?', !!this.uiInstance);
-                console.log('LevelContent3D: isPaused?', this.uiInstance ? this.uiInstance.isPaused : 'N/A');
-                
-                if (this.uiInstance) {
-                    // 如果 PointerLockControls 已锁定，先解锁
-                    if (this.player && this.player.controls && this.player.controls.isLocked) {
-                        console.log('LevelContent3D: Unlocking PointerLockControls due to ESC key');
-                        this.player.controls.unlock();
-                    }
-                    
-                    // 如果已经暂停，按 ESC 应该关闭暂停界面（恢复游戏）
-                    if (this.uiInstance.isPaused) {
-                        console.log('LevelContent3D: ESC key - closing pause menu (resuming game)');
-                        if (typeof this.uiInstance.handleResumeClick === 'function') {
-                            this.uiInstance.handleResumeClick();
-                        } else {
-                            console.warn('LevelContent3D: handleResumeClick is not a function');
-                        }
-                    } else {
-                        // 如果未暂停，按 ESC 应该打开暂停界面
-                        console.log('LevelContent3D: ESC key - opening pause menu');
-                        console.log('LevelContent3D: handlePauseClick exists?', typeof this.uiInstance.handlePauseClick === 'function');
-                        if (typeof this.uiInstance.handlePauseClick === 'function') {
-                            this.uiInstance.handlePauseClick();
-                            console.log('LevelContent3D: handlePauseClick called, isPaused after call:', this.uiInstance.isPaused);
-                        } else {
-                            console.warn('LevelContent3D: handlePauseClick is not a function');
-                        }
-                    }
-                } else {
-                    console.warn('LevelContent3D: ESC key pressed but uiInstance is not available');
+            // ESC 键处理：Only works on game over screen
+            if (event.key === 'Escape' || event.key === 'Esc') {
+                // Only allow ESC to work when game is over
+                if (window.gameOver) {
+                    console.log(`LevelContent3D: ESC key pressed on game over screen (global handler)`);
+                    location.reload(); // Reload page to restart
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return;
                 }
-                // 阻止默认行为（防止浏览器退出全屏等）
+                // During active gameplay, do nothing
+                console.log('LevelContent3D: ESC key pressed during gameplay (global handler) - ignored');
                 event.preventDefault();
                 event.stopPropagation();
                 return;
@@ -1934,7 +1729,7 @@ class LevelContent3D {
         };
         
         document.addEventListener('keydown', this.globalKeydownHandler);
-        // console.log('LevelContent3D: Global keyboard controls set up (ESC key)');
+        console.log('LevelContent3D: Global keyboard controls set up (ESC key)');
     }
     
     // 获取玩家对象（供外部访问）
@@ -1961,11 +1756,11 @@ class LevelContent3D {
 // 导出到全局
 // 使用立即执行函数确保在脚本加载时立即执行
 (function() {
-if (typeof window !== 'undefined') {
-    window.LevelContent3D = LevelContent3D;
-        // console.log('LevelContent3D.js: Class exported to window.LevelContent3D at', new Date().toISOString());
+    if (typeof window !== 'undefined') {
+        window.LevelContent3D = LevelContent3D;
+        console.log('LevelContent3D.js: Class exported to window.LevelContent3D at', new Date().toISOString());
     } else {
-        // console.error('LevelContent3D.js: window is not defined, cannot export class');
-}
+        console.error('LevelContent3D.js: window is not defined, cannot export class');
+    }
 })();
 

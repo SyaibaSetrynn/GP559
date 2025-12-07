@@ -7,52 +7,34 @@
 		<!-- TensorFlow.js -->
 		<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
 		
-		<!-- Custom Styles for Dark Theme -->
+		<!-- Custom Styles for Clean Black & White Theme -->
 		<style>
-			/* Dark theme for body */
-			body {
-				background-color: #0d1117;
+			/* Clean black & white minimalist theme */
+			* {
 				margin: 0;
 				padding: 0;
+				box-sizing: border-box;
 			}
 			
-			/* Button hover effects */
-			#right-panel button {
-				transition: all 0.2s ease;
-			}
-			#right-panel button:hover {
-				transform: translateY(-1px);
-				box-shadow: 0 4px 8px rgba(0,0,0,0.4);
-				opacity: 0.9;
-			}
-			#right-panel button:active {
-				transform: translateY(0);
+			body {
+				background-color: #1a1a1a;
+				margin: 0;
+				padding: 0;
+				font-family: monospace;
+				color: #fff;
 			}
 			
-			/* Scrollbar styling for right panel */
-			#right-panel::-webkit-scrollbar {
-				width: 8px;
-			}
-			#right-panel::-webkit-scrollbar-track {
-				background: #2d3139;
-			}
-			#right-panel::-webkit-scrollbar-thumb {
-				background: #555;
-				border-radius: 4px;
-			}
-			#right-panel::-webkit-scrollbar-thumb:hover {
-				background: #777;
-			}
-			
-			/* Ensure game canvas uses full screen minus panel width and bottom space */
+			/* Centered game canvas like level select */
 			#div1 {
 				position: fixed;
-				top: 0;
-				left: 0;
-				right: 320px;
-				bottom: 85px;
-				background-color: #0d1117;
-				pointer-events: auto;
+				top: 50%;
+				left: 50%;
+				transform: translate(-62%, -54%);
+				width: 1280px;
+				height: 720px;
+				border: 2px solid #333;
+				background-color: transparent;
+				z-index: 1;
 			}
 			
 			/* Ensure canvas fits within the div1 container */
@@ -65,38 +47,160 @@
 				max-width: 100% !important;
 				max-height: 100% !important;
 			}
+					/* Right panel - clean black & white styling */
+		#right-panel {
+			position: fixed;
+			top: 50%;
+			right: 20px; /* Position from right edge of screen */
+			transform: translateY(-50%);
+			width: 300px;
+			max-height: 720px;
+			background: #000;
+			border: 2px solid #fff;
+			overflow-y: auto;
+			z-index: 1000;
+			font-family: monospace;
+			color: #fff;
+		}
 			
-			/* Movement Speed Slider Styling */
-			#movement-speed-slider {
-				-webkit-appearance: none;
-				appearance: none;
+			/* Clean scrollbar */
+			#right-panel::-webkit-scrollbar {
+				width: 8px;
+			}
+			#right-panel::-webkit-scrollbar-track {
+				background: #000;
+			}
+			#right-panel::-webkit-scrollbar-thumb {
+				background: #fff;
+				border: 1px solid #000;
+			}
+			#right-panel::-webkit-scrollbar-thumb:hover {
+				background: #ccc;
 			}
 			
-			#movement-speed-slider::-webkit-slider-thumb {
+			/* Panel sections */
+			.panel-section {
+				padding: 15px;
+				border-bottom: 1px solid #fff;
+			}
+			
+			.panel-section h3,
+			.panel-section h4 {
+				margin: 0 0 10px 0;
+				font-size: 14px;
+				font-weight: normal;
+				text-transform: uppercase;
+				letter-spacing: 1px;
+			}
+			
+			/* Info boxes */
+			.info-box {
+				background: #000;
+				padding: 10px;
+				border: 1px solid #fff;
+				font-size: 11px;
+				line-height: 1.6;
+			}
+			
+			.info-row {
+				display: flex;
+				justify-content: space-between;
+				margin: 5px 0;
+			}
+			
+			/* Buttons - matching level select style */
+			button {
+				width: 100%;
+				padding: 10px;
+				background: #000;
+				color: #fff;
+				border: 2px solid #fff;
+				border-radius: 0;
+				cursor: pointer;
+				font-size: 11px;
+				font-family: monospace;
+				letter-spacing: 1px;
+				text-transform: uppercase;
+				transition: all 0.2s ease;
+				margin-bottom: 8px;
+			}
+			
+			button:hover {
+				background: #fff;
+				color: #000;
+			}
+			
+			button:active {
+				transform: scale(0.98);
+			}
+			
+			/* Grid layout for buttons */
+			.button-grid {
+				display: grid;
+				grid-template-columns: 1fr 1fr;
+				gap: 8px;
+			}
+			
+			.button-grid button {
+				margin-bottom: 0;
+			}
+			
+			/* Input elements */
+			input[type="range"] {
+				width: 100%;
+				height: 4px;
+				background: #fff;
+				outline: none;
+				appearance: none;
+				cursor: pointer;
+				margin: 10px 0;
+			}
+			
+			input[type="range"]::-webkit-slider-thumb {
 				-webkit-appearance: none;
 				appearance: none;
 				width: 16px;
 				height: 16px;
-				border-radius: 50%;
-				background: #3fb950;
+				background: #fff;
 				cursor: pointer;
-				border: 2px solid #21262d;
-				box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+				border: 2px solid #000;
 			}
 			
-			#movement-speed-slider::-webkit-slider-thumb:hover {
-				background: #46d058;
-				transform: scale(1.1);
+			input[type="range"]::-webkit-slider-thumb:hover {
+				background: #ccc;
 			}
 			
-			#movement-speed-slider::-moz-range-thumb {
+			input[type="range"]::-moz-range-thumb {
 				width: 16px;
 				height: 16px;
-				border-radius: 50%;
-				background: #3fb950;
+				background: #fff;
 				cursor: pointer;
-				border: 2px solid #21262d;
-				box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+				border: 2px solid #000;
+			}
+			
+			.range-labels {
+				display: flex;
+				justify-content: space-between;
+				font-size: 9px;
+				color: #ccc;
+				margin-top: 5px;
+			}
+			
+			/* Status indicators */
+			.status-active {
+				color: #fff;
+				font-weight: bold;
+			}
+			
+			.status-inactive {
+				color: #666;
+			}
+			
+			/* Timer display */
+			#testTimer {
+				font-size: 10px;
+				opacity: 0.7;
+				margin-top: 5px;
 			}
 		</style>
 	</head>
@@ -104,103 +208,97 @@
 	<body>
 		<div id="div1"></div>
 		
-		<!-- Right Side Panel - All UI Elements -->
-		<div id="right-panel" style="position: fixed; top: 0; right: 0; width: 320px; height: 100vh; background: #161b22; border-left: 1px solid #30363d; overflow-y: auto; z-index: 1000; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #c9d1d9;">
+		<!-- Right Side Panel - Clean Black & White UI -->
+		<div id="right-panel">
 			
 			<!-- Header Section -->
-			<div style="background: #21262d; color: #c9d1d9; padding: 15px; border-bottom: 1px solid #30363d;">
-				<h3 style="margin: 0; font-size: 16px; font-weight: 600;">DQN Training Environment</h3>
-				<div id="testTimer" style="font-size: 11px; opacity: 0.7; margin-top: 5px; color: #8b949e;">Timer: 0</div>
+			<div class="panel-section">
+				<h3>DQN Training</h3>
+				<div id="testTimer">Timer: 0</div>
 			</div>
 
 			<!-- System Status Section -->
-			<div style="padding: 15px; border-bottom: 1px solid #30363d;">
-				<h4 style="margin: 0 0 10px 0; color: #c9d1d9; font-size: 14px;">System Status</h4>
-				<div style="background: #0d1117; padding: 10px; border-radius: 6px; border: 1px solid #30363d;">
-					<div style="margin: 5px 0; display: flex; justify-content: space-between;">
-						<span style="color: #8b949e;">Mode:</span> <span id="current-mode" style="font-weight: bold; color: #3fb950;">Training</span>
+			<div class="panel-section">
+				<h4>System Status</h4>
+				<div class="info-box">
+					<div class="info-row">
+						<span>Mode:</span>
+						<span id="current-mode" class="status-active">Training</span>
 					</div>
-					<div style="margin: 5px 0; display: flex; justify-content: space-between;">
-						<span style="color: #8b949e;">Status:</span> <span id="system-status" style="font-weight: bold; color: #3fb950;">Ready</span>
+					<div class="info-row">
+						<span>Status:</span>
+						<span id="system-status" class="status-active">Ready</span>
 					</div>
-					<div style="margin: 5px 0; display: flex; justify-content: space-between; font-size: 11px;">
-						<span style="color: #8b949e;">Buffer:</span> <span id="buffer-status" style="color: #7d8590;">0 experiences</span>
+					<div class="info-row">
+						<span>Buffer:</span>
+						<span id="buffer-status" class="status-inactive">0 exp</span>
 					</div>
 				</div>
 			</div>
 
 			<!-- Environment Controls -->
-			<div style="padding: 15px; border-bottom: 1px solid #30363d;">
-				<h4 style="margin: 0 0 10px 0; color: #c9d1d9; font-size: 14px;">Environment Controls</h4>
-				<button id="reset-scene" style="width: 100%; padding: 8px 12px; background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; cursor: pointer; font-size: 11px; margin-bottom: 8px;">Reset Environment</button>
-				<button id="debug-cp" style="width: 100%; padding: 6px; background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; cursor: pointer; font-size: 10px; margin-bottom: 8px;">Debug Critical Points</button>
+			<div class="panel-section">
+				<h4>Environment</h4>
+				<button id="reset-scene">Reset Environment</button>
+				<button id="debug-cp">Debug Critical Points</button>
 				
 				<!-- Movement Speed Slider -->
-				<div style="margin-top: 8px;">
-					<label for="movement-speed-slider" style="display: block; font-size: 12px; color: #8b949e; margin-bottom: 6px;">
-						Agent Movement Speed: <span id="movement-speed-value" style="color: #3fb950; font-weight: bold;">0.025</span>
-					</label>
-					<input type="range" id="movement-speed-slider" min="0.005" max="0.1" step="0.005" value="0.025" 
-						style="width: 100%; height: 4px; border-radius: 5px; background: #30363d; outline: none; appearance: none; cursor: pointer;">
-					<div style="display: flex; justify-content: space-between; font-size: 10px; color: #8b949e; margin-top: 2px;">
-						<span>0.005 (slow)</span>
-						<span>0.1 (fast)</span>
+				<div style="margin-top: 15px;">
+					<div style="font-size: 11px; margin-bottom: 8px;">
+						Speed: <span id="movement-speed-value" style="font-weight: bold;">0.025</span>
+					</div>
+					<input type="range" id="movement-speed-slider" min="0.005" max="0.1" step="0.005" value="0.025">
+					<div class="range-labels">
+						<span>0.005</span>
+						<span>0.1</span>
 					</div>
 				</div>
 			</div>
 			
 			<!-- DQN Controls -->
-			<div style="padding: 15px; border-bottom: 1px solid #30363d;">
-				<h4 style="margin: 0 0 10px 0; color: #c9d1d9; font-size: 14px;">DQN Controls</h4>
-				<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
-					<button id="init-dqn" style="padding: 8px 12px; background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; cursor: pointer; font-size: 11px;">Initialize DQN</button>
-					<button id="start-dqn" style="padding: 8px 12px; background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; cursor: pointer; font-size: 11px;">Start Training</button>
+			<div class="panel-section">
+				<h4>DQN Controls</h4>
+				<div class="button-grid">
+					<button id="init-dqn">Init DQN</button>
+					<button id="start-dqn">Start</button>
+					<button id="stop-dqn">Stop</button>
+					<button id="save-dqn">Save</button>
+					<button id="export-model">Export</button>
+					<button id="import-model">Import</button>
 				</div>
-				<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
-					<button id="stop-dqn" style="padding: 8px 12px; background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; cursor: pointer; font-size: 11px;">Stop Training</button>
-					<button id="save-dqn" style="padding: 8px 12px; background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; cursor: pointer; font-size: 11px;">Save Model</button>
-				</div>
-				<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-					<button id="export-model" style="padding: 8px 12px; background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; cursor: pointer; font-size: 11px;">Export JSON</button>
-					<button id="import-model" style="padding: 8px 12px; background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; cursor: pointer; font-size: 11px;">Import JSON</button>
-					<input type="file" id="import-file" accept=".json" style="display: none;">
-				</div>
+				<input type="file" id="import-file" accept=".json" style="display: none;">
 			</div>
 
 			<!-- Agent Scores Section -->
-			<div style="padding: 15px; border-bottom: 1px solid #30363d;">
-				<h4 style="margin: 0 0 10px 0; color: #c9d1d9; font-size: 14px;">Agent Scores</h4>
-				<div id="agentScores" style="background: #0d1117; padding: 10px; border-radius: 6px; border: 1px solid #30363d; font-size: 12px; line-height: 1.4; color: #c9d1d9;">Loading scores...</div>
+			<div class="panel-section">
+				<h4>Agent Scores</h4>
+				<div id="agentScores" class="info-box">Loading...</div>
 			</div>
 			
 			<!-- Agent State Display -->
-			<div style="padding: 15px; border-bottom: 1px solid #30363d;">
-				<h4 style="margin: 0 0 10px 0; color: #c9d1d9; font-size: 14px;">Red Agent State</h4>
-				<div id="red-agent-state" style="background: #0d1117; border-radius: 6px; padding: 12px; border: 1px solid #30363d;">
-					<div id="red-state-summary" style="margin-bottom: 10px; line-height: 1.3; font-size: 12px;">
-						<div style="margin: 4px 0; display: flex; justify-content: space-between;">
-							<span style="font-weight: 600; color: #8b949e;">Position:</span> <span id="red-position" style="font-family: monospace; color: #7d8590;">Loading...</span>
-						</div>
-						<div style="margin: 4px 0; display: flex; justify-content: space-between;">
-							<span style="font-weight: 600; color: #8b949e;">Score:</span> <span id="red-score" style="color: #f85149; font-weight: bold;">Loading...</span>
-						</div>
-						<div style="margin: 4px 0; display: flex; justify-content: space-between;">
-							<span style="font-weight: 600; color: #8b949e;">Movement:</span> <span id="red-movement" style="color: #58a6ff;">Loading...</span>
-						</div>
-						<div style="margin: 4px 0; display: flex; justify-content: space-between;">
-							<span style="font-weight: 600; color: #8b949e;">Target:</span> <span id="red-nearest-cp" style="color: #3fb950;">Loading...</span>
-						</div>
+			<div class="panel-section">
+				<h4>Red Agent State</h4>
+				<div id="red-agent-state" class="info-box">
+					<div class="info-row">
+						<span>Position:</span>
+						<span id="red-position">Loading...</span>
+					</div>
+					<div class="info-row">
+						<span>Score:</span>
+						<span id="red-score">Loading...</span>
+					</div>
+					<div class="info-row">
+						<span>Movement:</span>
+						<span id="red-movement">Loading...</span>
+					</div>
+					<div class="info-row">
+						<span>Target:</span>
+						<span id="red-nearest-cp">Loading...</span>
 					</div>
 				</div>
 			</div>
 		</div>
 
-
-
-		</div>
-
-
-		
 		<script>
 			// Simple timer to show the page is working
 			let timerCount = 0;
