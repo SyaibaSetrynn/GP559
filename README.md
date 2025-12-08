@@ -1,4 +1,4 @@
-# Cubers #9825
+# Cubers #9825 https://jrgustmadtown.github.io/GP559/
 
 A 3D multiplayer territory control game built with Three.js, featuring AI agents powered by Deep Q-Network (DQN) reinforcement learning.
 
