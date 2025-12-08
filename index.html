@@ -1,13 +1,123 @@
 <!DOCTYPE html>
+<!-- VERSION: 2024-12-06-v2.3 - Fixed button timing with aggressive debugging -->
 <html>
 	<head>
+		<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+		<meta http-equiv="Pragma" content="no-cache">
+		<meta http-equiv="Expires" content="0">
 		<link rel="stylesheet" href="./style.css" />
+		<style>
+			* {
+				margin: 0;
+				padding: 0;
+				box-sizing: border-box;
+			}
+			
+			body {
+				display: flex;
+				justify-content: center;
+				align-items: center;
+				min-height: 100vh;
+				background-color: #1a1a1a;
+				font-family: Arial, sans-serif;
+			}
+			
+			#gameContainer {
+				position: relative;
+			}
+			
+			#gameCanvas {
+				display: block;
+				border: 2px solid #333;
+				background-color: transparent;
+				position: relative;
+				z-index: 2;
+			}
+			
+			#div1 {
+				display: none;
+				position: fixed;
+				top: 50%;
+				left: 50%;
+				transform: translate(-50%, -50%);
+				width: 1280px;
+				height: 720px;
+				border: 2px solid #333;
+				background-color: transparent;
+			}
+			
+			#menuOverlay {
+				display: none;
+			}
+			
+			#losUI {
+				position: fixed;
+				top: calc(50% - 360px + 10px); /* Top of centered game (50% - 720px/2) + 10px padding */
+				right: calc(50% - 640px + 10px); /* Right edge of centered game (50% - 1280px/2) + 10px padding */
+				color: white;
+				font-family: monospace;
+				font-size: 16px;
+				font-weight: bold;
+				text-align: right;
+				text-shadow: none;
+				display: none;
+				pointer-events: none;
+				z-index: 10001; /* Above game scene */
+				background: rgba(0, 0, 0, 0.85);
+				padding: 15px;
+				border: 2px solid #fff;
+				border-radius: 0;
+				max-width: 300px;
+			}
+		
+		#skipToGame {
+			position: fixed;
+			top: 50%;
+			left: 50%;
+			transform: translate(-50%, -50%);
+			z-index: 10001;
+			padding: 15px 40px;
+			background: #000;
+			color: #fff;
+			border: 2px solid #fff;
+			border-radius: 0;
+			cursor: pointer;
+			font-size: 18px;
+			font-weight: bold;
+			font-family: monospace;
+			letter-spacing: 2px;
+			text-transform: uppercase;
+			transition: all 0.2s ease;
+			display: none;
+		}
+		
+		#skipToGame:hover {
+			background: #fff;
+			color: #000;
+			border-color: #000;
+		}
+		
+		#skipToGame:active {
+			transform: translate(-50%, -50%) scale(0.95);
+		}
+		</style>
 	</head>
 
 	<body>
+		<!-- START GAME BUTTON - Appears after 3.5 seconds in center -->
+		<button id="skipToGame">START GAME</button>
+		
+		<div id="gameContainer">
+			<canvas id="gameCanvas" width="1280" height="720"></canvas>
+		</div>
+		
 		<div id="div1"></div>
 		<div id="menuOverlay">
 			<div id="startText">Click to Start</div>
+		</div>
+		
+		<div id="losUI">
+			<div id="agentScores">Loading scores...</div>
 		</div>
 		
 	<script type="importmap">
@@ -20,20 +130,531 @@
 	</script>
 
 	<script type="module">
+		console.log('========================================');
+		console.log('🚀 MODULE SCRIPT STARTED');
+		console.log('📦 VERSION: 2024-12-06-v2.4-PHASE-HOOK');
+		console.log('⏰ Time:', new Date().toLocaleTimeString());
+		console.log('========================================');
+		
 		import * as THREE from 'three';
 		import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 		import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
+		import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+		import { Octree } from 'three/addons/math/Octree.js';
+		import { OctreeHelper } from 'three/addons/helpers/OctreeHelper.js';
+		import { Capsule } from 'three/addons/math/Capsule.js';
 		import { CriticalPointSystem, CP_COLORS } from './critical-point-system.js';
 		
-		// Expose Three.js and related systems to global scope
+		const AgentModule = await import('./Agent.js');
+		const AgentManagerModule = await import('./AgentManager.js');
+		
+		// Expose to global scope
 		window.THREE = THREE;
+		window.T = THREE;
 		window.OBJLoader = OBJLoader;
 		window.MTLLoader = MTLLoader;
+		window.OrbitControls = OrbitControls;
+		window.Octree = Octree;
+		window.OctreeHelper = OctreeHelper;
+		window.Capsule = Capsule;
 		window.CriticalPointSystem = CriticalPointSystem;
 		window.CP_COLORS = CP_COLORS;
+		window.Agent = AgentModule.default;
+		window.AgentManager = AgentManagerModule.default;
 		
-		console.log('Three.js, loaders, and Critical Point System loaded successfully');
+		window.PLAYER_HEIGHT = 0.5;
+		window.PLAYER_RADIUS = 0.5 * Math.sqrt(2) / 2;
+		window.PLAYER_SPEED = 0.02;
+		window.PLAYER_JUMP_HEIGHT = 1.2;
+		window.PLAYER_JUMP_SPEED = 0.03;
+		window.WORLD_BOUNDARY = 20;
+		window.GRAVITY = (window.PLAYER_JUMP_SPEED * window.PLAYER_JUMP_SPEED) / (2 * window.PLAYER_JUMP_HEIGHT);
+		
+		console.log('========================================');
+		console.log('✓ Dependencies loaded');
+		console.log('✓ THREE:', typeof THREE);
+		console.log('✓ Agent:', typeof window.Agent);
+		console.log('✓ AgentManager:', typeof window.AgentManager);
+		console.log('========================================');
+		
+		// IMMEDIATELY hook into StateManager BEFORE page load
+		// This ensures we catch phase changes no matter what
+		function setupStateManagerHook() {
+			// Wait for StateManager to be loaded
+			if (typeof StateManager === 'undefined') {
+				console.log('⏳ Waiting for StateManager...');
+				setTimeout(setupStateManagerHook, 100);
+				return;
+			}
+			
+			console.log('========================================');
+			console.log('🔧 HOOKING INTO StateManager.setPhase');
+			console.log('========================================');
+			
+			// Store the original setPhase method
+			const originalSetPhase = StateManager.setPhase.bind(StateManager);
+			
+			// Override setPhase to detect level selections
+			StateManager.setPhase = function(newPhase) {
+				console.log(`📍 StateManager.setPhase called: ${StateManager.phase} → ${newPhase}`);
+				
+				// Call the original method first
+				originalSetPhase(newPhase);
+				
+				// Check if this is a level phase (11-15)
+				if (newPhase >= 11 && newPhase <= 15) {
+					const level = newPhase - 10; // Phase 11 = Level 1, etc.
+					console.log(`========================================`);
+					console.log(`🎯 LEVEL ${level} SELECTED (Phase ${newPhase})`);
+					console.log(`🚀 Triggering button timer NOW`);
+					console.log(`========================================`);
+					
+					// Trigger the button immediately
+					if (window.transitionToIndexJakeGame) {
+						window.transitionToIndexJakeGame(level);
+					} else {
+						console.error('❌ transitionToIndexJakeGame not found!');
+					}
+				}
+			};
+			
+			console.log('✅ StateManager hook installed successfully');
+			console.log('✅ Will automatically detect level selections');
+			window.stateManagerHooked = true;
+		}
+		
+		// Start trying to hook immediately
+		setupStateManagerHook();
+		
+		// Initialize the UI system after everything loads
+		window.addEventListener('load', () => {
+			console.log('========================================');
+			console.log('🔧 PAGE LOAD EVENT FIRED');
+			console.log('   Time:', new Date().toLocaleTimeString());
+			console.log('========================================');
+			
+			const canvas = document.getElementById('gameCanvas');
+			if (canvas) {
+				console.log('✓ Canvas found');
+				if (typeof UI === 'undefined') {
+					console.error('❌ UI class not found! Scripts may not be loaded in correct order.');
+					return;
+				}
+				
+				console.log('✓ UI class available, creating instance...');
+				window.uiInstance = new UI(canvas);
+				console.log('✓ UI system initialized');
+				
+				// Set up property watcher for levelSelection3D BEFORE it gets set
+				// This will catch the assignment when UI creates it
+				let _levelSelection3D = null;
+				Object.defineProperty(window.uiInstance, 'levelSelection3D', {
+					configurable: true,
+					enumerable: true,
+					get: function() {
+						return _levelSelection3D;
+					},
+					set: function(value) {
+						console.log('🔔 PROPERTY WATCHER: levelSelection3D was assigned!', value);
+						_levelSelection3D = value;
+						// Immediately try to set up the override when it's assigned
+						if (value && !window.levelOverrideComplete) {
+							console.log('🚀 Setting up override immediately after property assignment...');
+							// Use immediate timeout to ensure the object is fully initialized
+							setTimeout(() => setupLevelTransition(), 0);
+						}
+					}
+				});
+				console.log('✓ Property watcher installed for levelSelection3D');
+				
+				// Set up the transition function for when level is selected
+				window.transitionToGame = window.transitionToIndexJakeGame;
+				
+				// Override the LevelSelection3D enterLevel method when it's created
+				// Start checking immediately and very frequently
+				setTimeout(() => {
+					setupLevelTransition();
+				}, 100); // Start after just 100ms
+				
+				// Also check every 100ms for the first 10 seconds
+				const checkInterval = setInterval(() => {
+					if (window.levelOverrideComplete) {
+						console.log('✓ Override complete, stopping interval checks');
+						clearInterval(checkInterval);
+					} else {
+						setupLevelTransition();
+					}
+				}, 100);
+				
+				// Clear the interval after 10 seconds
+				setTimeout(() => {
+					clearInterval(checkInterval);
+					if (!window.levelOverrideComplete) {
+						console.error('❌ Failed to set up override after 10 seconds');
+						console.log('💡 Backup click handler is active');
+					}
+				}, 10000);
+				
+				// BACKUP: Also monitor for clicks on the canvas
+				canvas.addEventListener('click', handleCanvasClick);
+				console.log('✓ Canvas click listener added as backup');
+				
+				// TRIPLE BACKUP: Monitor for any phase changes that indicate level selection
+				let lastPhase = -1;
+				setInterval(() => {
+					if (typeof StateManager !== 'undefined' && StateManager.getPhase) {
+						const currentPhase = StateManager.getPhase();
+						if (currentPhase !== lastPhase) {
+							// Phase changed
+							console.log(`📍 Phase changed: ${lastPhase} → ${currentPhase}`);
+							
+							// Check if it's a level phase (11-15)
+							if (currentPhase >= 11 && currentPhase <= 15) {
+								const level = currentPhase - 10; // Phase 11 = Level 1, etc.
+								console.log(`🎯 Detected level ${level} via phase change!`);
+								
+								// Only trigger if we haven't already for this phase
+								if (!window.lastTriggeredPhase || window.lastTriggeredPhase !== currentPhase) {
+									window.lastTriggeredPhase = currentPhase;
+									console.log(`🚀 Triggering button for level ${level}`);
+									window.transitionToIndexJakeGame(level);
+								}
+							}
+							
+							lastPhase = currentPhase;
+						}
+					}
+				}, 100); // Check every 100ms
+				console.log('✓ Phase monitor started');
+			} else {
+				console.error('❌ Canvas not found!');
+			}
+		});
+		
+		// Backup click handler to catch level selections if override doesn't work
+		function handleCanvasClick(event) {
+			// Only trigger backup if override hasn't been set up
+			if (window.levelOverrideComplete) {
+				return; // Override is working, no need for backup
+			}
+			
+			// Give the normal UI flow a moment to process
+			setTimeout(() => {
+				// Check if a level was selected by looking at the level selection state
+				if (window.uiInstance && window.uiInstance.levelSelection3D) {
+					const ls = window.uiInstance.levelSelection3D;
+					
+					// Check various indicators that a level might have been selected
+					const isEntering = ls.state === 'entering';
+					const hasSelectedLevel = ls.selectedLevel !== null && ls.selectedLevel !== undefined;
+					const isInLevelMode = ls.inLevelMode;
+					
+					if ((isEntering || isInLevelMode) && hasSelectedLevel) {
+						console.log('========================================');
+						console.log(`🔔 BACKUP HANDLER TRIGGERED`);
+						console.log(`   State: ${ls.state}`);
+						console.log(`   Selected Level: ${ls.selectedLevel}`);
+						console.log(`   In Level Mode: ${ls.inLevelMode}`);
+						console.log('========================================');
+						
+						// Only trigger if we haven't already triggered for this level recently
+						const now = Date.now();
+						const lastTriggerKey = `backup_trigger_${ls.selectedLevel}`;
+						const lastTriggerTime = window[lastTriggerKey] || 0;
+						
+						if (now - lastTriggerTime > 1000) { // At least 1 second between triggers
+							window[lastTriggerKey] = now;
+							console.log(`🎯 Triggering transition for level ${ls.selectedLevel}`);
+							window.transitionToIndexJakeGame(ls.selectedLevel);
+						} else {
+							console.log(`⏭️ Skipping duplicate trigger (${now - lastTriggerTime}ms since last)`);
+						}
+					}
+				}
+			}, 100); // Wait 100ms for UI to update
+		}
+		
+		function setupLevelTransition() {
+			// Skip if already complete
+			if (window.levelOverrideComplete) {
+				return;
+			}
+			
+			// Check if LevelSelection3D has been created and override enterLevel
+			const hasUI = !!window.uiInstance;
+			const hasLS = !!(window.uiInstance && window.uiInstance.levelSelection3D);
+			
+			// Only log every 10 attempts to reduce spam
+			window.levelOverrideAttempts = (window.levelOverrideAttempts || 0) + 1;
+			if (window.levelOverrideAttempts % 10 === 1) {
+				console.log(`🔧 Setup attempt #${window.levelOverrideAttempts} - UI:${hasUI} LS:${hasLS}`);
+			}
+			
+			if (window.uiInstance && window.uiInstance.levelSelection3D) {
+				const ls = window.uiInstance.levelSelection3D;
+				
+				// Verify it has the enterLevel method
+				if (typeof ls.enterLevel !== 'function') {
+					console.error('❌ levelSelection3D found but enterLevel is not a function!');
+					return;
+				}
+				
+				console.log('========================================');
+				console.log('✅ LevelSelection3D FOUND!');
+				console.log(`   After ${window.levelOverrideAttempts} attempts`);
+				console.log('========================================');
+				
+				// Store original method
+				const originalEnterLevel = ls.enterLevel.bind(ls);
+				
+				// Create override function
+				ls.enterLevel = function(level) {
+					console.log('========================================');
+					console.log(`🎯 enterLevel OVERRIDE TRIGGERED!`);
+					console.log(`   Level: ${level}`);
+					console.log(`   Timestamp: ${Date.now()}`);
+					console.log('========================================');
+					
+					// CRITICAL: Trigger the button transition FIRST
+					// This starts the 3.5 second timer
+					window.transitionToIndexJakeGame(level);
+					
+					// Then call the original enterLevel to continue normal game flow
+					try {
+						const result = originalEnterLevel(level);
+						if (result && typeof result.then === 'function') {
+							result.then(() => {
+								console.log(`✓ Original enterLevel completed for level ${level}`);
+							}).catch(error => {
+								console.error(`❌ Error in original enterLevel:`, error);
+							});
+						}
+						return result;
+					} catch (error) {
+						console.error(`❌ Error calling original enterLevel:`, error);
+						throw error;
+					}
+				};
+				
+				// Verify the override worked
+				if (ls.enterLevel.name === '') {
+					console.log('✅ Override function successfully installed');
+					console.log('✅ Ready to intercept level selections');
+					console.log('========================================');
+					console.log('💡 Click on a 3D level to test');
+					console.log('💡 Button will appear 3.5s after selection');
+					console.log('========================================');
+					
+					// Mark as complete
+					window.levelOverrideComplete = true;
+				} else {
+					console.warn('⚠️ Override may not have worked correctly');
+				}
+			}
+		}
+		
+		// Start game function
+		function startGameNow(level = 1) {
+			// Prevent duplicate starts
+			if (window.gameStarting || (window.gameInstance && window.gameInstance.running)) {
+				console.warn('⚠️ Game is already starting or running! Ignoring duplicate request.');
+				return;
+			}
+			
+			window.gameStarting = true;
+			
+			console.log('========================================');
+			console.log(`STARTING GAME for level ${level}`);
+			console.log('========================================');
+			
+			// Hide UI
+			const skipBtn = document.getElementById('skipToGame');
+			const gameCanvas = document.getElementById('gameCanvas');
+			const gameContainer = document.getElementById('gameContainer');
+			const menuOverlay = document.getElementById('menuOverlay');
+			
+			if (skipBtn) skipBtn.style.display = 'none';
+			
+			// Stop the UI system
+			if (window.uiInstance && window.uiInstance.stopRenderLoop) {
+				window.uiInstance.stopRenderLoop();
+				console.log('UI stopped');
+			}
+			
+			if (gameCanvas) gameCanvas.style.display = 'none';
+			if (gameContainer) gameContainer.style.display = 'none';
+			if (menuOverlay) menuOverlay.style.display = 'none';
+			
+			// Show game container (centered like UI)
+			const div1 = document.getElementById('div1');
+			if (div1) {
+				div1.style.display = 'block';
+				// Don't override position/transform - CSS already centers it
+			}
+			
+			// Show game UI (positioned in top-right of game scene by CSS)
+			const losUI = document.getElementById('losUI');
+			if (losUI) {
+				losUI.style.display = 'block';
+				// Don't override position - CSS already positions it correctly
+				console.log('Game UI shown');
+			}
+		
+			// Start the game
+			if (window.startIndexJakeGame) {
+				console.log('✓ Calling startIndexJakeGame...');
+				try {
+					window.startIndexJakeGame(level);
+					console.log('✓ Game started successfully!');
+					window.gameStarting = false; // Reset flag after successful start
+				} catch (error) {
+					console.error('ERROR starting game:', error);
+					window.gameStarting = false; // Reset flag on error
+					window.gameInstance = null; // Clear instance on error
+				}
+			} else {
+				console.error('✗ startIndexJakeGame not found!');
+				window.gameStarting = false; // Reset flag
+			}
+		}
+		
+		// Function to transition to indexjake game with selected level after 3.5 seconds
+		window.transitionToIndexJakeGame = function(selectedLevel) {
+			console.log(`========================================`);
+			console.log(`🎯 TRANSITION TRIGGERED for Level ${selectedLevel}`);
+			console.log(`⏰ Button will appear in 3.5 seconds...`);
+			console.log(`   Triggered at: ${new Date().toLocaleTimeString()}.${Date.now() % 1000}`);
+			console.log(`========================================`);
+			
+			// Store the selected level for the button handler
+			window.selectedGameLevel = selectedLevel;
+			
+			// Clear any existing timeout to prevent duplicates
+			if (window.buttonShowTimeout) {
+				const prevLevel = window.selectedGameLevel;
+				console.log(`⚠️ Clearing existing timeout (was for level ${prevLevel})`);
+				clearTimeout(window.buttonShowTimeout);
+				window.buttonShowTimeout = null;
+			}
+			
+			// Record the time when enterLevel was triggered
+			const startTime = Date.now();
+			window.lastTransitionStartTime = startTime; // Track this globally for debugging
+			
+			console.log(`🔧 Setting timeout with ID...`);
+			
+			// Wait EXACTLY 3.5 seconds then show the button
+			window.buttonShowTimeout = setTimeout(() => {
+				const elapsed = Date.now() - startTime;
+				console.log(`========================================`);
+				console.log(`⏰ TIMEOUT FIRED!`);
+				console.log(`   After ${elapsed}ms (expected 3500ms)`);
+				console.log(`   Difference: ${elapsed - 3500}ms`);
+				console.log(`   Current time: ${new Date().toLocaleTimeString()}.${Date.now() % 1000}`);
+				console.log(`========================================`);
+				
+				// Show the start game button
+				const startButton = document.getElementById('skipToGame');
+				console.log(`🔍 Looking for button element...`);
+				console.log(`   Button found: ${!!startButton}`);
+				
+				if (startButton) {
+					console.log(`   Current display: "${startButton.style.display}"`);
+					console.log(`   Current visibility: "${startButton.style.visibility}"`);
+					console.log(`   Current opacity: "${startButton.style.opacity}"`);
+					
+					// Make button visible
+					startButton.style.display = 'block';
+					startButton.style.visibility = 'visible';
+					startButton.style.opacity = '1';
+					
+					console.log(`✅ Button properties set:`);
+					console.log(`   display: ${startButton.style.display}`);
+					console.log(`   visibility: ${startButton.style.visibility}`);
+					console.log(`   opacity: ${startButton.style.opacity}`);
+					console.log('========================================');
+					console.log('🎮 BUTTON SHOULD BE VISIBLE NOW!');
+					console.log('   If you cannot see it, check z-index or other CSS');
+					console.log('========================================');
+				} else {
+					// Fallback: auto-start if button not found (should never happen)
+					console.error('❌ Button element "#skipToGame" not found in DOM!');
+					console.warn('⚠️ Auto-starting game as fallback...');
+					startGameNow(selectedLevel);
+				}
+				
+				// Clear the timeout reference
+				window.buttonShowTimeout = null;
+			}, 3500); // EXACTLY 3500ms = 3.5 seconds
+			
+			console.log(`✅ Timeout ID: ${window.buttonShowTimeout}`);
+			console.log('⏳ Timer started - waiting 3.5 seconds...');
+		}
+		
+		// Make globally accessible
+		window.startGameNow = startGameNow;
+		
+		// Button click handler (set up once)
+		document.getElementById('skipToGame').addEventListener('click', () => {
+			console.log('🎮 START GAME button clicked!');
+			const level = window.selectedGameLevel || 1;
+			startGameNow(level);
+		});
+		
+		console.log('========================================');
+		console.log('✅ SETUP COMPLETE');
+		console.log('========================================');
+		console.log('📋 Available commands:');
+		console.log('   window.manualTriggerButton(1)  - Test button for level 1');
+		console.log('   window.forceShowButton()        - Show button immediately');
+		console.log('   window.checkOverrideStatus()    - Check if override is installed');
+		console.log('========================================');
+		
+		// Manual trigger for testing - call this from console if level selection doesn't work
+		window.manualTriggerButton = function(level = 1) {
+			console.log('🔧 MANUAL TRIGGER - Starting timer for level', level);
+			window.transitionToIndexJakeGame(level);
+		};
+		
+		// Force show button immediately (for debugging)
+		window.forceShowButton = function() {
+			console.log('� FORCE SHOW - Making button visible NOW');
+			const btn = document.getElementById('skipToGame');
+			if (btn) {
+				btn.style.display = 'block';
+				console.log('✅ Button forced to visible');
+			} else {
+				console.error('❌ Button element not found!');
+			}
+		};
+		
+		// Check override status
+		window.checkOverrideStatus = function() {
+			console.log('========================================');
+			console.log('🔍 OVERRIDE STATUS CHECK');
+			console.log('   Override complete:', window.levelOverrideComplete);
+			console.log('   UI instance exists:', !!window.uiInstance);
+			console.log('   LevelSelection3D exists:', !!(window.uiInstance && window.uiInstance.levelSelection3D));
+			console.log('   Active timeout:', !!window.buttonShowTimeout);
+			console.log('   Selected level:', window.selectedGameLevel);
+			
+			if (window.uiInstance && window.uiInstance.levelSelection3D) {
+				const ls = window.uiInstance.levelSelection3D;
+				console.log('   LS state:', ls.state);
+				console.log('   LS selectedLevel:', ls.selectedLevel);
+				console.log('   LS inLevelMode:', ls.inLevelMode);
+			}
+			console.log('========================================');
+		};
 	</script>
 
-	<script src="Player.js" type="module" defer></script>
+	<!-- Load non-module scripts AFTER the module script so dependencies are available -->
+	<script src="StateManager.js"></script>
+	<script src="LevelContent3D.js"></script>
+	<script src="LevelSelection3D.js"></script>
+	<script src="UI.js"></script>
+
+	<!-- Player.js is a module that loads after other scripts -->
+	<script src="Player.js" type="module"></script>
 	</body>
+</html>
