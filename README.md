@@ -97,3 +97,12 @@ In the year 9825, players spawn in a cube world where everyone is an emissive cu
 - **Batch Size**: 32
 - **Gamma (Discount Factor)**: 0.99
 - **Epsilon Decay**: 0.995
+
+## Reinforcement Learning Implementation in THREE.js [AUTOMATION CATEGORY]
+
+- **Game State as Data**: Each frame, the AI agent is fed information about the THREE scene (player positions, critical point colors, scores) as a numerical array
+- **Neural Network as Function**: TensorFlow.js allows us to use a neural network that maps the state array to action probabilities (move forward, turn left, etc)
+- **Reward System**: After each action, we intepret a reward score (positive for claiming points, negative for poor positioning), which trains the network to improve
+- **Browser-Based Training**: Training happens in real-time using JavaScript in the same runtime as your Three.js scene—no external servers or Python needed
+- **Weight Updates**: The network weights update during gameplay
+- **Trial and Error Learning**: The AI agent learns by playing the game repeatedly, gradually improving its strategy
